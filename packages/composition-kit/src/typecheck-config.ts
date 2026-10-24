@@ -7,7 +7,7 @@ import { dirname, isAbsolute, join, posix, relative } from 'node:path'
 import type * as TypeScript from 'typescript'
 import { requirePeer } from './peers.js'
 import { manifestPathProblem, toPosix } from './paths.js'
-import { pathExists, removeFile, renamePath, writeFile } from './fs-access.js'
+import { lstatPath, pathExists, removeFile, renamePath, writeFile } from './fs-access.js'
 import { outProblem, preflight, type VerifyOptions } from './verify.js'
 
 export interface TsconfigOptions {
@@ -25,15 +25,36 @@ export interface TsconfigResult {
 }
 
 const APP_TSCONFIG = 'tsconfig.json'
-const GLOB = /[*?[\]{}!]/
+// TypeScript's exclude wildcards are `*` and `?` only; `[`, `]` and `(` are literal (SvelteKit route dirs).
+const GLOB = /[*?]/
 
-/** Why a lock entry cannot be an exact test path (a glob would widen the exclusion), or null. */
-function entryProblem(entry: string): string | null {
+const TEST_FILE = /\.test\.ts$/
+
+function isRegularFile(path: string): boolean {
+  try {
+    return lstatPath(path).isFile()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Why a lock entry cannot be an exact test file, or null. An entry such as `src` or `src/lib` would
+ * silently drop a whole directory from svelte-check, and a glob would widen the exclusion, so each
+ * entry must be an existing regular `.test.ts` file of the composed app. This holds even when the
+ * host publishes no test-subjects map (then nothing else cross-checks the list).
+ */
+function entryProblem(entry: string, appRoot: string): string | null {
   const reason =
-    manifestPathProblem(entry) ?? (GLOB.test(entry) ? 'contains a glob character' : null)
+    manifestPathProblem(entry) ??
+    (GLOB.test(entry) ? 'contains a glob character' : null) ??
+    (TEST_FILE.test(entry) ? null : 'is not a .test.ts file') ??
+    (isRegularFile(join(appRoot, entry)) ? null : 'is not an existing file of the composed app')
   return reason === null ? null : `invalid excludedPvTests entry "${entry}": ${reason}`
 }
 
+// A `configDir` template entry resolves against the config TypeScript reads last, so it stays as is.
+const CONFIG_DIR = '$' + '{configDir}'
 const TS_DEFAULT_EXCLUDE = ['node_modules', 'bower_components', 'jspm_packages']
 // TypeScript: "No inputs were found in config file" (nothing to check yet is not our concern).
 const NO_INPUTS = 18003
@@ -70,9 +91,11 @@ function baseExclude(appRoot: string): { exclude?: string[]; problem?: string } 
 function inheritedExclude(parsed: TypeScript.ParsedCommandLine, appRoot: string): string[] {
   const raw = parsed.raw as { exclude?: unknown } | undefined
   if (Array.isArray(raw?.exclude)) return raw.exclude.map(String)
-  const outDir =
-    parsed.options.outDir === undefined ? [] : [relative(appRoot, parsed.options.outDir)]
-  return [...TS_DEFAULT_EXCLUDE, ...outDir]
+  // TypeScript's own rule (no `exclude` anywhere in the chain): outDir and declarationDir REPLACE the defaults.
+  const outputs = [parsed.options.outDir, parsed.options.declarationDir]
+    .filter((dir): dir is string => dir !== undefined && dir !== '')
+    .map((dir) => toPosix(relative(appRoot, dir)))
+  return outputs.length > 0 ? outputs : TS_DEFAULT_EXCLUDE
 }
 
 /** `path` (relative to the app root) as seen from the generated file's directory. */
@@ -91,7 +114,9 @@ export async function extractTsconfig(options: TsconfigOptions): Promise<Tsconfi
   const checked = await preflight(options as VerifyOptions)
   if (checked.lock === undefined || checked.problems.length > 0) return failed(checked.problems)
   const excluded = [...checked.lock.excludedPvTests]
-  const invalid = excluded.map(entryProblem).filter((problem) => problem !== null)
+  const invalid = excluded
+    .map((entry) => entryProblem(entry, options.appRoot))
+    .filter((problem) => problem !== null)
   if (invalid.length > 0) return failed(invalid)
   const target = outProblem(options.out)
   if (target !== null) return failed([target])
@@ -101,7 +126,9 @@ export async function extractTsconfig(options: TsconfigOptions): Promise<Tsconfi
     extends: `./${anchored(options.out, options.appRoot, APP_TSCONFIG)}`.replace('./..', '..'),
     exclude: [
       ...base.exclude.map((entry) =>
-        isAbsolute(entry) ? entry : anchored(options.out, options.appRoot, posix.normalize(entry))
+        isAbsolute(entry) || entry.startsWith(CONFIG_DIR)
+          ? entry
+          : anchored(options.out, options.appRoot, posix.normalize(entry))
       ),
       ...excluded.map((test) => anchored(options.out, options.appRoot, test)),
     ],

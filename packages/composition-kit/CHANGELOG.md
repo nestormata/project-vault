@@ -12,7 +12,10 @@
   with the replaced PV server-load contract (CM 16-3). It runs the `pv-verify` preflight first (lock present
   and current, guard entries untouched, `excludedPvTests` equal to what the lock's own overrides, removals and
   replacements imply, `--pack` regeneration) and fails closed, writing nothing, on any of them, on an entry
-  that is not an exact relative path (absolute, `..`, backslash, glob) and on an unreadable app tsconfig.
+  that is not an existing regular `.test.ts` file of the app (absolute, `..`, backslash, glob, a directory
+  such as `src/lib`) even when the host publishes no test-subjects map, and on an app tsconfig with any
+  TypeScript config diagnostic. A failed run keeps the previous `--out` file, so pipelines stop on a non-zero
+  exit.
   No consumer-chosen exclusion and no blanket test glob exists. Additive: no existing flag, lock field or
   exit code changes; the usage and the `--only` error message list the new step.
 

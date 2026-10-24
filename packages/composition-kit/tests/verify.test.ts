@@ -721,6 +721,33 @@ describe('pv-verify --only classifications (Story 68-16 AC-2)', () => {
     expect(readdirSync(world.root).filter((name) => name.includes('.tmp'))).toEqual([])
   })
 
+  it('keeps a retained test that imports an excluded test visibly failing: the list is never widened (AC-4)', async () => {
+    const ts = createRequire(import.meta.url)('typescript') as typeof import('typescript')
+    const world = await typecheckWorld()
+    writeAll(world.app, {
+      [UTIL_TEST]: "export const broken: number = 'not a number'\n",
+      [OTHER_TEST]: "import { broken } from './util.test'\nexport const again = broken\n",
+    })
+    const out = join(world.app, TYPECHECK_OUT)
+    await extractTsconfig({ ...options(world), out })
+    const parsed = ts.getParsedCommandLineOfConfigFile(
+      out,
+      { noEmit: true },
+      { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => undefined }
+    )
+    const roots = (parsed?.fileNames ?? []).map((name) => name.slice(world.app.length + 1))
+    expect(roots).toContain(OTHER_TEST)
+    expect(roots).not.toContain(UTIL_TEST)
+    const program = ts.createProgram({
+      rootNames: parsed?.fileNames ?? [],
+      options: parsed?.options ?? {},
+    })
+    const reported = ts
+      .getPreEmitDiagnostics(program)
+      .map((diagnostic) => diagnostic.file?.fileName ?? '')
+    expect(reported.some((name) => name.endsWith(UTIL_TEST))).toBe(true)
+  })
+
   it('does not replace an existing file when the run fails', async () => {
     const world = await classifiedWorld()
     const out = join(world.root, 'keep.json')
@@ -790,6 +817,7 @@ const TYPECHECK_OUT = 'tsconfig.composed.json'
 const KIT_TSCONFIG = '.svelte-kit/tsconfig.json'
 const KIT_TSCONFIG_BODY = '{ "exclude": ["../node_modules/**", "./[!ambient.d.ts]**"] }'
 const KIT_EXCLUDES = ['node_modules/**', '.svelte-kit/[!ambient.d.ts]**']
+const TEST_BODY = "import { it } from 'vitest'\nit('x', () => {})\n"
 const SUBJECTS = { [UTIL_TEST]: [UTIL], [OTHER_TEST]: ['src/lib/other.ts'] }
 const overriddenUtil = (): Setup => ({
   subjects: SUBJECTS,
@@ -803,7 +831,11 @@ async function typecheckWorld(
 ): Promise<World> {
   const world = await composedWorld(setup)
   // What `svelte-kit sync` generates: the base the app's tsconfig extends, with SvelteKit's own excludes.
-  writeAll(world.app, { [KIT_TSCONFIG]: KIT_TSCONFIG_BODY })
+  writeAll(world.app, {
+    [KIT_TSCONFIG]: KIT_TSCONFIG_BODY,
+    [UTIL_TEST]: TEST_BODY,
+    [OTHER_TEST]: TEST_BODY,
+  })
   if (tsconfig !== null) writeFileSync(join(world.app, APP_TSCONFIG), tsconfig)
   return world
 }
@@ -862,13 +894,68 @@ describe('pv-verify --only tsconfig (Story 68-26 AC-1, AC-2)', () => {
     ])
   })
 
-  it("adds the app tsconfig's outDir to TypeScript's default exclude", async () => {
+  it.each([
+    ['outDir', '{ "outDir": "build" }', ['build']],
+    ['declarationDir', '{ "declarationDir": "types" }', ['types']],
+    ['both', '{ "outDir": "build", "declarationDir": "types" }', ['build', 'types']],
+  ])(
+    'follows TypeScript: %s replaces the default exclude when the chain sets none',
+    async (_name, compilerOptions, expected) => {
+      const world = await typecheckWorld(
+        overriddenUtil(),
+        `{ "compilerOptions": ${compilerOptions} }`
+      )
+      await extractTsconfig({ ...options(world), out: join(world.app, TYPECHECK_OUT) })
+      expect(readTypecheck(world).exclude).toEqual([...expected, UTIL_TEST])
+    }
+  )
+
+  it('passes absolute and configDir-template excludes through unchanged, even from a subdirectory', async () => {
+    const template = '$' + '{configDir}/generated'
     const world = await typecheckWorld(
       overriddenUtil(),
-      '{ "compilerOptions": { "outDir": "build" } }'
+      JSON.stringify({ exclude: ['/abs/generated', template, 'build'] })
     )
+    mkdirSync(join(world.app, 'config'))
+    await extractTsconfig({ ...options(world), out: join(world.app, 'config', TYPECHECK_OUT) })
+    expect(readTypecheck(world, `config/${TYPECHECK_OUT}`).exclude).toEqual([
+      '/abs/generated',
+      template,
+      '../build',
+      `../${UTIL_TEST}`,
+    ])
+  })
+
+  it('follows an array extends: the last config that sets exclude wins', async () => {
+    const world = await typecheckWorld(
+      overriddenUtil(),
+      '{ "extends": ["./.svelte-kit/tsconfig.json", "./extra.json"] }'
+    )
+    writeAll(world.app, { 'extra.json': '{ "exclude": ["extra-gen"] }' })
     await extractTsconfig({ ...options(world), out: join(world.app, TYPECHECK_OUT) })
-    expect(readTypecheck(world).exclude).toContain('build')
+    expect(readTypecheck(world).exclude).toEqual(['extra-gen', UTIL_TEST])
+  })
+
+  it('rebases the exclude of a package-specifier base to the app root', async () => {
+    const world = await typecheckWorld(
+      overriddenUtil(),
+      '{ "extends": "@scope/base/tsconfig.json" }'
+    )
+    writeAll(world.app, {
+      'node_modules/@scope/base/package.json': '{ "name": "@scope/base" }',
+      'node_modules/@scope/base/tsconfig.json': '{ "exclude": ["dist"] }',
+    })
+    await extractTsconfig({ ...options(world), out: join(world.app, TYPECHECK_OUT) })
+    expect(readTypecheck(world).exclude).toEqual(['node_modules/@scope/base/dist', UTIL_TEST])
+  })
+
+  it('treats a TypeScript config diagnostic as fatal (an unknown extends target)', async () => {
+    const world = await typecheckWorld(overriddenUtil(), '{ "extends": "./nope.json" }')
+    const out = join(world.app, TYPECHECK_OUT)
+    const result = await extractTsconfig({ ...options(world), out })
+    expect(result.ok).toBe(false)
+    expect(result.problems.join('\n')).toContain('cannot be read by TypeScript')
+    expect(existsSync(out)).toBe(false)
   })
 
   it('writes paths and extends relative to the output file when it lives in a subdirectory', async () => {
@@ -933,23 +1020,57 @@ describe('pv-verify --only tsconfig (Story 68-26 AC-1, AC-2)', () => {
     expect(existsSync(out)).toBe(false)
   })
 
-  it.each([
+  it('accepts SvelteKit route-directory characters ([param], (group)) as literal path text', async () => {
+    const world = await typecheckWorld({})
+    const path = join(world.app, LOCK_FILE)
+    const lock = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+    const route = 'src/routes/(app)/u/[id]/page.server.test.ts'
+    writeAll(world.app, { [route]: TEST_BODY })
+    lock.excludedPvTests = [route]
+    writeFileSync(path, JSON.stringify(lock))
+    const out = join(world.app, TYPECHECK_OUT)
+    expect((await extractTsconfig({ ...options(world), out })).ok).toBe(true)
+    expect(readTypecheck(world).exclude).toContain(route)
+  })
+
+  const refusedEntries: [string, string][] = [
     ['an absolute path', '/etc/x.test.ts'],
     ['a path escaping the app', '../x.test.ts'],
     ['a backslash path', 'src\\x.test.ts'],
     ['a glob that would widen the exclusion', 'src/**/*.test.ts'],
+    ['a single-character wildcard', 'src/x?.test.ts'],
     ['an empty path', ''],
-  ])('refuses %s in the lock list, writing nothing', async (_name, bad) => {
+    ['a whole directory (src)', 'src'],
+    ['a whole directory (src/lib)', 'src/lib'],
+    ['a directory named like a test', 'src/lib/dir.test.ts'],
+    ['a file that is not a test', UTIL],
+    ['a test file that does not exist', 'src/lib/missing.test.ts'],
+  ]
+
+  describe('a bad lock entry on a host with no test-subjects map (nothing else cross-checks the list)', () => {
+    it.each(refusedEntries)('refuses %s', async (_name, bad) => {
+      const world = await typecheckWorld({})
+      mkdirSync(join(world.app, 'src/lib/dir.test.ts'), { recursive: true })
+      const path = join(world.app, LOCK_FILE)
+      const lock = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+      lock.excludedPvTests = [bad]
+      writeFileSync(path, JSON.stringify(lock))
+      const out = join(world.app, TYPECHECK_OUT)
+      const result = await extractTsconfig({ ...options(world), out })
+      expect(result.ok).toBe(false)
+      expect(result.problems.join('\n')).toContain('invalid excludedPvTests entry')
+      expect(existsSync(out)).toBe(false)
+    })
+  })
+
+  it('names the entry and the reason for a directory entry', async () => {
     const world = await typecheckWorld({})
     const path = join(world.app, LOCK_FILE)
     const lock = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
-    lock.excludedPvTests = [bad]
+    lock.excludedPvTests = ['src/lib']
     writeFileSync(path, JSON.stringify(lock))
-    const out = join(world.app, TYPECHECK_OUT)
-    const result = await extractTsconfig({ ...options(world), out })
-    expect(result.ok).toBe(false)
-    expect(result.problems.join('\n')).toContain('invalid excludedPvTests entry')
-    expect(existsSync(out)).toBe(false)
+    const result = await extractTsconfig({ ...options(world), out: join(world.app, TYPECHECK_OUT) })
+    expect(result.problems.join('\n')).toContain('invalid excludedPvTests entry "src/lib"')
   })
 
   it('refuses a missing or unreadable app tsconfig and an unusable target', async () => {
@@ -1026,6 +1147,38 @@ describe('pv-verify --only tsconfig: command line (Story 68-26)', () => {
     expect(await runVerifyCli([...argvOf(world), '--out', out], failed.io)).toBe(1)
     expect(failed.err.join('')).toContain(LOCK_FILE)
     expect(existsSync(out)).toBe(false)
+  })
+
+  it('prints {ok:false} with --json and exits 1 when the run fails, leaving an earlier file alone', async () => {
+    const world = await typecheckWorld()
+    const out = join(world.app, TYPECHECK_OUT)
+    writeFileSync(out, 'previous\n')
+    rmSync(join(world.app, LOCK_FILE))
+    const failed = io()
+    expect(await runVerifyCli([...argvOf(world), '--out', out, '--json'], failed.io)).toBe(1)
+    expect(JSON.parse(failed.out.join(''))).toEqual({ ok: false, excluded: 0 })
+    expect(readFileSync(out, 'utf8')).toBe('previous\n')
+  })
+
+  it('with --pack fails closed (exit 1) once the pack no longer matches the lock', async () => {
+    const world = await typecheckWorld()
+    writeFileSync(
+      join(world.pack, 'pv-ui.manifest.ts'),
+      `export default ${JSON.stringify(manifest(overriddenUtil().manifest?.(world) ?? {}))}\n`
+    )
+    const out = join(world.app, TYPECHECK_OUT)
+    const argv = [...argvOf(world), '--pack', world.pack, '--out', out]
+    expect(await runVerifyCli(argv, io().io)).toBe(0)
+    rmSync(out)
+    writeFileSync(join(world.pack, UTIL), 'export const fmt = Number\n')
+    expect(await runVerifyCli(argv, io().io)).toBe(1)
+    expect(existsSync(out)).toBe(false)
+  })
+
+  it('rejects --out together with a step other than classifications or tsconfig', async () => {
+    const other = io()
+    expect(await runVerifyCli(['--only', 'tests', '--out', 'x.json'], other.io)).toBe(2)
+    expect(other.err.join('')).toContain('--out only applies to --only classifications or tsconfig')
   })
 
   it('documents --only tsconfig --out in the usage', () => {

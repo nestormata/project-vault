@@ -869,7 +869,10 @@ PV's tests of a subject the pack overrode, replaced or removed are excluded from
 and the kit's `excluded-tests.ts`; the tsconfig generator only reads the lock after the `pv-verify` preflight
 (which recomputes the list from the lock's own records), so there is no second selection policy. PV's own tree
 runs `svelte-check` over `apps/web/tsconfig.json` unchanged, so every PV test stays checked natively. The CI
-job `Composition kit integration` (variant `compose-verify`) proves it on the packed tarballs. Usage and
+job `Composition kit integration` proves it on the packed tarballs: the `compose` and `compose-types-negative`
+variants run `svelte-check` over the generated file, and `compose-mock-pack` (also the `Mock UI pack mechanism
+e2e` job) adds a control run that is red on the app's own tsconfig, an exclusion-equality check and a planted
+type error in each retained category. Usage and
 failure modes: `packages/composition-kit/README.md`, section "Guards and tests over a composed tree".
 
 ## Verifying

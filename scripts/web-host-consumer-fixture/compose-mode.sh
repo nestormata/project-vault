@@ -254,10 +254,25 @@ compose_pipeline_to_sync() {
   fi
 }
 
+# Story 68-26: the supported composed typecheck configuration. pv-verify writes a tsconfig that extends
+# the app's and excludes exactly the lock's excludedPvTests (the tests of a displaced subject, which the
+# composed vitest run skips too). Output in $WORK/tsconfig.out; the exit status is returned.
+compose_write_check_tsconfig() {
+  local status=0
+  (cd "$APP" && clean_env "$VERIFY_LINK" --app "$APP" --host "$INSTALLED" \
+    --only tsconfig --out "$APP/tsconfig.composed.json") > "$WORK/tsconfig.out" 2>&1 || status=$?
+  return "$status"
+}
+
 compose_svelte_check() {
-  log 'svelte-check --fail-on-warnings (every composed file gets ./$types)'
+  log 'pv-verify --only tsconfig, then svelte-check --fail-on-warnings (every composed file gets ./$types)'
+  compose_write_check_tsconfig || {
+    cat "$WORK/tsconfig.out" >&2
+    echo 'fixture: pv-verify --only tsconfig failed over the composed app' >&2
+    exit 1
+  }
   (cd "$APP" && clean_env "$NODE_BIN" node_modules/svelte-check/bin/svelte-check \
-    --tsconfig ./tsconfig.json --fail-on-warnings)
+    --tsconfig ./tsconfig.composed.json --fail-on-warnings)
   for types in 'src/routes/billing' 'src/routes/(auth)/login'; do
     if [[ ! -e "$APP/.svelte-kit/types/$types/\$types.d.ts" ]]; then
       echo "fixture: no generated ./\$types for $types" >&2

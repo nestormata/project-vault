@@ -21,24 +21,134 @@ mock_fail() {
   exit 1
 }
 
-# svelte-check over the composed tree. PV's own shipped tests that the lock lists in
-# `excludedPvTests` (their subject was overridden, so vitest skips them) are still TYPED by
-# svelte-check against the overriding page's data, which no longer has PV's shape: they are ignored
-# here the same way, from the lock, never from a hand-written list. (Recorded as a mechanism gap:
-# the kit does not yet hand a consumer a svelte-check exclusion.)
+# Story 68-26: svelte-check over the composed tree through the kit's supported configuration
+# (`pv-verify --only tsconfig`), which excludes exactly the lock's `excludedPvTests`. This pack overrides
+# the dashboard page AND its server load with a different contract (the CM 16-3 shape), so PV's tests of
+# that load are typed against a contract they do not expect. Three runs prove the mechanism:
+#   1. control: the app's plain tsconfig.json is RED on at least one excluded test (the defect is real)
+#   2. the generated tsconfig is green (replacement test, retained PV tests, production sources checked)
+#   3. one type error planted in each retained category is red, and the output names every planted file
+mock_pack_excluded_list() { # prints the lock's excludedPvTests, one per line
+  clean_env "$NODE_BIN" -e '
+    const lock = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))
+    process.stdout.write(lock.excludedPvTests.join("\n") + "\n")
+  ' "$APP/composition.lock.json"
+  return 0
+}
+
+mock_pack_svelte_check_run() { # tsconfig -> output in $WORK/svelte-check.out; exit status returned
+  local status=0
+  (cd "$APP" && clean_env "$NODE_BIN" node_modules/svelte-check/bin/svelte-check \
+    --tsconfig "$1" --fail-on-warnings) > "$WORK/svelte-check.out" 2>&1 || status=$?
+  return "$status"
+}
+
 mock_pack_svelte_check() {
-  # svelte-check's own `--ignore` works only with --no-tsconfig, so the exclusion is a derived
-  # tsconfig that extends the consumer's own and adds the lock's list to `exclude`.
+  local excluded status=0 test_file control_names_excluded=0
+  excluded="$(mock_pack_excluded_list)"
+  if ! grep -qF 'dashboard-page.server.test.ts' <<< "$excluded"; then
+    mock_fail "the dashboard load test is not in excludedPvTests: $excluded"
+  fi
+  log "svelte-check control: the app's own tsconfig.json over the displaced PV tests must be red"
+  mock_pack_svelte_check_run ./tsconfig.json || status=$?
+  if [[ "$status" == '0' ]]; then
+    mock_fail 'svelte-check passed with no exclusion: the mock pack no longer displaces a tested contract'
+  fi
+  while IFS= read -r test_file; do
+    if grep -qF "$test_file" "$WORK/svelte-check.out"; then
+      log "OK: the control is red on the displaced test $test_file"
+      control_names_excluded=1
+      break
+    fi
+  done <<< "$excluded"
+  if [[ "$control_names_excluded" != '1' ]]; then
+    cat "$WORK/svelte-check.out" >&2
+    mock_fail 'the control svelte-check failed, but not on a PV test the lock excludes'
+  fi
+  log 'pv-verify --only tsconfig, then svelte-check --fail-on-warnings over the generated tsconfig'
+  compose_write_check_tsconfig || { cat "$WORK/tsconfig.out" >&2; mock_fail 'pv-verify --only tsconfig failed'; }
+  mock_pack_assert_tsconfig_exclusions "$excluded"
+  mock_pack_svelte_check_run ./tsconfig.composed.json || {
+    cat "$WORK/svelte-check.out" >&2
+    mock_fail 'svelte-check is red over the generated tsconfig'
+  }
+  mock_pack_planted_type_errors
+  return 0
+}
+
+# AC-1: the generated exclude is exactly the app's own base excludes (derived here from SvelteKit's
+# generated tsconfig, not from the kit) followed by the lock's list: same entries, same order, no glob,
+# no extra path, and the whole list is non-empty.
+mock_pack_assert_tsconfig_exclusions() { # excluded
   clean_env "$NODE_BIN" -e '
     const fs = require("node:fs")
-    const [lockFile, out] = process.argv.slice(1)
-    const lock = JSON.parse(fs.readFileSync(lockFile, "utf8"))
-    const exclude = lock.excludedPvTests.map((file) => "./" + file)
-    fs.writeFileSync(out, JSON.stringify({ extends: "./tsconfig.json", exclude }, null, 2))
-  ' "$APP/composition.lock.json" "$APP/tsconfig.mock-check.json"
-  log "svelte-check --fail-on-warnings, excluding the lock's excludedPvTests"
-  (cd "$APP" && clean_env "$NODE_BIN" node_modules/svelte-check/bin/svelte-check \
-    --tsconfig ./tsconfig.mock-check.json --fail-on-warnings)
+    const path = require("node:path")
+    const [generatedFile, lockFile, appDir] = process.argv.slice(1)
+    const read = (file) => JSON.parse(fs.readFileSync(file, "utf8"))
+    const locked = read(lockFile).excludedPvTests
+    const exclude = read(generatedFile).exclude
+    const own = read(path.join(appDir, "tsconfig.json")).exclude
+    const rebased = (read(path.join(appDir, ".svelte-kit/tsconfig.json")).exclude ?? []).map((entry) =>
+      path.isAbsolute(entry) ? entry : path.posix.normalize(path.posix.join(".svelte-kit", entry)))
+    const base = Array.isArray(own) ? own : rebased
+    const fail = (message, detail) => { console.error(message, detail); process.exit(1) }
+    if (locked.length === 0) fail("the lock excludes no PV test", locked)
+    if (base.length === 0) fail("the expected base excludes are empty", base)
+    const tail = exclude.slice(base.length)
+    if (JSON.stringify(exclude.slice(0, base.length)) !== JSON.stringify(base)) {
+      fail("the generated base excludes differ from the app's own", { exclude, base })
+    }
+    if (JSON.stringify(tail) !== JSON.stringify(locked)) {
+      fail("the generated trailing entries differ from the lock excludedPvTests", { tail, locked })
+    }
+    if (tail.some((entry) => /[*?]/.test(entry))) fail("a glob was added", tail)
+  ' "$APP/tsconfig.composed.json" "$APP/composition.lock.json" "$APP" ||
+    mock_fail 'the generated tsconfig does not exclude exactly the app excludes plus the lock excludedPvTests'
+  log 'OK: the generated tsconfig excludes exactly the app excludes plus the lock excludedPvTests (no glob, no extra path)'
+  return 0
+}
+
+readonly MOCK_RETAINED_PV_TEST='src/lib/utils/reset-on.test.ts'
+readonly MOCK_RETAINED_PV_SOURCE='src/lib/utils/format-bytes.ts'
+readonly MOCK_CM_TEST='src/routes/(app)/dashboard/dashboard-replacement-contract.test.ts'
+readonly MOCK_TYPES_PAGE='src/routes/billing/+page.svelte'
+readonly MOCK_PLANTED_ERROR=$'\nexport const plantedTypeError: number = \'not a number\'\n'
+
+# AC-3: a type error in each retained category is red under the generated tsconfig. Each file is backed up
+# and restored; the planted files must each be named by svelte-check, so none is silently excluded.
+mock_pack_planted_type_errors() {
+  local file status=0 backup="$WORK/planted-backup"
+  local -a planted=("$MOCK_RETAINED_PV_TEST" "$MOCK_RETAINED_PV_SOURCE" "$MOCK_CM_TEST")
+  if grep -qxF -e "$MOCK_RETAINED_PV_TEST" -e "$MOCK_RETAINED_PV_SOURCE" < <(mock_pack_excluded_list); then
+    mock_fail 'a file the retained-category mutation plants into is in excludedPvTests'
+  fi
+  rm -rf "$backup"
+  mkdir -p "$backup"
+  for file in "${planted[@]}" "$MOCK_TYPES_PAGE"; do
+    [[ -f "$APP/$file" ]] || mock_fail "retained-category mutation: $file does not exist in the composed app"
+    mkdir -p "$backup/$(dirname "$file")"
+    cp "$APP/$file" "$backup/$file"
+  done
+  for file in "${planted[@]}"; do
+    printf '%s' "$MOCK_PLANTED_ERROR" >> "$APP/$file"
+  done
+  # Generated route types: the page reads a field its load does not return (./$types must still apply).
+  sed -i 's/data\.plan/data.nope/' "$APP/$MOCK_TYPES_PAGE"
+  mock_pack_svelte_check_run ./tsconfig.composed.json || status=$?
+  for file in "${planted[@]}" "$MOCK_TYPES_PAGE"; do
+    cp "$backup/$file" "$APP/$file"
+  done
+  if [[ "$status" == '0' ]]; then
+    mock_fail 'svelte-check stayed green with a type error in every retained category'
+  fi
+  for file in "${planted[@]}" "$MOCK_TYPES_PAGE"; do
+    if ! grep -qF "$file" "$WORK/svelte-check.out"; then
+      cat "$WORK/svelte-check.out" >&2
+      mock_fail "mutation: svelte-check did not report the planted error in $file (is it excluded?)"
+    fi
+  done
+  log 'OK: a type error in a retained PV test, a production source, a CM replacement test and a generated route type is red'
+  mock_pack_svelte_check_run ./tsconfig.composed.json || mock_fail 'svelte-check is red after the planted files were restored'
   return 0
 }
 

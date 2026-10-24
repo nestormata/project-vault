@@ -304,10 +304,15 @@ svelte-check --tsconfig ./tsconfig.composed.json --fail-on-warnings
 Gitignore `tsconfig.composed.json` and regenerate it on every run. It fails closed (exit `1`, nothing
 written) on a missing lock, a lock for another web-host release, tampered guard entries, an
 `excludedPvTests` that differs from what the lock's own overrides, removals and replacements imply (a
-hand edit), an entry that is not an exact relative path (absolute, `..`, backslash or a glob), an app
-tsconfig TypeScript cannot read (run `svelte-kit sync` first) and an `--out` that is a directory. `--pack` also regenerates the lock like `pv-compose --check`. If a retained
-test imports an excluded test or support module the error stays visible: the list is never widened to
-hide it. PV's own tree runs `svelte-check` with no exclusions.
+hand edit), an entry that is not an exact path to an existing `.test.ts` file of the app (absolute, `..`, backslash,
+a glob, a directory such as `src/lib`, a missing file), an app tsconfig TypeScript cannot read or reports
+any diagnostic for (every config diagnostic is fatal; run `svelte-kit sync` first) and an `--out` that is a
+directory. Entries that TypeScript resolves itself (`${configDir}` templates, absolute paths) are copied
+through unchanged. A failed run keeps the previous `--out` file untouched, so a stale file can look
+current: make the pipeline stop on a non-zero exit (`set -e`) before running `svelte-check`. In CI pass
+`--pack <pack>` too: it regenerates the lock like `pv-compose --check`, so a stale committed lock fails
+instead of being trusted. If a retained test imports an excluded test or support module the error stays
+visible: the list is never widened to hide it. PV's own tree runs `svelte-check` with no exclusions.
 
 **Route classifications for the runtime route audit.** A pack that adds raw (non-`secureRoute`) API routes
 classifies them in `guards.routeClassifications`, one entry per route in the audit's own shape:
