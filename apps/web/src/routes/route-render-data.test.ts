@@ -555,6 +555,25 @@ const ACCESS_REPORT_PAGE = {
   report: ACCESS_REPORT,
 }
 
+// Story 69.11: realistic organizations for the platform organizations page, whose list renders
+// dates and an empty state a permissive value never reaches. Recorded BEFORE the page content was
+// split into sub-region components.
+const PLATFORM_ORGS = [
+  {
+    id: 'org-1',
+    name: 'Acme Corp',
+    slug: 'acme-corp',
+    createdAt: '2026-09-01T10:00:00.000Z',
+    memberCount: 12,
+  },
+  {
+    id: 'org-2',
+    name: 'Beta LLC',
+    slug: 'beta-llc',
+    createdAt: '2026-09-15T10:00:00.000Z',
+    memberCount: 3,
+  },
+]
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -779,6 +798,16 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/import/+page.svelte': {
     'import-allowed': { ...OWNER_READY, canImport: true, projectId: 'p-1' },
     'import-denied': { ...OWNER_READY, canImport: false, projectId: 'p-1' },
+  },
+  '/(app)/platform/settings/orgs/+page.svelte': {
+    'orgs-listed': { ...OWNER_READY, orgs: PLATFORM_ORGS },
+    'orgs-empty': { ...OWNER_READY, orgs: [] },
+    'orgs-empty-with-error': { ...OWNER_READY, orgs: [], errorMessage: 'orgs unavailable' },
+    'orgs-listed-with-error': {
+      ...OWNER_READY,
+      orgs: PLATFORM_ORGS,
+      errorMessage: 'orgs unavailable',
+    },
   },
 }
 
