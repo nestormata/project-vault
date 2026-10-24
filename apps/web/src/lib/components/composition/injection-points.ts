@@ -511,6 +511,13 @@ export interface InjectionPointProps {
   'project.credentials-rotate.same-value-confirm': StandardPointProps
   'project.credentials-rotate.value': StandardPointProps
   'project.credentials-rotations-detail.content': StandardPointProps
+  'project.credentials-rotations-detail.abandon': StandardPointProps
+  'project.credentials-rotations-detail.checklist': StandardPointProps
+  'project.credentials-rotations-detail.complete': StandardPointProps
+  'project.credentials-rotations-detail.promote': StandardPointProps
+  'project.credentials-rotations-detail.retire': StandardPointProps
+  'project.credentials-rotations-detail.staged-value': StandardPointProps
+  'project.credentials-rotations-detail.summary': StandardPointProps
   'project.credentials-import.header': StandardPointProps
   'project.credentials-import.content': StandardPointProps
   'project.credentials-new.header': StandardPointProps
@@ -1064,7 +1071,16 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]#page'],
-    ['project.credentials-rotations-detail.content']
+    [
+      'project.credentials-rotations-detail.content',
+      'project.credentials-rotations-detail.summary',
+      'project.credentials-rotations-detail.staged-value',
+      'project.credentials-rotations-detail.checklist',
+      'project.credentials-rotations-detail.complete',
+      'project.credentials-rotations-detail.promote',
+      'project.credentials-rotations-detail.abandon',
+      'project.credentials-rotations-detail.retire',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
