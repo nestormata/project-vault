@@ -286,6 +286,20 @@ export interface ExtractResult {
   problems: string[]
 }
 
+/** Writes `value` as JSON to `out` through a temp file and a rename, so a failed run never leaves a
+ * half-written file; returns the problem text or null. */
+export function writeJsonAtomically(out: string, value: unknown): string | null {
+  const temp = `${out}.${process.pid}.tmp`
+  try {
+    writeFile(temp, `${JSON.stringify(value, null, 2)}\n`)
+    renamePath(temp, out)
+    return null
+  } catch (error) {
+    removeFile(temp)
+    return `cannot write --out ${out}: ${(error as Error).message}`
+  }
+}
+
 export function outProblem(out: string): string | null {
   if (pathExists(out) && statPath(out).isDirectory()) return `--out ${out} is a directory`
   const parent = dirname(out)
@@ -318,14 +332,8 @@ export async function extractClassifications(options: ExtractOptions): Promise<E
   const problem = outProblem(options.out)
   if (problem !== null) return failed([problem])
   const entries = classificationEntries(options.appRoot)
-  const temp = `${options.out}.${process.pid}.tmp`
-  try {
-    writeFile(temp, `${JSON.stringify(entries, null, 2)}\n`)
-    renamePath(temp, options.out)
-  } catch (error) {
-    removeFile(temp)
-    return failed([`cannot write --out ${options.out}: ${(error as Error).message}`])
-  }
+  const writeProblem = writeJsonAtomically(options.out, entries)
+  if (writeProblem !== null) return failed([writeProblem])
   return { ok: true, entries: entries.length, problems: [] }
 }
 

@@ -7,8 +7,8 @@ import { dirname, isAbsolute, join, posix, relative } from 'node:path'
 import type * as TypeScript from 'typescript'
 import { requirePeer } from './peers.js'
 import { manifestPathProblem, toPosix } from './paths.js'
-import { lstatPath, pathExists, removeFile, renamePath, writeFile } from './fs-access.js'
-import { outProblem, preflight, type VerifyOptions } from './verify.js'
+import { lstatPath, pathExists } from './fs-access.js'
+import { outProblem, preflight, writeJsonAtomically, type VerifyOptions } from './verify.js'
 
 export interface TsconfigOptions {
   appRoot: string
@@ -133,13 +133,7 @@ export async function extractTsconfig(options: TsconfigOptions): Promise<Tsconfi
       ...excluded.map((test) => anchored(options.out, options.appRoot, test)),
     ],
   }
-  const temp = `${options.out}.${process.pid}.tmp`
-  try {
-    writeFile(temp, `${JSON.stringify(config, null, 2)}\n`)
-    renamePath(temp, options.out)
-  } catch (error) {
-    removeFile(temp)
-    return failed([`cannot write --out ${options.out}: ${(error as Error).message}`])
-  }
+  const writeProblem = writeJsonAtomically(options.out, config)
+  if (writeProblem !== null) return failed([writeProblem])
   return { ok: true, excluded: excluded.length, problems: [] }
 }
