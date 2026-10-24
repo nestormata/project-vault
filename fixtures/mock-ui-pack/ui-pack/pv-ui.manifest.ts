@@ -223,6 +223,40 @@ export default defineUiPack({
     'notifications.home.empty': [{ component: './injections/NotificationsEmptyFill.svelte' }],
     'project.import.export-key': [{ component: './injections/ProjectImportKeyFill.svelte' }],
     'project.credentials-new.tags': [{ component: './injections/CredentialTagsFill.svelte' }],
+    // Sub-region points of Story 69-14 (platform usage and backups, credential detail value and
+    // dependencies, rotate form, rotation detail, machine user detail): render-only fills.
+    'platform.settings-resource-usage.users': [
+      { component: './injections/PlatformSettingsResourceUsageUsersFill.svelte' },
+    ],
+    'platform.settings-resource-usage.org-table': [
+      { component: './injections/PlatformSettingsResourceUsageOrgTableFill.svelte' },
+    ],
+    'platform.backups.intro': [{ component: './injections/PlatformBackupsIntroFill.svelte' }],
+    'platform.backups.list': [{ component: './injections/PlatformBackupsListFill.svelte' }],
+    'credential.detail.value-single': [
+      { component: './injections/CredentialDetailValueSingleFill.svelte' },
+    ],
+    'credential.detail.dependencies-list': [
+      { component: './injections/CredentialDetailDependenciesListFill.svelte' },
+    ],
+    'project.credentials-rotate.value': [
+      { component: './injections/ProjectCredentialsRotateValueFill.svelte' },
+    ],
+    'project.credentials-rotate.actions': [
+      { component: './injections/ProjectCredentialsRotateActionsFill.svelte' },
+    ],
+    'project.credentials-rotations-detail.summary': [
+      { component: './injections/ProjectCredentialsRotationsDetailSummaryFill.svelte' },
+    ],
+    'project.credentials-rotations-detail.checklist': [
+      { component: './injections/ProjectCredentialsRotationsDetailChecklistFill.svelte' },
+    ],
+    'project.machine-users-detail.summary': [
+      { component: './injections/ProjectMachineUsersDetailSummaryFill.svelte' },
+    ],
+    'project.machine-users-detail.keys': [
+      { component: './injections/ProjectMachineUsersDetailKeysFill.svelte' },
+    ],
     'shell.head': [{ component: './injections/HeadMarker.svelte' }],
   },
   replacements: {

@@ -456,6 +456,23 @@ replacement of the region component drops them all, and replacing one sub-region
 points (`scripts/lib/web-host/inner-region-points.test.ts`). `injection-points.json` keeps listing them with their
 host file.
 
+The second part of batch 1 (Story 69-14) splits the remaining eight components the same way:
+
+| Page                                                              | Sub-region points                                                                                                                                              |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/platform/settings/resource-usage`                               | `platform.settings-resource-usage.intro`, `.error`, `.orgs`, `.users`, `.audit-entries`, `.storage`, `.audit-log-storage`, `.allocation`, `.org-table`         |
+| `/platform/backups`                                               | `platform.backups.intro`, `.alerts`, `.list`                                                                                                                   |
+| `/projects/[projectId]/credentials/[credentialId]`                | `credential.detail.value-fields`, `.value-single`, `.value-copy-status`, `.value-edit-fields`, `.value-add-version`, `.dependencies-list`, `.dependencies-add` |
+| `/projects/[projectId]/credentials/[credentialId]/rotate`         | `project.credentials-rotate.dependencies`, `.fields`, `.field-values`, `.value`, `.notes`, `.same-value-confirm`, `.actions`                                   |
+| `/projects/[projectId]/credentials/[credentialId]/rotations/[id]` | `project.credentials-rotations-detail.summary`, `.staged-value`, `.checklist`, `.complete`, `.promote`, `.abandon`, `.retire`                                  |
+| `/projects/[projectId]/machine-users/[machineUserId]`             | `project.machine-users-detail.summary`, `.deactivate`, `.key-reveal`, `.key-issue`, `.keys`                                                                    |
+| `/recovery/[token]`                                               | `auth.recovery-detail.status`, `.codes`, `.password`, `.mfa`                                                                                                   |
+
+Some of these points render inside a `<form>` (`auth.recovery-detail.password` and `.mfa`,
+`credential.detail.value-add-version`, `.dependencies-add`): a fill that renders a button there must give it
+`type="button"`, or it submits the form. The points never receive typed or revealed values (a password, a TOTP
+code, a revealed secret): their props are `routeId`, `params` and the page's `__inject` data only.
+
 ## Hooks, header policy and protected paths
 
 Story 68-6 (design §8). A pack contributes to every SvelteKit hook without replacing PV's hooks

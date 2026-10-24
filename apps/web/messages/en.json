@@ -18,7 +18,7 @@
   "auth_login_register_link": "Register",
   "auth_login_recovery_link": "Can't access your account?",
   "auth_login_reason_default": "Sign in to continue.",
-  "auth_login_reason_registered": "If that email was available, your account has been created — sign in to continue. Already have an account? Sign in or reset your password.",
+  "auth_login_reason_registered": "Account created. Sign in to continue.",
   "auth_login_reason_session_expired": "Your session ended. Sign in again to continue.",
   "auth_login_reason_logged_out": "You have signed out.",
   "auth_login_reason_recovery_complete": "Your password has been reset. Sign in with your new password.",

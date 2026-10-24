@@ -11,6 +11,12 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Injection points between the sections of eight more large pages** (Story 69-14, DW-546). The platform
+  resource usage and backups pages, the credential secret value and dependent systems sections, the start
+  rotation form, the rotation detail page, the machine user detail page and the recovery reset page are split
+  into sub-region components, each with its own registered point. PV's rendered output is unchanged;
+  `docs/composition-kit.md` lists the points.
+
 - **Injection points between the sections of six large pages** (Story 69.10, DW-546). The users panel,
   the audit forwarding page, SSO domains, the platform audit log, the platform system settings and the
   project credentials list are split into sub-region components, each with its own registered point

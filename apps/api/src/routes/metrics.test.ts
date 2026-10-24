@@ -8,6 +8,7 @@ import { resolveTrustProxy } from '../lib/trust-proxy.js'
 vi.mock('../config/env.js', () => ({
   env: {
     NODE_ENV: 'test',
+    MACHINE_JWT_TTL_SECONDS: 3600,
     API_PORT: 3001,
     DATABASE_URL: 'postgresql://metrics-test:test@localhost:5432/test_metrics',
     CORS_ALLOWED_ORIGINS: 'http://localhost:5173',

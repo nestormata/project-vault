@@ -14,7 +14,7 @@
 <InjectionPoint name="platform.backups.before" data={data?.__inject} />
 <InjectionPoint name="platform.backups.header.actions" data={data?.__inject} />
 <!-- @region platform.backups.content -->
-<PlatformBackupsContent {data}>
+<PlatformBackupsContent pageData={data} data={data.__inject}>
   <InjectionPoint name="platform.backups.content" data={data?.__inject} />
 </PlatformBackupsContent>
 <InjectionPoint name="platform.backups.after" data={data?.__inject} />

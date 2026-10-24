@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getExtensionPanelCspHeaders,
   getHandoffSecurityHeaders,
+  getLoginReasonMessage,
   getTrustedApiBase,
   isHandoffPath,
   safeRedirectPath,
@@ -99,6 +100,18 @@ describe('frontend hardening helpers', () => {
     expect(safeRedirectPath('//evil.example/dashboard')).toBe('/dashboard')
     expect(safeRedirectPath('javascript:alert(1)')).toBe('/dashboard')
     expect(safeRedirectPath(null)).toBe('/dashboard')
+  })
+
+  it('resolves login status copy from a fixed enum', () => {
+    expect(getLoginReasonMessage('registered')).toBe('Account created. Sign in to continue.')
+    expect(getLoginReasonMessage('session-expired')).toBe(
+      'Your session ended. Sign in again to continue.'
+    )
+    expect(getLoginReasonMessage('logged-out')).toBe('You have signed out.')
+    expect(getLoginReasonMessage('recovery-complete')).toBe(
+      'Your password has been reset. Sign in with your new password.'
+    )
+    expect(getLoginReasonMessage('<script>alert(1)</script>')).toBe('Sign in to continue.')
   })
 
   it('sources API base URL only from trusted server env config', () => {
