@@ -2,7 +2,7 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
   import type { PreferenceItem } from '$lib/api/notifications.js'
-  import type { NotificationSettingsPointProps } from '$lib/components/composition/injection-points.js'
+  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
   import NotificationPreferencesHead from './NotificationPreferencesHead.svelte'
   import NotificationPreferencesHeader from './NotificationPreferencesHeader.svelte'
   import NotificationPreferencesRow from './NotificationPreferencesRow.svelte'
@@ -18,7 +18,7 @@
     data,
   }: {
     preferences: readonly PreferenceItem[]
-    flagProps: NotificationSettingsPointProps
+    flagProps: InjectionPointExtras<'settings.notifications.header'>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 </script>

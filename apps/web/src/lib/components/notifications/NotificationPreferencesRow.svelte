@@ -2,7 +2,7 @@
   import { enhance } from '$app/forms'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
-  import type { NotificationSettingsPointProps } from '$lib/components/composition/injection-points.js'
+  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { getEventTypeLabel } from '$lib/utils/event-type-labels.js'
   import type { PreferenceItem } from '$lib/api/notifications.js'
@@ -15,7 +15,7 @@
     data,
   }: {
     pref: PreferenceItem
-    flagProps: NotificationSettingsPointProps
+    flagProps: InjectionPointExtras<'settings.notifications.header'>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 </script>

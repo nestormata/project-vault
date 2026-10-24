@@ -1,7 +1,7 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
-  import type { NotificationSettingsPointProps } from '$lib/components/composition/injection-points.js'
+  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
 
   // Story 69.12: the column heads of the preference table. The point sits inside the last head
   // cell: a contribution can never land between table rows.
@@ -9,7 +9,7 @@
     flagProps,
     data,
   }: {
-    flagProps: NotificationSettingsPointProps
+    flagProps: InjectionPointExtras<'settings.notifications.header'>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 </script>
