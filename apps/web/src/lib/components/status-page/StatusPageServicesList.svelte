@@ -3,7 +3,7 @@
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
   import type { StatusPageAdminPointProps } from '$lib/components/composition/injection-points.js'
   import StatusPageServiceRow from './StatusPageServiceRow.svelte'
-  import type { ServiceRow } from './service-row.js'
+  import type { ServiceRow, ServiceRowCallbacks } from './service-row.js'
 
   // Story 69.11: the selectable services of the status page admin card (check to publish, rename,
   // reorder). The page keeps the selection state; this region renders the merged rows and hands every
@@ -19,7 +19,7 @@
     onSetDisplayName,
     onMove,
     data,
-  }: {
+  }: ServiceRowCallbacks & {
     project: StatusPageAdminPointProps['project']
     capabilities: StatusPageAdminPointProps['capabilities']
     serviceEndpoints: StatusPageAdminPointProps['serviceEndpoints']
@@ -27,9 +27,6 @@
     rows: ServiceRow[]
     selectedCount: number
     isBusy: boolean
-    onToggle: (service: { id: string; name: string }) => void
-    onSetDisplayName: (serviceId: string, displayName: string) => void
-    onMove: (index: number, direction: -1 | 1) => void | Promise<void>
   } = $props()
 </script>
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
-  import type { ServiceRow } from './service-row.js'
+  import type { ServiceRow, ServiceRowCallbacks } from './service-row.js'
 
   // Story 69.11: one row of the selectable services (checkbox, public display name, move buttons).
   let {
@@ -10,13 +10,10 @@
     onToggle,
     onSetDisplayName,
     onMove,
-  }: {
+  }: ServiceRowCallbacks & {
     row: ServiceRow
     selectedCount: number
     isBusy: boolean
-    onToggle: (service: { id: string; name: string }) => void
-    onSetDisplayName: (serviceId: string, displayName: string) => void
-    onMove: (index: number, direction: -1 | 1) => void | Promise<void>
   } = $props()
 </script>
 

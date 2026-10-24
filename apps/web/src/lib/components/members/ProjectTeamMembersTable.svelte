@@ -15,14 +15,16 @@
     onChangeRole: (member: ProjectMember, role: SettableProjectRole) => void
     onRemove: (member: ProjectMember) => void
   } = $props()
+
+  const COLUMNS = ['Email', 'Role', '']
 </script>
 
 <table class="min-w-full text-left text-sm">
   <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
     <tr>
-      <th class="px-4 py-3 font-semibold">Email</th>
-      <th class="px-4 py-3 font-semibold">Role</th>
-      <th class="px-4 py-3 font-semibold"></th>
+      {#each COLUMNS as column (column)}
+        <th class="px-4 py-3 font-semibold">{column}</th>
+      {/each}
     </tr>
   </thead>
   <tbody>
