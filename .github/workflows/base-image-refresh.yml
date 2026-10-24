@@ -100,12 +100,12 @@ jobs:
           while read -r IMG OLD NEW; do
             scripts/refresh-base-image.sh rewrite --image "$IMG" "$NEW" | tee -a "$RUNNER_TEMP/rewrites.txt"
           done < "$RUNNER_TEMP/changes.txt"
-          git add apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci deploy/fly/db/Dockerfile
+          git add apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci fixtures/mock-ui-pack/docker/web.Dockerfile deploy/fly/db/Dockerfile
           # Idempotent: if the existing refresh branch already carries exactly this change, leave
           # it (and its CI run) alone instead of force-pushing an identical tree.
           if git fetch --no-tags origin "$BRANCH" 2>/dev/null \
-            && git diff --quiet --cached "origin/${BRANCH}" -- apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci deploy/fly/db/Dockerfile \
-            && [[ -z "$(git diff --name-only "origin/${DEFAULT_BRANCH}" "origin/${BRANCH}" | grep -v -E '^(apps/api/Dockerfile|apps/web/Dockerfile|Dockerfile\.ci|deploy/fly/db/Dockerfile)$' || true)" ]]; then
+            && git diff --quiet --cached "origin/${BRANCH}" -- apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci fixtures/mock-ui-pack/docker/web.Dockerfile deploy/fly/db/Dockerfile \
+            && [[ -z "$(git diff --name-only "origin/${DEFAULT_BRANCH}" "origin/${BRANCH}" | grep -v -E '^(apps/api/Dockerfile|apps/web/Dockerfile|Dockerfile\.ci|fixtures/mock-ui-pack/docker/web\.Dockerfile|deploy/fly/db/Dockerfile)$' || true)" ]]; then
             echo "Refresh branch already up to date."
             echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0

@@ -13,6 +13,7 @@ overrides:
   "find-my-way@<9.7.0": ^9.7.0
   "devalue@<5.9.3": ^5.9.3
   "source-map-js@<1.2.2": ^1.2.2
+  "vite@>=8.3.0 <8.3.3": ^8.3.3
 onlyBuiltDependencies:
   - esbuild
   - argon2
