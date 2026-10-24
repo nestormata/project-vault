@@ -94,7 +94,7 @@ describe('InvitationAcceptContent states (Story 69.13 pin)', () => {
     resetScenario()
 
     api.peekInvitation.mockResolvedValueOnce({
-      email: 'new@acme.com',
+      email: 'invitee-new',
       accountExists: false,
       nativeLoginEnabled: false,
     })
@@ -103,14 +103,14 @@ describe('InvitationAcceptContent states (Story 69.13 pin)', () => {
     states['external-signin'] = snapshotOf(external.container)
     resetScenario()
 
-    api.peekInvitation.mockResolvedValueOnce({ email: 'new@acme.com', accountExists: false })
+    api.peekInvitation.mockResolvedValueOnce({ email: 'invitee-new', accountExists: false })
     open('?token=tok-1')
     await waitFor(() => expect(gotoMock).toHaveBeenCalled())
     states['no-account-goto'] = gotoMock.mock.calls
     states['no-account-peek-args'] = api.peekInvitation.mock.calls.map((call) => call.slice(1))
     resetScenario()
 
-    api.peekInvitation.mockResolvedValueOnce({ email: 'a@acme.com', accountExists: true })
+    api.peekInvitation.mockResolvedValueOnce({ email: 'invitee-existing', accountExists: true })
     api.getCurrentUser.mockRejectedValueOnce(new Error('401'))
     open('?token=tok-1')
     await waitFor(() => expect(gotoMock).toHaveBeenCalled())
@@ -118,7 +118,7 @@ describe('InvitationAcceptContent states (Story 69.13 pin)', () => {
     states['signed-out-accepts'] = api.acceptInvitation.mock.calls.length
     resetScenario()
 
-    api.peekInvitation.mockResolvedValueOnce({ email: 'a@acme.com', accountExists: true })
+    api.peekInvitation.mockResolvedValueOnce({ email: 'invitee-existing', accountExists: true })
     api.getCurrentUser.mockResolvedValueOnce({ userId: 'u1' })
     api.acceptInvitation.mockResolvedValueOnce({ projectId: 'p-1' })
     open('?token=tok-1')
@@ -127,7 +127,7 @@ describe('InvitationAcceptContent states (Story 69.13 pin)', () => {
     states['accepted-args'] = api.acceptInvitation.mock.calls.map((call) => call.slice(1))
     resetScenario()
 
-    api.peekInvitation.mockResolvedValueOnce({ email: 'a@acme.com', accountExists: true })
+    api.peekInvitation.mockResolvedValueOnce({ email: 'invitee-existing', accountExists: true })
     api.getCurrentUser.mockResolvedValueOnce({ userId: 'u1' })
     api.acceptInvitation.mockRejectedValueOnce(new ApiClientError(409, null, 'conflict'))
     const failed = open('?token=tok-1')

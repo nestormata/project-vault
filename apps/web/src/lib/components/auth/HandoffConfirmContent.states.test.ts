@@ -48,7 +48,7 @@ const open = (query: string, centralizeMeOrigin: string | null = null) => {
   pageMock.url = new URL(`http://localhost/handoff${query}`)
   return render(Content, { props: { centralizeMeOrigin } })
 }
-const READY = `?pendingId=${PENDING}&organizationName=Acme%20Corp&accountLabel=alex%40acme.com`
+const READY = `?pendingId=${PENDING}&organizationName=Acme%20Corp&accountLabel=Alex%20Account`
 const asText = (states: Record<string, unknown>): Record<string, string> =>
   Object.fromEntries(
     Object.entries(states).map(([key, value]) => [
