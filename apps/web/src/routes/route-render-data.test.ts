@@ -4,6 +4,10 @@ import { createRawSnippet } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { serializeWithoutNoise } from '$lib/test/dom.js'
 
+// The data-rich cases added in 69.10 render dates in the runner's local time zone. The snapshot was
+// recorded in America/Panama (UTC-5, no DST), so pin it for any runner (CI runs in UTC).
+process.env.TZ = 'America/Panama'
+
 // Story 69.5 AC-5: the DATA-RICH twin of route-render-snapshot.test.ts. That oracle renders every
 // route file against an EMPTY permissive `data`, so almost no `{#if data.x}` / `{#each}` branch is
 // exercised, and two routes throw. This one renders the same 70 route files against a FULL
