@@ -15,7 +15,7 @@
 <InjectionPoint name="platform.upgrade.before" data={data?.__inject} />
 <InjectionPoint name="platform.upgrade.header.actions" data={data?.__inject} />
 <!-- @region platform.upgrade.content -->
-<PlatformUpgradeContent {data}>
+<PlatformUpgradeContent pageData={data} data={data?.__inject}>
   <InjectionPoint name="platform.upgrade.content" data={data?.__inject} />
 </PlatformUpgradeContent>
 <InjectionPoint name="platform.upgrade.after" data={data?.__inject} />

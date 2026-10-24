@@ -351,6 +351,8 @@ export interface InjectionPointProps {
   'project.service-endpoints.header.actions': StandardPointProps
   'project.service-endpoints.not-found': EndpointListPointProps
   'project.service-endpoints.row': EndpointRowPointProps
+  'project.service-endpoints.row-status': EndpointRowPointProps
+  'project.service-endpoints.row-actions': EndpointRowPointProps
   'project.service-endpoints.table': EndpointListPointProps
   'project.services-detail.after': StandardPointProps
   'project.services-detail.before': StandardPointProps
@@ -367,6 +369,8 @@ export interface InjectionPointProps {
   'project.status-page.header': StatusPageAdminPointProps
   'project.status-page.header.actions': StandardPointProps
   'project.status-page.link': StatusPageLinkPointProps
+  'project.status-page.link-header': StatusPageLinkPointProps
+  'project.status-page.link-display': StatusPageLinkPointProps
   'project.status-page.read-only': StatusPageAdminPointProps
   'project.status-page.services': StatusPageAdminPointProps
   'project.status-page.services-list': StatusPageAdminPointProps
@@ -479,10 +483,13 @@ export interface InjectionPointProps {
   'credentials.import.header': StandardPointProps
   'credentials.import.projects': StandardPointProps
   'extensions.panels-detail.content': StandardPointProps
+  'extensions.panels-detail.panel': StandardPointProps
   'health.home.header': StandardPointProps
   'health.home.projects': StandardPointProps
   'notifications.home.header': StandardPointProps
   'notifications.home.machine-dormancy': StandardPointProps
+  'notifications.home.machine-dormancy-details': StandardPointProps
+  'notifications.home.machine-dormancy-actions': StandardPointProps
   'notifications.home.user-dormancy': StandardPointProps
   'notifications.home.tabs': StandardPointProps
   'notifications.home.list': StandardPointProps
@@ -529,6 +536,10 @@ export interface InjectionPointProps {
   'platform.settings-resource-usage.allocation': StandardPointProps
   'platform.settings-resource-usage.org-table': StandardPointProps
   'platform.upgrade.content': StandardPointProps
+  'platform.upgrade.version': StandardPointProps
+  'platform.upgrade.cli-policy': StandardPointProps
+  'platform.upgrade.procedure': StandardPointProps
+  'platform.upgrade.api-docs': StandardPointProps
   'project.home.header': StandardPointProps
   'project.home.error': StandardPointProps
   'project.home.list': StandardPointProps
@@ -921,7 +932,11 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'EndpointRowPointProps',
     ['/(app)/projects/[projectId]/service-endpoints#page'],
-    ['project.service-endpoints.row']
+    [
+      'project.service-endpoints.row',
+      'project.service-endpoints.row-status',
+      'project.service-endpoints.row-actions',
+    ]
   ),
   ...regionPoints(
     'EndpointRolePointProps',
@@ -957,7 +972,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'project.status-page.services-save',
     ]
   ),
-  ...regionPoints('StatusPageLinkPointProps', [STATUS_PAGE_HOST], ['project.status-page.link']),
+  ...regionPoints(
+    'StatusPageLinkPointProps',
+    [STATUS_PAGE_HOST],
+    [
+      'project.status-page.link',
+      'project.status-page.link-header',
+      'project.status-page.link-display',
+    ]
+  ),
   ...regionPoints(
     'StandardPointProps',
     ['/status/[token]#page'],
@@ -1080,7 +1103,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/extensions/panels/[slot]/[...subpath]#page'],
-    ['extensions.panels-detail.content']
+    ['extensions.panels-detail.content', 'extensions.panels-detail.panel']
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1093,6 +1116,8 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [
       'notifications.home.header',
       'notifications.home.machine-dormancy',
+      'notifications.home.machine-dormancy-details',
+      'notifications.home.machine-dormancy-actions',
       'notifications.home.user-dormancy',
       'notifications.home.tabs',
       'notifications.home.list',
@@ -1173,7 +1198,13 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/upgrade#page'],
-    ['platform.upgrade.content']
+    [
+      'platform.upgrade.content',
+      'platform.upgrade.version',
+      'platform.upgrade.cli-policy',
+      'platform.upgrade.procedure',
+      'platform.upgrade.api-docs',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',

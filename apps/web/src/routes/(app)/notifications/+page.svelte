@@ -54,7 +54,7 @@
   </NotificationsHeader>
 
   <!-- @region notifications.home.machine-dormancy -->
-  <MachineDormancyAlerts dormancyAlerts={data.dormancyAlerts}>
+  <MachineDormancyAlerts dormancyAlerts={data.dormancyAlerts} data={data?.__inject}>
     <InjectionPoint name="notifications.home.machine-dormancy" data={data?.__inject} />
   </MachineDormancyAlerts>
 

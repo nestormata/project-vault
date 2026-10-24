@@ -24,3 +24,13 @@ export function serializeWithoutNoise(root: Element): string {
   for (const script of copy.querySelectorAll('script')) script.textContent = ''
   return copy.innerHTML
 }
+
+/**
+ * `serializeWithoutNoise` with the indentation that follows a line break removed, for the split
+ * pins in `*.states.test.ts`: moving markup into a sub-region component changes its nesting, which
+ * re-indents the wrapped prose inside a text node. Every other whitespace character is kept, so a
+ * stray whitespace text node still shows.
+ */
+export function serializeIgnoringIndent(root: Element): string {
+  return serializeWithoutNoise(root).replace(/\n[ \t]+/g, '\n')
+}
