@@ -154,6 +154,8 @@
         onChangeRole={onChangeMemberRole}
         onRemove={onRemoveMember}
         onTransfer={onTransferOwnership}
+        pointProps={baseProps}
+        data={data?.__inject}
       /><InjectionPoint
         name="project.members.access"
         props={{ ...baseProps, members: data.members }}

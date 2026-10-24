@@ -433,6 +433,9 @@ export interface InjectionPointProps {
   'settings.notifications.routing': NotificationRoutingPointProps
   'settings.notifications.test': NotificationSettingsPointProps
   'project.members.access': ProjectMembersPointProps
+  'project.members.team-error': ProjectMembersBasePointProps
+  'project.members.team-table': ProjectMembersBasePointProps
+  'project.members.team-transfer': ProjectMembersBasePointProps
   'project.members.header': ProjectMembersBasePointProps
   'project.members.invitations': ProjectMembersInvitationsPointProps
   'project.members.invite': ProjectMembersBasePointProps
@@ -924,7 +927,14 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'ProjectMembersBasePointProps',
     [MEMBERS_PAGE_HOST],
-    ['project.members.header', 'project.members.invite', 'project.members.notice']
+    [
+      'project.members.header',
+      'project.members.invite',
+      'project.members.notice',
+      'project.members.team-error',
+      'project.members.team-table',
+      'project.members.team-transfer',
+    ]
   ),
   ...regionPoints('ProjectMembersPointProps', [MEMBERS_PAGE_HOST], ['project.members.access']),
   ...regionPoints(
