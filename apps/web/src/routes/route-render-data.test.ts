@@ -574,6 +574,31 @@ const PLATFORM_ORGS = [
     memberCount: 3,
   },
 ]
+// Story 69.11: realistic status page admin data. The "Services shown" card branches on the number
+// of selected services, the endpoints list and the capability gate, which a permissive value never
+// separates. Recorded BEFORE the card was split into sub-region components.
+const STATUS_PAGE_ENDPOINTS = [
+  { id: 'se-1', name: 'API gateway' },
+  { id: 'se-2', name: 'Web app' },
+  { id: 'se-3', name: 'Billing' },
+]
+const STATUS_PAGE_BASE = {
+  ...OWNER_READY,
+  canManage: true,
+  projectId: 'p-1',
+  origin: 'https://vault.example.com',
+  capabilities: { 'monitoring.public-status-page': true },
+  serviceEndpoints: STATUS_PAGE_ENDPOINTS,
+  config: {
+    enabled: true,
+    token: 'tok-123',
+    legacyToken: false,
+    services: [
+      { serviceId: 'se-1', displayName: 'Gateway' },
+      { serviceId: 'se-2', displayName: 'Website' },
+    ],
+  },
+}
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -807,6 +832,33 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
       ...OWNER_READY,
       orgs: PLATFORM_ORGS,
       errorMessage: 'orgs unavailable',
+    },
+  },
+  '/(app)/projects/[projectId]/status-page/+page.svelte': {
+    'status-page-services-selected': STATUS_PAGE_BASE,
+    'status-page-one-selected': {
+      ...STATUS_PAGE_BASE,
+      config: {
+        ...STATUS_PAGE_BASE.config,
+        services: [{ serviceId: 'se-3', displayName: 'Payments' }],
+      },
+    },
+    'status-page-none-selected': {
+      ...STATUS_PAGE_BASE,
+      config: { ...STATUS_PAGE_BASE.config, services: [] },
+    },
+    'status-page-no-endpoints': {
+      ...STATUS_PAGE_BASE,
+      serviceEndpoints: [],
+      config: { ...STATUS_PAGE_BASE.config, services: [] },
+    },
+    'status-page-capability-denied': {
+      ...STATUS_PAGE_BASE,
+      capabilities: { 'monitoring.public-status-page': false },
+    },
+    'status-page-disabled': {
+      ...STATUS_PAGE_BASE,
+      config: { enabled: false, token: null, legacyToken: false, services: [] },
     },
   },
 }
