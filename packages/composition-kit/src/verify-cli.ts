@@ -19,6 +19,7 @@ import {
   type VerifyReport,
 } from './verify.js'
 import { statPath } from './fs-access.js'
+import { extractTsconfig } from './typecheck-config.js'
 
 const USAGE = `Usage: pv-verify [options]
 
@@ -29,9 +30,12 @@ disables or ignores a step or a guard.
   --app <dir>        the composed app root (default: the working directory)
   --host <dir>       the web-host directory (default: resolved from the app root)
   --pack <dir>       the UI pack: also regenerate the lock and fail when the committed one is stale
-  --only <step>      run one step: guards, tests or classifications
+  --only <step>      run one step: guards, tests, classifications or tsconfig
   --out <file>       with --only classifications: write the route classification file the runtime
                      route audit reads (--classifications); no guards or tests run
+                     with --only tsconfig: write the composed typecheck tsconfig (extends the app's
+                     tsconfig.json, excludes exactly the lock's excludedPvTests); run
+                     svelte-check --tsconfig <file>. Rerun after every pv-compose
   --explain          map composed paths in findings back to the pack source files
   --json             print a stable JSON document instead of text
   -h, --help         print this help
@@ -119,24 +123,27 @@ function isDirectory(path: string): boolean {
   }
 }
 
-/** The guards or tests step (`--only` was validated by `outProblem`); classifications is not one. */
+/** The guards or tests step (`--only` was validated by `outProblem`); the file steps are not one. */
 function stepOf(only: string | undefined): VerifyOptions['only'] {
   return only === 'guards' || only === 'tests' ? only : undefined
 }
 
-const STEPS = new Set(['guards', 'tests', 'classifications'])
+const STEPS = new Set(['guards', 'tests', 'classifications', 'tsconfig'])
 
 /** A usage problem with `--only`/`--out`: `--out` belongs to the classifications step alone. */
 function outProblem(only: string | undefined, out: string | undefined): string | null {
   if (only !== undefined && !STEPS.has(only)) {
-    return `--only must be guards, tests or classifications, got "${only}"`
+    return `--only must be guards, tests, classifications or tsconfig, got "${only}"`
   }
   if (only === 'classifications') {
     return out === undefined
       ? '--only classifications needs --out <file>, the classification file to write'
       : null
   }
-  return out === undefined ? null : '--out only applies to --only classifications'
+  if (only === 'tsconfig') {
+    return out === undefined ? '--only tsconfig needs --out <file>, the tsconfig to write' : null
+  }
+  return out === undefined ? null : '--out only applies to --only classifications or tsconfig'
 }
 
 interface Parsed {
@@ -146,12 +153,13 @@ interface Parsed {
   only?: VerifyOptions['only']
   json: boolean
   explain: boolean
-  /** Set for `--only classifications`: the absolute file to write. */
-  classifyOut?: string
+  /** Set for `--only classifications` or `--only tsconfig`: the absolute file to write. */
+  fileOut?: string
+  fileStep?: 'classifications' | 'tsconfig'
 }
 
-async function runExtract(parsed: Parsed & { classifyOut: string }, io: CliIo): Promise<number> {
-  const { appRoot, hostDir, packRoot, classifyOut, json } = parsed
+async function runExtract(parsed: Parsed & { fileOut: string }, io: CliIo): Promise<number> {
+  const { appRoot, hostDir, packRoot, fileOut: classifyOut, json } = parsed
   const result = await extractClassifications({
     appRoot,
     hostDir,
@@ -167,6 +175,23 @@ async function runExtract(parsed: Parsed & { classifyOut: string }, io: CliIo): 
     const lines = result.problems.map((line) => TOOL + ': ' + line)
     io.err(lines.join('\n') + '\n')
   }
+  return result.ok ? EXIT.ok : EXIT.failed
+}
+
+async function runTsconfig(parsed: Parsed & { fileOut: string }, io: CliIo): Promise<number> {
+  const { appRoot, hostDir, packRoot, fileOut, json } = parsed
+  const result = await extractTsconfig({
+    appRoot,
+    hostDir,
+    out: fileOut,
+    ...(packRoot === undefined ? {} : { packRoot }),
+  })
+  if (json) {
+    io.out(`${JSON.stringify({ ok: result.ok, excluded: result.excluded })}\n`)
+  } else if (result.ok) {
+    io.out(`${TOOL}: tsconfig: ${result.excluded} excluded PV test(s) written\n`)
+  }
+  if (!result.ok) io.err(result.problems.map((line) => `${TOOL}: ${line}`).join('\n') + '\n')
   return result.ok ? EXIT.ok : EXIT.failed
 }
 
@@ -208,7 +233,9 @@ function optionalFields(values: Values): Partial<Parsed> {
   const only = stepOf(values.only)
   return {
     // Relative to the working directory, not to --app.
-    ...(values.only === 'classifications' ? { classifyOut: resolve(values.out ?? '') } : {}),
+    ...(values.only === 'classifications' || values.only === 'tsconfig'
+      ? { fileStep: values.only, fileOut: resolve(values.out ?? '') }
+      : {}),
     ...(packRoot === undefined ? {} : { packRoot }),
     ...(only === undefined ? {} : { only }),
   }
@@ -230,8 +257,11 @@ export async function runVerifyCli(
     return EXIT.failed
   }
   try {
-    const { json, explain, classifyOut, ...options } = parsed
-    if (classifyOut !== undefined) return await runExtract({ ...parsed, classifyOut }, io)
+    const { json, explain, fileOut, fileStep, ...options } = parsed
+    if (fileOut !== undefined && fileStep === 'tsconfig') {
+      return await runTsconfig({ ...parsed, fileOut }, io)
+    }
+    if (fileOut !== undefined) return await runExtract({ ...parsed, fileOut }, io)
     const report = await verify(options)
     io.out(json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report, explain))
     return report.ok ? EXIT.ok : EXIT.failed

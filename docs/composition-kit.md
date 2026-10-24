@@ -20,7 +20,7 @@ run kit code and do not change.
 ## The pipeline
 
 ```text
-pv-compose  ->  paraglide compile  ->  svelte-kit sync  ->  svelte-check  ->  guards and tests  ->  vite build
+pv-compose  ->  paraglide compile  ->  svelte-kit sync  ->  pv-verify --only tsconfig  ->  svelte-check --tsconfig  ->  guards and tests  ->  vite build
 ```
 
 1. **Tuple check, before any copying** (below).
@@ -859,6 +859,21 @@ publishes `web-host@1.4.0-rc.1` but the kit keeps its own version.
 Maintainer-only, never done by CI or an agent (Story 68-13): the npm trusted-publisher entry for the
 kit, a bootstrap publish if npm needs the package to exist first, the `Composition kit integration`
 required check, the first real publish, and promotion to `latest`.
+
+## Type-checking a composed tree
+
+PV's tests of a subject the pack overrode, replaced or removed are excluded from the composed Vitest run
+(`excludedPvTests` in the lock) and, since kit 0.10.0, from the composed `svelte-check` too, from the same list:
+`pv-verify --only tsconfig --out tsconfig.composed.json` writes a tsconfig extending the app's own, then
+`svelte-check --tsconfig ./tsconfig.composed.json`. The selection policy stays the one in `test-subjects.json`
+and the kit's `excluded-tests.ts`; the tsconfig generator only reads the lock after the `pv-verify` preflight
+(which recomputes the list from the lock's own records), so there is no second selection policy. PV's own tree
+runs `svelte-check` over `apps/web/tsconfig.json` unchanged, so every PV test stays checked natively. The CI
+job `Composition kit integration` proves it on the packed tarballs: the `compose` and `compose-types-negative`
+variants run `svelte-check` over the generated file, and `compose-mock-pack` (also the `Mock UI pack mechanism
+e2e` job) adds a control run that is red on the app's own tsconfig, an exclusion-equality check and a planted
+type error in each retained category. Usage and
+failure modes: `packages/composition-kit/README.md`, section "Guards and tests over a composed tree".
 
 ## Verifying
 

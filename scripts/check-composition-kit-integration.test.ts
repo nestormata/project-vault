@@ -384,6 +384,30 @@ describe('composition kit integration: wiring (Story 68.3 AC-12)', () => {
     expect(verify).toContain('pv-verify: guards: .* passed, 0 failed')
   })
 
+  it('the composed svelte-check runs over the kit-generated tsconfig, never a hand-written exclusion list (Story 68-26)', () => {
+    const fixture = (name: string): string =>
+      readFileSync(join(repositoryRoot, 'scripts/web-host-consumer-fixture', name), 'utf8')
+    const mode = fixture('compose-mode.sh')
+    const mock = fixture('compose-mock-pack.sh')
+    expect(mode).toContain('--only tsconfig --out "$APP/tsconfig.composed.json"')
+    expect(mode).toContain('--tsconfig ./tsconfig.composed.json --fail-on-warnings')
+    expect(mode).not.toContain('--tsconfig ./tsconfig.json')
+    expect(mock).toContain('compose_write_check_tsconfig')
+    expect(mock).not.toContain('tsconfig.mock-check.json')
+    // The control and the planted-error proofs keep the generated config from being vacuous.
+    expect(mock).toContain('mock_pack_svelte_check_run ./tsconfig.json')
+    expect(mock).toContain('mock_pack_planted_type_errors')
+  })
+
+  it("PV's own svelte-check keeps checking every PV test: the native tsconfig excludes no test (Story 68-26 AC-3)", () => {
+    const native = JSON.parse(
+      readFileSync(join(repositoryRoot, 'apps/web/tsconfig.json'), 'utf8')
+    ) as {
+      exclude?: string[]
+    }
+    expect(native.exclude).toEqual(['node_modules'])
+  })
+
   it('make composition-kit-integration runs it with COMPOSITION_KIT_INTEGRATION=1', () => {
     const makefile = readFileSync(join(repositoryRoot, 'Makefile'), 'utf8')
     expect(makeRecipe(makefile, 'composition-kit-integration')).toContain(

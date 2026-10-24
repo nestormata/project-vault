@@ -270,7 +270,7 @@ version. All mismatches are reported in one run. There is no flag to skip the ch
 
 ## Guards and tests over a composed tree
 
-`pv-verify --app <dir> [--host <dir>] [--pack <dir>] [--only guards|tests|classifications --out <file>] [--explain] [--json]`
+`pv-verify --app <dir> [--host <dir>] [--pack <dir>] [--only guards|tests|classifications|tsconfig --out <file>] [--explain] [--json]`
 runs, in order, and reports everything in one run: (1) **preflight**: the committed lock exists, matches
 the web-host, and its generated guard entries are untouched (`--pack` also regenerates the lock like
 `pv-compose --check`); (2) **guards**: every guard in web-host's `manifests/guards.json` over the
@@ -281,7 +281,38 @@ the same plugins as the build (`pvHooks()`, `pvNav()`, `pvReplace()`); the confi
 hints when a failing suite is one of them). An app with no such config fails the step; the kit no longer
 generates one. No coverage gate (CM owns its coverage policy). Exit `0` ok, `1` a guard, test or integrity
 failure, `2` usage. A web-host without a guard registry fails (never silently skips); upgrade it.
-`pv-verify` does not run `svelte-check` or lint (your pipeline's own steps).
+`pv-verify` does not run `svelte-check` or lint (your pipeline's own steps), but it writes the tsconfig
+your `svelte-check` step uses (next section).
+
+**`svelte-check` over a composed tree.** PV's tests of a subject you overrode, replaced or removed
+(`excludedPvTests`) expect PV's interface, so they must not constrain your replacement's types, exactly
+as they do not run under Vitest. `pv-verify --app <dir> --only tsconfig --out tsconfig.composed.json`
+writes a tsconfig that `extends` your app's `tsconfig.json` and whose `exclude` is the `exclude` that file
+effectively has (TypeScript itself reads it through the `extends` chain, including SvelteKit's
+`.svelte-kit/tsconfig.json`; an extending config's `exclude` replaces the inherited one, so it is repeated;
+TypeScript's default when none sets one) plus exactly the lock's `excludedPvTests`, as exact paths relative
+to the generated file. `include`, `compilerOptions` and the generated route types stay yours, so every other
+file (CM tests, every PV test with an unchanged subject, production sources, `./$types`) is still checked. Run it after `svelte-kit sync` and before
+`svelte-check`:
+
+```bash
+pv-compose --pack <pack> && paraglide compile ... && svelte-kit sync
+pv-verify --app <dir> --only tsconfig --out tsconfig.composed.json   # same preflight as pv-verify
+svelte-check --tsconfig ./tsconfig.composed.json --fail-on-warnings
+```
+
+Gitignore `tsconfig.composed.json` and regenerate it on every run. It fails closed (exit `1`, nothing
+written) on a missing lock, a lock for another web-host release, tampered guard entries, an
+`excludedPvTests` that differs from what the lock's own overrides, removals and replacements imply (a
+hand edit), an entry that is not an exact path to an existing `.test.ts` file of the app (absolute, `..`, backslash,
+a glob, a directory such as `src/lib`, a missing file), an app tsconfig TypeScript cannot read or reports
+any diagnostic for (every config diagnostic is fatal; run `svelte-kit sync` first) and an `--out` that is a
+directory. Entries that TypeScript resolves itself (`${configDir}` templates, absolute paths) are copied
+through unchanged. A failed run keeps the previous `--out` file untouched, so a stale file can look
+current: make the pipeline stop on a non-zero exit (`set -e`) before running `svelte-check`. In CI pass
+`--pack <pack>` too: it regenerates the lock like `pv-compose --check`, so a stale committed lock fails
+instead of being trusted. If a retained test imports an excluded test or support module the error stays
+visible: the list is never widened to hide it. PV's own tree runs `svelte-check` with no exclusions.
 
 **Route classifications for the runtime route audit.** A pack that adds raw (non-`secureRoute`) API routes
 classifies them in `guards.routeClassifications`, one entry per route in the audit's own shape:
