@@ -63,6 +63,21 @@ describe('control group self-tests: a deliberate change turns the check red (AC-
     expect(emptyPointNames(clean)).toEqual(['shell.head'])
   })
 
+  it('reads the comment-only module markers of rolldown 1.2 (no region end)', () => {
+    const files = {
+      'a.js': [
+        '// \\0virtual:pv-inject/shell.head',
+        'var shell_head_default = [{ id: "x" }];',
+        '// \\0virtual:pv-inject/shell.foot',
+        'var shell_foot_default = [];',
+        '// src/lib/Other.svelte',
+        'var other = [{ id: "y" }];',
+      ].join('\n'),
+    }
+    expect(emptyPointNames(files)).toEqual(['shell.foot', 'shell.head'])
+    expect(emptyVirtualModuleProblems(files)).toHaveLength(1)
+  })
+
   it('names a non-empty injection provider', () => {
     const problems = emptyVirtualModuleProblems({
       'a.js': REGION(SHELL_HEAD, 'var shell_head_default = [{ id: "x" }];'),

@@ -51,14 +51,14 @@
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
-    "vite": "^8.3.2",
+    "vite": "^8.3.5",
     "vitest": "^5.0.3"
   },
   "dependencies": {
     "@inlang/paraglide-js": "^2.25.4",
     "@project-vault/extension-api": "workspace:*",
     "@project-vault/shared": "workspace:*",
-    "dompurify": "3.4.16",
+    "dompurify": "3.4.17",
     "undici": "7.29.1"
   }
 }
