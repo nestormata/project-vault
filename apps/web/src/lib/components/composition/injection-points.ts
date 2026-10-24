@@ -500,6 +500,14 @@ export interface InjectionPointProps {
   'project.credentials-import.content': StandardPointProps
   'project.credentials-new.header': StandardPointProps
   'project.credentials-new.form': StandardPointProps
+  'project.credentials-new.name': StandardPointProps
+  'project.credentials-new.template': StandardPointProps
+  'project.credentials-new.value': StandardPointProps
+  'project.credentials-new.fields': StandardPointProps
+  'project.credentials-new.description': StandardPointProps
+  'project.credentials-new.tags': StandardPointProps
+  'project.credentials-new.error': StandardPointProps
+  'project.credentials-new.submit': StandardPointProps
   'project.domains.list': StandardPointProps
   'project.domains-detail.content': StandardPointProps
   'project.domains-new.header': StandardPointProps
@@ -1045,7 +1053,18 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials/new#page'],
-    ['project.credentials-new.header', 'project.credentials-new.form']
+    [
+      'project.credentials-new.header',
+      'project.credentials-new.form',
+      'project.credentials-new.name',
+      'project.credentials-new.template',
+      'project.credentials-new.value',
+      'project.credentials-new.fields',
+      'project.credentials-new.description',
+      'project.credentials-new.tags',
+      'project.credentials-new.error',
+      'project.credentials-new.submit',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
