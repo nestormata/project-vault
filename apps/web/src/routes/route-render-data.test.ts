@@ -599,6 +599,24 @@ const STATUS_PAGE_BASE = {
     ],
   },
 }
+// Story 69.11: realistic project members. The team card branches on the member role (owner badge vs
+// role select), an empty list and the transfer-ownership gate, none of which a permissive value
+// separates. Recorded BEFORE the team panel was split into sub-region components.
+const PROJECT_MEMBERS = [
+  { userId: 'u-owner', displayName: 'Olive Owner', email: 'olive@example.com', role: 'owner' },
+  { userId: 'u-admin', displayName: 'Adam Admin', email: 'adam@example.com', role: 'admin' },
+  { userId: 'u-view', displayName: 'Vera Viewer', email: 'vera@example.com', role: 'viewer' },
+]
+const MEMBERS_PAGE = {
+  ...OWNER_READY,
+  projectId: 'p-1',
+  userId: 'u-owner',
+  canManage: true,
+  canManageMembers: true,
+  canTransferOwnership: true,
+  members: PROJECT_MEMBERS,
+  invitations: [],
+}
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -860,6 +878,17 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
       ...STATUS_PAGE_BASE,
       config: { enabled: false, token: null, legacyToken: false, services: [] },
     },
+  },
+  '/(app)/projects/[projectId]/members/+page.svelte': {
+    'members-owner-transfer': MEMBERS_PAGE,
+    'members-no-transfer': { ...MEMBERS_PAGE, canTransferOwnership: false },
+    'members-only-owner': {
+      ...MEMBERS_PAGE,
+      members: PROJECT_MEMBERS.slice(0, 1),
+    },
+    'members-empty': { ...MEMBERS_PAGE, members: [] },
+    'members-no-manage-members': { ...MEMBERS_PAGE, canManageMembers: false },
+    'members-read-only': { ...MEMBERS_PAGE, canManage: false, canManageMembers: false },
   },
 }
 
