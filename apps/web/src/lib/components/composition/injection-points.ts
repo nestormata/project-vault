@@ -584,6 +584,11 @@ export interface InjectionPointProps {
   'project.import.submit': StandardPointProps
   'project.new.header': StandardPointProps
   'project.new.form': StandardPointProps
+  'project.new.name': StandardPointProps
+  'project.new.slug': StandardPointProps
+  'project.new.description': StandardPointProps
+  'project.new.error': StandardPointProps
+  'project.new.submit': StandardPointProps
   'project.preview.content': StandardPointProps
   'settings.home.header': StandardPointProps
   'settings.audit-access-report.header': StandardPointProps
@@ -1274,7 +1279,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/new#page'],
-    ['project.new.header', 'project.new.form']
+    [
+      'project.new.header',
+      'project.new.form',
+      'project.new.name',
+      'project.new.slug',
+      'project.new.description',
+      'project.new.error',
+      'project.new.submit',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',

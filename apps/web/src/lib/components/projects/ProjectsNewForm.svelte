@@ -4,12 +4,19 @@
   import { resolve } from '$app/paths'
   import { goto } from '$app/navigation'
   import { createProject, suggestProjectSlug } from '$lib/api/projects.js'
-  import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import ProjectsNewDescription from './ProjectsNewDescription.svelte'
+  import ProjectsNewError from './ProjectsNewError.svelte'
+  import ProjectsNewName from './ProjectsNewName.svelte'
+  import ProjectsNewSlug from './ProjectsNewSlug.svelte'
+  import ProjectsNewSubmit from './ProjectsNewSubmit.svelte'
 
-  let { children }: { children?: Snippet } = $props()
+  // Story 69.12: the form owns every typed value and the submit; each field group is a sub-region.
+  // `data` is the page's `__inject` map.
+  let {
+    data,
+    children,
+  }: { data?: Record<string, readonly unknown[]> | undefined; children?: Snippet } = $props()
 
-  const SLUG_PATTERN = '^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$'
   let name = $state('')
   let slug = $state('')
   let description = $state('')
@@ -67,71 +74,13 @@
     void submitForm()
   }}
 >
-  <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="project-name">Name</label>
-    <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-3"
-      id="project-name"
-      type="text"
-      value={name}
-      maxlength="128"
-      required
-      oninput={(event) => updateName(event.currentTarget.value)}
-      aria-describedby="project-name-help"
-    />
-    <FormHelpText id="project-name-help" kind="text" />
-    {#if fieldErrors.name}
-      <p class="text-sm text-red-700">{fieldErrors.name[0]}</p>
-    {/if}
-  </div>
+  <ProjectsNewName {name} error={fieldErrors.name?.[0]} onInput={updateName} {data} />
 
-  <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="project-slug">Slug</label>
-    <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-3"
-      id="project-slug"
-      type="text"
-      value={slug}
-      minlength="3"
-      maxlength="50"
-      pattern={SLUG_PATTERN}
-      required
-      oninput={(event) => updateSlug(event.currentTarget.value)}
-      aria-describedby="project-slug-help"
-    />
-    <FormHelpText id="project-slug-help" kind="text" />
-    <p class="text-sm text-slate-600">Use 3-50 lowercase letters, numbers, and hyphens.</p>
-    {#if slugError}
-      <p class="text-sm text-red-700" role="alert">{slugError}</p>
-    {:else if fieldErrors.slug}
-      <p class="text-sm text-red-700">{fieldErrors.slug[0]}</p>
-    {/if}
-  </div>
+  <ProjectsNewSlug {slug} {slugError} error={fieldErrors.slug?.[0]} onInput={updateSlug} {data} />
 
-  <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="project-description">Description</label>
-    <textarea
-      class="min-h-28 w-full rounded-xl border border-slate-300 px-3 py-3"
-      id="project-description"
-      bind:value={description}
-      maxlength="512"
-      aria-describedby="project-description-help"></textarea>
-    <FormHelpText id="project-description-help" kind="text" />
-    {#if fieldErrors.description}
-      <p class="text-sm text-red-700">{fieldErrors.description[0]}</p>
-    {/if}
-  </div>
+  <ProjectsNewDescription bind:description error={fieldErrors.description?.[0]} {data} />
 
-  {#if errorMessage}
-    <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-      {errorMessage}
-    </p>
-  {/if}
+  <ProjectsNewError {errorMessage} {data} />
 
-  <FormSubmitRow
-    submitLabel="Create project"
-    pendingLabel="Creating..."
-    cancelHref="/projects"
-    {submitting}
-  />
+  <ProjectsNewSubmit {submitting} {data} />
 </form>
