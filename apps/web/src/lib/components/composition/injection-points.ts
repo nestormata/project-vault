@@ -188,6 +188,8 @@ export interface InjectionPointProps {
   'credential.detail.after': CredentialPointProps
   'credential.detail.before': CredentialPointProps
   'credential.detail.dependencies': CredentialPointProps
+  'credential.detail.dependencies-add': CredentialPointProps
+  'credential.detail.dependencies-list': CredentialPointProps
   'credential.detail.footer': CredentialPointProps
   'credential.detail.header.actions': CredentialPointProps
   'credential.detail.lifecycle': CredentialPointProps
@@ -709,6 +711,8 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [
       'credential.detail.actions',
       'credential.detail.dependencies',
+      'credential.detail.dependencies-list',
+      'credential.detail.dependencies-add',
       'credential.detail.footer',
       'credential.detail.lifecycle',
       'credential.detail.metadata',
