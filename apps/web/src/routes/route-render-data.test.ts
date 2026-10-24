@@ -420,7 +420,7 @@ const ERASURE_BASE = {
   ...OWNER_READY,
   userId: 'u-erase',
   requestId: 'req-1',
-  userEmail: 'jane.doe@example.com',
+  userEmail: 'jane.doe@example',
 }
 const ERASURE_INVENTORY = {
   tables: [
@@ -503,22 +503,22 @@ const EXTENSIONS_ALLOWED = {
 const EXTERNAL_IDENTITIES = [
   {
     id: 'ei-1',
-    email: 'alex@example.com',
+    email: 'alex@example',
     providerName: 'test.mock-sso-extension',
     externalSubject: 'alex-sso-subject-123',
     createdAt: '2026-10-01T10:00:00.000Z',
   },
   {
     id: 'ei-2',
-    email: 'sam@example.com',
+    email: 'sam@example',
     providerName: 'corp.idp',
     externalSubject: 'sam-subject',
     createdAt: '2026-10-02T11:30:00.000Z',
   },
 ]
 const EXTERNAL_IDENTITY_USERS = [
-  { userId: 'u-alex', email: 'alex@example.com' },
-  { userId: 'u-sam', email: 'sam@example.com' },
+  { userId: 'u-alex', email: 'alex@example' },
+  { userId: 'u-sam', email: 'sam@example' },
 ]
 // Story 69.11: a realistic access report. The page branches on the report's users (status,
 // projects), its page number and `hasNext`, the `asOf` date and the load error, none of which a
@@ -603,9 +603,9 @@ const STATUS_PAGE_BASE = {
 // role select), an empty list and the transfer-ownership gate, none of which a permissive value
 // separates. Recorded BEFORE the team panel was split into sub-region components.
 const PROJECT_MEMBERS = [
-  { userId: 'u-owner', displayName: 'Olive Owner', email: 'olive@example.com', role: 'owner' },
-  { userId: 'u-admin', displayName: 'Adam Admin', email: 'adam@example.com', role: 'admin' },
-  { userId: 'u-view', displayName: 'Vera Viewer', email: 'vera@example.com', role: 'viewer' },
+  { userId: 'u-owner', displayName: 'Olive Owner', email: 'olive@example', role: 'owner' },
+  { userId: 'u-admin', displayName: 'Adam Admin', email: 'adam@example', role: 'admin' },
+  { userId: 'u-view', displayName: 'Vera Viewer', email: 'vera@example', role: 'viewer' },
 ]
 const MEMBERS_PAGE = {
   ...OWNER_READY,

@@ -22,8 +22,9 @@ export function importedCountRows(
   counts: Record<string, number>
 ): Array<{ label: string; count: number }> {
   const known = new Set(COUNT_LABELS.map(([key]) => key))
+  const byKey = new Map(Object.entries(counts))
   const rows = COUNT_LABELS.flatMap(([key, label]) => {
-    const count = counts[key]
+    const count = byKey.get(key)
     return isPositiveCount(count) ? [{ label: label(), count }] : []
   })
   const unknown = Object.entries(counts).flatMap(([key, count]) =>

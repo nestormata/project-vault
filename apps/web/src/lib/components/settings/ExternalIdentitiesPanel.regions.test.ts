@@ -26,20 +26,20 @@ const fills = Object.fromEntries(POINTS.map((point) => [point, [{ marker: `fill:
 const IDENTITIES = [
   {
     id: 'ei-1',
-    email: 'alex@example.com',
+    email: 'alex@example',
     providerName: 'p.one',
     externalSubject: 'alex-subject',
     createdAt: '2026-10-01T10:00:00.000Z',
   },
   {
     id: 'ei-2',
-    email: 'sam@example.com',
+    email: 'sam@example',
     providerName: 'p.two',
     externalSubject: 'sam-subject',
     createdAt: '2026-10-02T10:00:00.000Z',
   },
 ]
-const USERS = [{ userId: 'u-alex', email: 'alex@example.com' }]
+const USERS = [{ userId: 'u-alex', email: 'alex@example' }]
 const allowed = (overrides: Record<string, unknown> = {}) => ({
   allowed: true,
   mfaRequired: false,

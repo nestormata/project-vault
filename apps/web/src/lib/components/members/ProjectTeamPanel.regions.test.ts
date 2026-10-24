@@ -17,8 +17,8 @@ const POINTS = [
 ] as const
 const fills = Object.fromEntries(POINTS.map((point) => [point, [{ marker: `fill:${point}` }]]))
 const MEMBERS = [
-  { userId: 'u1', displayName: 'Olive Owner', email: 'olive@example.com', role: 'owner' },
-  { userId: 'u2', displayName: 'Adam Admin', email: 'adam@example.com', role: 'admin' },
+  { userId: 'u1', displayName: 'Olive Owner', email: 'olive@example', role: 'owner' },
+  { userId: 'u2', displayName: 'Adam Admin', email: 'adam@example', role: 'admin' },
 ]
 const POINT_PROPS = {
   projectId: 'p1',
@@ -107,7 +107,7 @@ describe('ProjectTeamPanel sub-regions (probe order)', () => {
         expect.arrayContaining(['projectId', 'userId', 'canManage', 'canManageMembers'])
       )
       expect(keys).not.toContain('members')
-      expect(probe(point).textContent).not.toContain('olive@example.com')
+      expect(probe(point).textContent).not.toContain('olive@example')
     }
   })
 })
@@ -116,9 +116,9 @@ describe('ProjectTeamPanel row actions (interaction)', () => {
   it('shows an owner as a badge without role select or remove, and calls back for others', async () => {
     mount()
     expect(screen.getByText('owner')).toBeTruthy()
-    expect(screen.queryByLabelText('Role for olive@example.com')).toBeNull()
+    expect(screen.queryByLabelText('Role for olive@example')).toBeNull()
     expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(1)
-    await fireEvent.change(screen.getByLabelText('Role for adam@example.com'), {
+    await fireEvent.change(screen.getByLabelText('Role for adam@example'), {
       target: { value: 'viewer' },
     })
     expect(callbacks.onChangeRole).toHaveBeenCalledWith(MEMBERS[1], 'viewer')

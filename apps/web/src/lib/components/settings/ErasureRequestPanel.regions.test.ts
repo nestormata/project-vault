@@ -20,7 +20,7 @@ const POINTS = [
   'settings.users-erasure-detail.report',
 ] as const
 const fills = Object.fromEntries(POINTS.map((point) => [point, [{ marker: `fill:${point}` }]]))
-const BASE = { orgRole: 'owner', userId: 'u1', requestId: 'r1', userEmail: 'jane@example.com' }
+const BASE = { orgRole: 'owner', userId: 'u1', requestId: 'r1', userEmail: 'jane@example' }
 const INVENTORY = { tables: [{ table: 'org_users', rowCount: 1, piiFields: ['email'] }] }
 const REPORT = {
   executedAt: '2026-10-05T12:30:00.000Z',
@@ -125,7 +125,7 @@ describe('ErasureRequestPanel execute zone state (interaction)', () => {
     const execute = screen.getByRole('button', { name: 'Execute erasure' }) as HTMLButtonElement
     expect(execute.disabled).toBe(true)
     await fireEvent.input(document.getElementById('erasure-execute-confirm') as HTMLElement, {
-      target: { value: 'Jane@Example.com' },
+      target: { value: 'Jane@Example' },
     })
     expect(execute.disabled).toBe(false)
     await fireEvent.click(execute)

@@ -64,7 +64,7 @@ const follows = (a: Node, b: Node): boolean =>
 const fillForm = async () => {
   await fireEvent.input(screen.getByLabelText(/Organization name/), { target: { value: ' Beta ' } })
   await fireEvent.input(screen.getByLabelText(/Owner email/), {
-    target: { value: ' owner@beta.io ' },
+    target: { value: ' owner@beta ' },
   })
 }
 const submit = () => fireEvent.click(screen.getByRole('button', { name: 'Create organization' }))
@@ -102,12 +102,12 @@ describe('PlatformOrgsContent create form state (interaction)', () => {
     await waitFor(() =>
       expect(api.createOrg).toHaveBeenCalledWith(fetch, {
         name: 'Beta',
-        ownerEmail: 'owner@beta.io',
+        ownerEmail: 'owner@beta',
       })
     )
     expect(await screen.findByRole('status')).toBeTruthy()
     expect(screen.getByRole('status').textContent?.trim()).toBe(
-      'Organization "Beta" created. An invitation was sent to owner@beta.io.'
+      'Organization "Beta" created. An invitation was sent to owner@beta.'
     )
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(3))
     expect((screen.getByLabelText(/Organization name/) as HTMLInputElement).value).toBe('')
@@ -120,7 +120,7 @@ describe('PlatformOrgsContent create form state (interaction)', () => {
     await fillForm()
     await submit()
     expect((await screen.findByRole('status')).textContent?.trim()).toBe(
-      'Organization "Beta" created. owner@beta.io was added as owner (existing account).'
+      'Organization "Beta" created. owner@beta was added as owner (existing account).'
     )
   })
 
@@ -133,7 +133,7 @@ describe('PlatformOrgsContent create form state (interaction)', () => {
     await submit()
     const nameError = await screen.findByText('Name already taken.')
     expect(nameError.closest('label')?.textContent).toContain('Organization name')
-    expect((screen.getByLabelText(/Owner email/) as HTMLInputElement).value).toBe('owner@beta.io')
+    expect((screen.getByLabelText(/Owner email/) as HTMLInputElement).value).toBe('owner@beta')
   })
 
   it('links to the settings when the instance reached its organization limit', async () => {

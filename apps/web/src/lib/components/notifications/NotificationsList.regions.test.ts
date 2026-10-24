@@ -120,7 +120,7 @@ describe('NotificationsList sub-regions (probe order)', () => {
 describe('NotificationsList card actions (interaction)', () => {
   const run = async (formIndex: number, type: string) => {
     const update = vi.fn(async () => undefined)
-    const handler = (forms.enhancers[formIndex]?.fn as Enhancer)()
+    const handler = (forms.enhancers.at(formIndex)?.fn as Enhancer)()
     await handler({ result: { type }, update })
     return update
   }
