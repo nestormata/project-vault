@@ -21,6 +21,8 @@ vi.mock('$lib/api/recovery.js', () => api)
 vi.mock('$app/navigation', () => ({ goto: gotoMock }))
 vi.mock('$app/state', () => ({ page: { route: { id: null }, params: { token: 'tok-1' } } }))
 
+const MANUAL_ENTRY_KEY = 'SECRETKEY'
+
 let Content: Component<Record<string, unknown>>
 beforeAll(async () => {
   Content = (await import('./RecoveryResetContent.svelte')).default as unknown as typeof Content
@@ -51,7 +53,7 @@ async function openReady() {
 async function enableMfa() {
   api.startRecoveryMfa.mockResolvedValueOnce({
     otpauthUrl: 'otpauth.example',
-    secret: 'SECRETKEY',
+    secret: MANUAL_ENTRY_KEY,
     qrCodeSvg: '<svg></svg>',
   })
   await fireEvent.click(screen.getByRole('checkbox'))
