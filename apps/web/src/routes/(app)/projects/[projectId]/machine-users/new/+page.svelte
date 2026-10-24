@@ -19,7 +19,7 @@
   </MachineUsersNewHeader>
 
   <!-- @region project.machine-users-new.form -->
-  <MachineUsersNewForm {data}>
+  <MachineUsersNewForm pageData={data} data={data?.__inject}>
     <InjectionPoint name="project.machine-users-new.form" data={data?.__inject} />
   </MachineUsersNewForm>
 </section>

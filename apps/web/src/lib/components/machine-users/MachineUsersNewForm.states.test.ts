@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(cleanup)
 
 const mountForm = (orgRole = 'owner') =>
-  render(Form, { props: { data: { orgRole, projectId: 'p-1' } } })
+  render(Form, { props: { pageData: { orgRole, projectId: 'p-1' } } })
 const asText = (states: Record<string, unknown>): Record<string, string> =>
   Object.fromEntries(
     Object.entries(states).map(([key, value]) => [

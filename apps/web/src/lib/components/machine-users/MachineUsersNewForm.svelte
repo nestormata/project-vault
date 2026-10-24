@@ -7,19 +7,31 @@
   import { createMachineUser } from '$lib/api/machine-users.js'
   import { canManageMachineUsers } from '$lib/machine-users/permissions.js'
   import type { MachineUserRole } from '@project-vault/shared'
-  import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
-  import { m } from '$lib/paraglide/messages.js'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import MachineUsersNewDescription from './MachineUsersNewDescription.svelte'
+  import MachineUsersNewError from './MachineUsersNewError.svelte'
+  import MachineUsersNewName from './MachineUsersNewName.svelte'
+  import MachineUsersNewRole from './MachineUsersNewRole.svelte'
+  import MachineUsersNewSubmit from './MachineUsersNewSubmit.svelte'
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
 
-  let { data, children }: { data: PageData; children?: Snippet } = $props()
+  // Story 69.12: the form owns every typed value and the submit; each field group is a sub-region.
+  // `pageData` is the page's load data, `data` is its `__inject` map.
+  let {
+    pageData,
+    data,
+    children,
+  }: {
+    pageData: PageData
+    data?: Record<string, readonly unknown[]> | undefined
+    children?: Snippet
+  } = $props()
 
   let name = $state('')
   let role = $state<MachineUserRole>('member')
   let description = $state('')
   let submitting = $state(false)
   let errorMessage = $state<string | null>(null)
-  const canCreate = $derived(canManageMachineUsers(data.orgRole))
+  const canCreate = $derived(canManageMachineUsers(pageData.orgRole))
   async function submitForm() {
     if (submitting || !canCreate) return
     if (!name.trim()) {
@@ -30,12 +42,12 @@
     submitting = true
     errorMessage = null
     try {
-      const created = await createMachineUser(fetch, data.projectId, {
+      const created = await createMachineUser(fetch, pageData.projectId, {
         name: name.trim(),
         role,
         description: description.trim() ? description.trim() : null,
       })
-      await goto(resolve(`/projects/${data.projectId}/machine-users/${created.id}`))
+      await goto(resolve(`/projects/${pageData.projectId}/machine-users/${created.id}`))
     } catch (error) {
       errorMessage =
         error instanceof ApiClientError
@@ -52,7 +64,7 @@
   <AccessNotice
     title="Create not available"
     message="Creating machine users requires Admin access or higher. Ask your organization admin/owner."
-    backHref={`/projects/${data.projectId}/machine-users`}
+    backHref={`/projects/${pageData.projectId}/machine-users`}
     backLabel="Back to machine users"
   />
 {:else}
@@ -63,57 +75,14 @@
       void submitForm()
     }}
   >
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="machine-user-name">Name</label>
-      <input
-        id="machine-user-name"
-        class="w-full rounded-xl border border-slate-300 px-3 py-3"
-        type="text"
-        bind:value={name}
-        autocomplete="off"
-        required
-        aria-describedby="machine-user-name-help"
-      />
-      <FormHelpText id="machine-user-name-help" kind="text" />
-    </div>
+    <MachineUsersNewName bind:name {data} />
 
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="machine-user-role">Role</label>
-      <select
-        id="machine-user-role"
-        class="w-full rounded-xl border border-slate-300 px-3 py-3"
-        aria-describedby="machine-user-role-help"
-        bind:value={role}
-      >
-        <option value="member">Member — can read/write project secrets</option>
-        <option value="viewer">Viewer — read-only project secrets</option>
-      </select>
-      <FormHelpText id="machine-user-role-help" text={m.form_help_machine_user_role()} />
-    </div>
+    <MachineUsersNewRole bind:role {data} />
 
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="machine-user-description">
-        Description
-      </label>
-      <textarea
-        id="machine-user-description"
-        class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3"
-        bind:value={description}
-        aria-describedby="machine-user-description-help"></textarea>
-      <FormHelpText id="machine-user-description-help" kind="text" />
-    </div>
+    <MachineUsersNewDescription bind:description {data} />
 
-    {#if errorMessage}
-      <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-        {errorMessage}
-      </p>
-    {/if}
+    <MachineUsersNewError {errorMessage} {data} />
 
-    <FormSubmitRow
-      submitLabel="Create machine user"
-      pendingLabel="Creating…"
-      cancelHref={`/projects/${data.projectId}/machine-users`}
-      {submitting}
-    />
+    <MachineUsersNewSubmit projectId={pageData.projectId} {submitting} {data} />
   </form>
 {/if}

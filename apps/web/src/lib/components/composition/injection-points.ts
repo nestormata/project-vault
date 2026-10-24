@@ -570,6 +570,11 @@ export interface InjectionPointProps {
   'project.machine-users-detail.summary': StandardPointProps
   'project.machine-users-new.header': StandardPointProps
   'project.machine-users-new.form': StandardPointProps
+  'project.machine-users-new.name': StandardPointProps
+  'project.machine-users-new.role': StandardPointProps
+  'project.machine-users-new.description': StandardPointProps
+  'project.machine-users-new.error': StandardPointProps
+  'project.machine-users-new.submit': StandardPointProps
   'project.services.list': StandardPointProps
   'project.services-detail.content': StandardPointProps
   'project.services-new.header': StandardPointProps
@@ -1245,7 +1250,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/machine-users/new#page'],
-    ['project.machine-users-new.header', 'project.machine-users-new.form']
+    [
+      'project.machine-users-new.header',
+      'project.machine-users-new.form',
+      'project.machine-users-new.name',
+      'project.machine-users-new.role',
+      'project.machine-users-new.description',
+      'project.machine-users-new.error',
+      'project.machine-users-new.submit',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
