@@ -17,7 +17,7 @@
   "auth_login_register_link": "Registrarse",
   "auth_login_recovery_link": "¿No puedes acceder a tu cuenta?",
   "auth_login_reason_default": "Inicia sesión para continuar.",
-  "auth_login_reason_registered": "Cuenta creada. Inicia sesión para continuar.",
+  "auth_login_reason_registered": "Si ese correo estaba disponible, se ha creado tu cuenta: inicia sesión para continuar. ¿Ya tienes una cuenta? Inicia sesión o restablece tu contraseña.",
   "auth_login_reason_session_expired": "Tu sesión terminó. Inicia sesión de nuevo para continuar.",
   "auth_login_reason_logged_out": "Has cerrado sesión.",
   "auth_login_reason_recovery_complete": "Tu contraseña se restableció. Inicia sesión con tu nueva contraseña.",

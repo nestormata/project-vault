@@ -28,10 +28,6 @@
   let password = $state('')
   let orgName = $state('')
   let errorMessage = $state<string | null>(null)
-  // Story 1.20 AC-6: self-signup success/collision both resolve to the same generic-accepted
-  // response now — this surfaces its message so the user isn't silently redirected to /login
-  // with no feedback at all.
-  let infoMessage = $state<string | null>(null)
   let localeRevision = $state(0)
   let emailInputEl: HTMLInputElement | undefined = $state()
 
@@ -77,7 +73,6 @@
 
   async function submitForm() {
     errorMessage = null
-    infoMessage = null
     try {
       const result = await register(
         fetch,
@@ -87,8 +82,8 @@
       // shape (userId present) — unchanged. Self-signup (novel email or already-registered
       // email, indistinguishable by design) now always returns the generic accepted shape
       // instead, which never carries userId, so markRegistrationLocalePending() is skipped for
-      // that path (documented, accepted minor UX regression) and its message is
-      // shown instead of silently redirecting with no feedback.
+      // that path (documented, accepted minor UX regression). The /login notice for
+      // `reason=registered` is the only feedback, and it is the same text for both outcomes.
       if ('userId' in result) {
         markRegistrationLocalePending(result.userId, getLocale())
         clearFields()
@@ -97,7 +92,6 @@
         // eslint-disable-next-line svelte/no-navigation-without-resolve
         await goto(getPostRegisterPath(result.invitedProject))
       } else {
-        infoMessage = result.message
         clearFields()
         // eslint-disable-next-line svelte/no-navigation-without-resolve
         await goto(getPostRegisterPath(undefined))
@@ -191,14 +185,6 @@
     {#if errorMessage}
       <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
         {errorMessage}
-      </p>
-    {/if}
-    {#if infoMessage}
-      <p
-        class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800"
-        role="status"
-      >
-        {infoMessage}
       </p>
     {/if}
     <button

@@ -47,6 +47,11 @@ async function submitLogin() {
   await fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
 }
 
+const REGISTERED_NOTICE_EN =
+  'If that email was available, your account has been created — sign in to continue. Already have an account? Sign in or reset your password.'
+const REGISTERED_NOTICE_ES =
+  'Si ese correo estaba disponible, se ha creado tu cuenta: inicia sesión para continuar. ¿Ya tienes una cuenta? Inicia sesión o restablece tu contraseña.'
+
 describe('/login +page.svelte', () => {
   beforeEach(() => {
     document.cookie = 'PARAGLIDE_LOCALE=en; path=/'
@@ -70,7 +75,7 @@ describe('/login +page.svelte', () => {
     expect(document.title).toBe('Iniciar sesión | Project Vault')
     expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeTruthy()
     expect(screen.getByText('Usa tu cuenta de Project Vault para continuar.')).toBeTruthy()
-    expect(screen.getByText('Cuenta creada. Inicia sesión para continuar.')).toBeTruthy()
+    expect(screen.getByText(REGISTERED_NOTICE_ES)).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Registrarse' })).toBeTruthy()
     expect(screen.getByRole('link', { name: '¿No puedes acceder a tu cuenta?' })).toBeTruthy()
   })
@@ -83,7 +88,15 @@ describe('/login +page.svelte', () => {
   it('shows the registered confirmation message for reason=registered', () => {
     pageMock.url = new URL('http://localhost/login?reason=registered')
     render(LoginPage)
-    expect(screen.getByText(/account created\. sign in to continue\./i)).toBeTruthy()
+    expect(screen.getByText(REGISTERED_NOTICE_EN)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/account created\./i)
+  })
+
+  it('does not reflect an unknown reason param', () => {
+    pageMock.url = new URL('http://localhost/login?reason=%3Cscript%3Ealert(1)%3C/script%3E')
+    render(LoginPage)
+    expect(screen.getByText('Sign in to continue.')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('<script>')
   })
 
   it('shows the session-expired message for reason=session-expired', () => {
