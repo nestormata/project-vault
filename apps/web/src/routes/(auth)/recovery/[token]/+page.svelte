@@ -11,7 +11,7 @@
 <InjectionPoint name="auth.recovery-detail.before" data={data?.__inject} />
 <InjectionPoint name="auth.recovery-detail.header.actions" data={data?.__inject} />
 <!-- @region auth.recovery-detail.content -->
-<RecoveryResetContent>
+<RecoveryResetContent data={data?.__inject}>
   <InjectionPoint name="auth.recovery-detail.content" data={data?.__inject} />
 </RecoveryResetContent>
 <InjectionPoint name="auth.recovery-detail.after" data={data?.__inject} />

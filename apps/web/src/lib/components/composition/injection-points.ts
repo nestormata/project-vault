@@ -603,6 +603,10 @@ export interface InjectionPointProps {
   'auth.recovery.request': StandardPointProps
   'auth.recovery.login-link': StandardPointProps
   'auth.recovery-detail.content': StandardPointProps
+  'auth.recovery-detail.status': StandardPointProps
+  'auth.recovery-detail.codes': StandardPointProps
+  'auth.recovery-detail.password': StandardPointProps
+  'auth.recovery-detail.mfa': StandardPointProps
   'auth.register.heading': StandardPointProps
   'auth.register.login-link': StandardPointProps
   'vault.home.header': StandardPointProps
@@ -1285,7 +1289,13 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(auth)/recovery/[token]#page'],
-    ['auth.recovery-detail.content']
+    [
+      'auth.recovery-detail.content',
+      'auth.recovery-detail.status',
+      'auth.recovery-detail.codes',
+      'auth.recovery-detail.password',
+      'auth.recovery-detail.mfa',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
