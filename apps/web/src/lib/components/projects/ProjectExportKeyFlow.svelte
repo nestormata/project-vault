@@ -41,7 +41,7 @@
       downloadExportBlob(result.blob, result.filename)
       clearCopyStatus()
       revealedExportKey = result.exportKey
-      revealed = true
+      revealed = Boolean(result.exportKey)
       exportKeyAcknowledged = false
     } catch (error) {
       exportError =

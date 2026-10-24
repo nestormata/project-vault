@@ -10,14 +10,14 @@
   // point sits right after the `{#if}` block.
   let {
     html,
-    slot,
+    panelSlot,
     themeStyle,
     actionResultHtml,
     onclick,
     data,
   }: {
     html: string | null
-    slot: string
+    panelSlot: string
     themeStyle: string
     actionResultHtml: string | null
     onclick: (event: MouseEvent) => void
@@ -73,7 +73,7 @@
       class="mt-6 overflow-hidden rounded-2xl border border-slate-200 p-4"
       style={themeStyle}
       role="region"
-      aria-label={`Extension panel: ${slot}`}
+      aria-label={`Extension panel: ${panelSlot}`}
       use:renderPanelHtml={actionResultHtml ?? html}
       {onclick}
     ></div>

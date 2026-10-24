@@ -115,6 +115,15 @@ describe('ProjectExportPanel state (interaction)', () => {
     expect(exportButton()).toBeTruthy()
   })
 
+  it('an empty key from the server keeps the description and the Export button, as before the split', async () => {
+    api.exportProject.mockResolvedValueOnce({ ...exported, exportKey: '' })
+    mount()
+    await fireEvent.click(exportButton())
+    await waitFor(() => expect(api.downloadExportBlob).toHaveBeenCalled())
+    expect(screen.getByText(/Download an encrypted, portable snapshot/)).toBeTruthy()
+    expect(exportButton()).toBeTruthy()
+  })
+
   it('a later successful export clears the earlier failure message', async () => {
     api.exportProject.mockRejectedValueOnce(new Error('first failure'))
     mount()

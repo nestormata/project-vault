@@ -367,7 +367,7 @@
 
   <ExtensionPanelBody
     html={data.html}
-    slot={data.slot}
+    panelSlot={data.slot}
     themeStyle={panelThemeStyle}
     {actionResultHtml}
     onclick={handleActionClick}
