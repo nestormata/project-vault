@@ -1,0 +1,16 @@
+{
+  "loading": "<div class=\"space-y-6\"><p class=\"text-slate-600\">Checking your invitation...</p></div> ",
+  "missing-token": "<div class=\"space-y-6\"><div class=\"space-y-2\"><h1 class=\"text-2xl font-bold\">Invitation not available</h1> <p class=\"text-slate-600\">This invitation link is missing a token.</p></div></div> ",
+  "missing-token-peeks": "0",
+  "peek-api-error": "<div class=\"space-y-6\"><div class=\"space-y-2\"><h1 class=\"text-2xl font-bold\">Invitation not available</h1> <p class=\"text-slate-600\">This invitation link is no longer valid.</p></div></div> ",
+  "peek-network-error": "<div class=\"space-y-6\"><div class=\"space-y-2\"><h1 class=\"text-2xl font-bold\">Invitation not available</h1> <p class=\"text-slate-600\">Something went wrong loading this invitation.</p></div></div> ",
+  "external-signin": "<div class=\"space-y-6\"><div class=\"space-y-2\"><h1 class=\"text-2xl font-bold\">External sign-in required</h1> <p class=\"text-slate-600\">This vault uses external sign-in. Sign in with your organization account to accept this invitation.</p> <a class=\"text-sm font-medium text-blue-600 hover:underline\" href=\"/login?next=%2Finvitations%2Faccept%3Ftoken%3Dtok%2520%2526%25201\">Sign in with your organization account</a></div></div> ",
+  "no-account-goto": "[[\"/register?invitationToken=tok-1&email=new%40acme.com\"]]",
+  "no-account-peek-args": "[[\"tok-1\"]]",
+  "signed-out-goto": "[[\"/login?next=%2Finvitations%2Faccept%3Ftoken%3Dtok-1\"]]",
+  "signed-out-accepts": "0",
+  "accepted-goto": "[[\"/projects/p-1\"]]",
+  "accepted-args": "[[\"tok-1\"]]",
+  "accept-error": "<div class=\"space-y-6\"><div class=\"space-y-2\"><h1 class=\"text-2xl font-bold\">Something went wrong</h1> <p class=\"text-slate-600\">We couldn't accept this invitation. Please try again.</p></div></div> ",
+  "accept-error-goto": "0"
+}
