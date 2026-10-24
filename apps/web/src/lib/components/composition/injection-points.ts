@@ -529,6 +529,11 @@ export interface InjectionPointProps {
   'settings.home.header': StandardPointProps
   'settings.audit-access-report.header': StandardPointProps
   'settings.audit-access-report.report': StandardPointProps
+  'settings.audit-access-report.form': StandardPointProps
+  'settings.audit-access-report.error': StandardPointProps
+  'settings.audit-access-report.summary': StandardPointProps
+  'settings.audit-access-report.results': StandardPointProps
+  'settings.audit-access-report.pagination': StandardPointProps
   'settings.audit-forwarding.header': StandardPointProps
   'settings.audit-forwarding.config': StandardPointProps
   'settings.audit-forwarding.forwarder': StandardPointProps
@@ -1132,7 +1137,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/audit/access-report#page'],
-    ['settings.audit-access-report.header', 'settings.audit-access-report.report']
+    [
+      'settings.audit-access-report.header',
+      'settings.audit-access-report.report',
+      'settings.audit-access-report.form',
+      'settings.audit-access-report.error',
+      'settings.audit-access-report.summary',
+      'settings.audit-access-report.results',
+      'settings.audit-access-report.pagination',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
