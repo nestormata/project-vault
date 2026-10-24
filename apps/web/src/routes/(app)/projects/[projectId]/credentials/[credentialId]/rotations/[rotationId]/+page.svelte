@@ -14,7 +14,7 @@
 </svelte:head>
 
 <!-- @region project.credentials-rotations-detail.content -->
-<RotationDetailContent {data}>
+<RotationDetailContent pageData={data} data={data?.__inject}>
   <InjectionPoint name="project.credentials-rotations-detail.content" data={data?.__inject} />
 </RotationDetailContent>
 <InjectionPoint name="project.credentials-rotations-detail.after" data={data?.__inject} />
