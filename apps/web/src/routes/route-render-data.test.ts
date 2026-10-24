@@ -224,6 +224,44 @@ const AUDIT_ROWS = [
     lastRefusalAt: RECONCILED_AT,
   },
 ]
+const BACKUPS = [
+  {
+    filename: 'vault-2026-10-01.pvbak',
+    timestamp: '2026-10-01T03:00:00.000Z',
+    sizeBytes: 2_048_000,
+    keyVersion: 3,
+    verified: 'valid',
+    status: 'succeeded',
+    errorMessage: null,
+  },
+  {
+    filename: 'vault-2026-10-02.pvbak',
+    timestamp: '2026-10-02T03:00:00.000Z',
+    sizeBytes: null,
+    keyVersion: null,
+    verified: 'invalid',
+    status: 'failed',
+    errorMessage: 'disk full',
+  },
+  {
+    filename: 'vault-2026-10-03.pvbak',
+    timestamp: '2026-10-03T03:00:00.000Z',
+    sizeBytes: null,
+    keyVersion: 3,
+    verified: 'unverified',
+    status: 'running',
+    errorMessage: null,
+  },
+  {
+    filename: 'vault-2026-10-04.pvbak',
+    timestamp: '2026-10-04T03:00:00.000Z',
+    sizeBytes: 1_024,
+    keyVersion: 4,
+    verified: 'unverified',
+    status: 'failed',
+    errorMessage: null,
+  },
+]
 function usage(overrides: Overrides): Overrides {
   return {
     orgs: { current: 3, limit: 10 },
@@ -457,6 +495,43 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
       }),
       warnings: [],
     },
+    'usage-warnings': {
+      ...OWNER_READY,
+      usage: usage({}),
+      warnings: ['audit_storage_critical', 'key_custody_risk', 'unknown_warning'],
+    },
+    'usage-thresholds': {
+      ...OWNER_READY,
+      usage: usage({
+        orgs: { current: 17, limit: 20 },
+        usersPerOrg: [
+          { orgId: 'org-a', current: 40, limit: 50 },
+          { orgId: 'org-b', current: 46, limit: 50 },
+          { orgId: 'org-c', current: 49, limit: 50 },
+          { orgId: 'org-d', current: 5, limit: 50 },
+          { orgId: 'org-e', current: 5, limit: null },
+        ],
+        auditLogEntries: { current: 1_234_567, limit: 2_000_000 },
+        storageBytes: { current: 900_000, limit: 1_000_000 },
+        allocationIncludesUnlimitedOrgs: false,
+        observedPhysicalToLogicalRatio: null,
+      }),
+      warnings: [],
+    },
+    'usage-empty-orgs': {
+      ...OWNER_READY,
+      usage: usage({ auditStorageByOrg: [] }),
+      warnings: [],
+    },
+    'usage-error': { ...OWNER_READY, usage: null, warnings: [], errorMessage: 'usage unavailable' },
+    'usage-denied': { ...GATES_SHUT, ...NEGATIVES_OFF, usage: null, warnings: [] },
+  },
+  '/(app)/platform/backups/+page.svelte': {
+    'backups-rows': { ...OWNER_READY, backups: BACKUPS },
+    'backups-empty': { ...OWNER_READY, backups: [] },
+    'backups-error-empty': { ...OWNER_READY, backups: [], errorMessage: 'backups unavailable' },
+    'backups-error-rows': { ...OWNER_READY, backups: BACKUPS, errorMessage: 'backups stale' },
+    'backups-denied': { ...GATES_SHUT, ...NEGATIVES_OFF },
   },
 }
 
