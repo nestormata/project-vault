@@ -25,6 +25,7 @@
     errorMessage={data.allowed ? data.errorMessage : null}
     manifest={data.allowed ? data.manifest : null}
     healthStatus={data.allowed ? data.healthStatus : null}
+    data={data?.__inject}
   >
     <InjectionPoint name="settings.extensions.status" data={data?.__inject} />
   </ExtensionsStatusPanel>

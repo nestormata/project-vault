@@ -532,6 +532,11 @@ export interface InjectionPointProps {
   'settings.audit-forwarding.webhook': StandardPointProps
   'settings.extensions.header': StandardPointProps
   'settings.extensions.status': StandardPointProps
+  'settings.extensions.notice': StandardPointProps
+  'settings.extensions.summary': StandardPointProps
+  'settings.extensions.capabilities': StandardPointProps
+  'settings.extensions.declarations': StandardPointProps
+  'settings.extensions.not-loaded': StandardPointProps
   'settings.external-identities.header': StandardPointProps
   'settings.external-identities.panel': StandardPointProps
   'settings.language.header': StandardPointProps
@@ -1126,7 +1131,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/extensions#page'],
-    ['settings.extensions.header', 'settings.extensions.status']
+    [
+      'settings.extensions.header',
+      'settings.extensions.status',
+      'settings.extensions.notice',
+      'settings.extensions.summary',
+      'settings.extensions.capabilities',
+      'settings.extensions.declarations',
+      'settings.extensions.not-loaded',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
