@@ -37,9 +37,9 @@ mock_pack_excluded_list() { # prints the lock's excludedPvTests, one per line
 }
 
 mock_pack_svelte_check_run() { # tsconfig -> output in $WORK/svelte-check.out; exit status returned
-  local status=0
+  local tsconfig="$1" status=0
   (cd "$APP" && clean_env "$NODE_BIN" node_modules/svelte-check/bin/svelte-check \
-    --tsconfig "$1" --fail-on-warnings) > "$WORK/svelte-check.out" 2>&1 || status=$?
+    --tsconfig "$tsconfig" --fail-on-warnings) > "$WORK/svelte-check.out" 2>&1 || status=$?
   return "$status"
 }
 

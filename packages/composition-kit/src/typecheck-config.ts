@@ -28,8 +28,6 @@ const APP_TSCONFIG = 'tsconfig.json'
 // TypeScript's exclude wildcards are `*` and `?` only; `[`, `]` and `(` are literal (SvelteKit route dirs).
 const GLOB = /[*?]/
 
-const TEST_FILE = /\.test\.ts$/
-
 function isRegularFile(path: string): boolean {
   try {
     return lstatPath(path).isFile()
@@ -48,7 +46,7 @@ function entryProblem(entry: string, appRoot: string): string | null {
   const reason =
     manifestPathProblem(entry) ??
     (GLOB.test(entry) ? 'contains a glob character' : null) ??
-    (TEST_FILE.test(entry) ? null : 'is not a .test.ts file') ??
+    (entry.endsWith('.test.ts') ? null : 'is not a .test.ts file') ??
     (isRegularFile(join(appRoot, entry)) ? null : 'is not an existing file of the composed app')
   return reason === null ? null : `invalid excludedPvTests entry "${entry}": ${reason}`
 }
