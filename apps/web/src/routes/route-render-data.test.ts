@@ -348,6 +348,71 @@ const CREDENTIAL_ITEMS = [
     activeRotation: null,
   },
 ]
+// Story 69.11: realistic projects for the projects list, whose cards branch on role, archived state,
+// tags and description (a permissive value matches none of the string checks). Recorded BEFORE the
+// list was split into sub-region components.
+const PROJECT_ITEMS = [
+  {
+    id: 'p-owner',
+    name: 'Owner Project',
+    slug: 'owner-project',
+    description: 'An active project the caller owns',
+    role: 'owner',
+    isArchived: false,
+    tags: ['production', 'api'],
+    credentialCount: 4,
+    expiringCount: 1,
+    alertCount: 2,
+  },
+  {
+    id: 'p-viewer',
+    name: 'Viewer Project',
+    slug: 'viewer-project',
+    description: null,
+    role: 'viewer',
+    isArchived: false,
+    tags: [],
+    credentialCount: 0,
+    expiringCount: 0,
+    alertCount: 0,
+  },
+  {
+    id: 'p-member',
+    name: 'Member Project',
+    slug: 'member-project',
+    description: null,
+    role: 'member',
+    isArchived: false,
+    tags: ['shared'],
+    credentialCount: 2,
+    expiringCount: 0,
+    alertCount: 0,
+  },
+  {
+    id: 'p-archived-owner',
+    name: 'Archived Owner Project',
+    slug: 'archived-owner-project',
+    description: 'Hidden from active views',
+    role: 'owner',
+    isArchived: true,
+    tags: ['old'],
+    credentialCount: 9,
+    expiringCount: 0,
+    alertCount: 0,
+  },
+  {
+    id: 'p-archived-viewer',
+    name: 'Archived Viewer Project',
+    slug: 'archived-viewer-project',
+    description: null,
+    role: 'viewer',
+    isArchived: true,
+    tags: [],
+    credentialCount: 1,
+    expiringCount: 0,
+    alertCount: 0,
+  },
+]
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -456,6 +521,22 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
         },
       }),
       warnings: [],
+    },
+  },
+  '/(app)/projects/+page.svelte': {
+    'projects-mixed': {
+      ...OWNER_READY,
+      includeArchived: true,
+      projects: { items: PROJECT_ITEMS, total: 5, page: 1, limit: 100, hasNext: false },
+    },
+    'projects-active-only': {
+      ...OWNER_READY,
+      includeArchived: false,
+      projects: { items: PROJECT_ITEMS.slice(0, 3), total: 3, page: 1, limit: 100, hasNext: false },
+    },
+    'projects-empty': {
+      ...OWNER_READY,
+      projects: { items: [], total: 0, page: 1, limit: 100, hasNext: false },
     },
   },
 }
