@@ -198,6 +198,10 @@ export default defineUiPack({
       },
     ],
     'auth.login.links': [{ component: './injections/LoginLinksFill.svelte' }],
+    // Story 69.13: render-only fills on the root error page, which the pack's own `+error.svelte` (M1)
+    // renders through PV's `RootErrorHeader` and `RootErrorContent`.
+    'root.error.header': [{ component: './injections/ErrorHeaderFill.svelte' }],
+    'root.error.content': [{ component: './injections/ErrorContentFill.svelte' }],
     'platform.home.nav-cards': [
       {
         component: './injections/PlatformNavFill.svelte',
