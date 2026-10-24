@@ -520,6 +520,40 @@ const EXTERNAL_IDENTITY_USERS = [
   { userId: 'u-alex', email: 'alex@example.com' },
   { userId: 'u-sam', email: 'sam@example.com' },
 ]
+// Story 69.11: a realistic access report. The page branches on the report's users (status,
+// projects), its page number and `hasNext`, the `asOf` date and the load error, none of which a
+// permissive value separates. Recorded BEFORE the panel was split into sub-region components.
+const ACCESS_REPORT_USERS = [
+  {
+    userId: 'u-active',
+    displayName: 'Active Member',
+    orgRole: 'member',
+    status: 'active',
+    projects: [
+      { projectId: 'p-alpha', projectName: 'Alpha', role: 'owner' },
+      { projectId: 'p-beta', projectName: 'Beta', role: 'viewer' },
+    ],
+  },
+  {
+    userId: 'u-off',
+    displayName: 'Former Member',
+    orgRole: 'viewer',
+    status: 'deactivated',
+    projects: [],
+  },
+]
+const ACCESS_REPORT = {
+  asOf: '2026-10-01T00:00:00.000Z',
+  generatedAt: '2026-10-05T09:30:00.000Z',
+  hasNext: false,
+  users: ACCESS_REPORT_USERS,
+}
+const ACCESS_REPORT_PAGE = {
+  ...OWNER_READY,
+  asOf: undefined,
+  page: 1,
+  report: ACCESS_REPORT,
+}
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -720,6 +754,26 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
       orgUsers: EXTERNAL_IDENTITY_USERS,
     },
     'identities-empty': { ...OWNER_READY, identities: [], orgUsers: EXTERNAL_IDENTITY_USERS },
+  },
+  '/(app)/settings/audit/access-report/+page.svelte': {
+    'report-current': ACCESS_REPORT_PAGE,
+    'report-as-of-next': {
+      ...ACCESS_REPORT_PAGE,
+      asOf: '2026-10-01',
+      page: 2,
+      report: { ...ACCESS_REPORT, hasNext: true },
+    },
+    'report-first-page-next': {
+      ...ACCESS_REPORT_PAGE,
+      report: { ...ACCESS_REPORT, hasNext: true },
+    },
+    'report-empty': { ...ACCESS_REPORT_PAGE, report: { ...ACCESS_REPORT, users: [] } },
+    'report-load-error': {
+      ...ACCESS_REPORT_PAGE,
+      report: null,
+      errorMessage: 'report unavailable',
+    },
+    'report-not-generated': { ...ACCESS_REPORT_PAGE, report: null },
   },
 }
 
