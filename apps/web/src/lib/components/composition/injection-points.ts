@@ -547,6 +547,8 @@ export interface InjectionPointProps {
   'settings.extensions.not-loaded': StandardPointProps
   'settings.external-identities.header': StandardPointProps
   'settings.external-identities.panel': StandardPointProps
+  'settings.external-identities.link': StandardPointProps
+  'settings.external-identities.list': StandardPointProps
   'settings.language.header': StandardPointProps
   'settings.language.errors': StandardPointProps
   'settings.language.options': StandardPointProps
@@ -1163,7 +1165,12 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/external-identities#page'],
-    ['settings.external-identities.header', 'settings.external-identities.panel']
+    [
+      'settings.external-identities.header',
+      'settings.external-identities.panel',
+      'settings.external-identities.link',
+      'settings.external-identities.list',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',

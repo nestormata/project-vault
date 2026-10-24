@@ -19,7 +19,7 @@
   </ExternalIdentitiesHeader>
 
   <!-- @region settings.external-identities.panel -->
-  <ExternalIdentitiesPanel {data}>
+  <ExternalIdentitiesPanel pageData={data} data={data?.__inject}>
     <InjectionPoint name="settings.external-identities.panel" data={data?.__inject} />
   </ExternalIdentitiesPanel>
 </div>
