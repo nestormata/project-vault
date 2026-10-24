@@ -386,8 +386,146 @@ const CREDENTIAL_ITEMS = [
     activeRotation: null,
   },
 ]
+const ROTATION_DETAIL_ROUTE =
+  '/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.svelte'
+const ROTATE_ROUTE = '/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.svelte'
+const ROTATION_ITEM = {
+  dependencyId: null,
+  confirmedBy: null,
+  confirmedAt: null,
+  retryCount: 0,
+  retryScheduledAt: null,
+  lastFailureReason: null,
+  lastActedBy: null,
+  lastActedAt: null,
+  notes: null,
+}
+const ROTATION_ITEMS_MIXED = [
+  { ...ROTATION_ITEM, id: 'ri-1', systemName: 'billing-worker', status: 'unconfirmed' },
+  {
+    ...ROTATION_ITEM,
+    id: 'ri-2',
+    systemName: 'api-gateway',
+    status: 'confirmed',
+    confirmedAt: '2026-10-03T10:00:00.000Z',
+    lastActedAt: '2026-10-03T10:00:00.000Z',
+  },
+  {
+    ...ROTATION_ITEM,
+    id: 'ri-3',
+    systemName: 'cron-runner',
+    status: 'failed',
+    retryCount: 1,
+    lastFailureReason: 'timeout',
+  },
+]
+const ROTATION_ITEMS_CONFIRMED = ROTATION_ITEMS_MIXED.map((item) => ({
+  ...item,
+  status: 'confirmed',
+}))
+function rotationDetail(status: string, checklistItems: readonly unknown[], extra: Overrides = {}) {
+  return {
+    id: 'rot-1',
+    credentialId: 'cred-1',
+    projectId: 'proj-1',
+    status,
+    version: 2,
+    initiatedBy: null,
+    initiatedAt: '2026-10-03T09:00:00.000Z',
+    completedAt: null,
+    notes: null,
+    targetFields: null,
+    checklistItems,
+    ...extra,
+  }
+}
+function rotationCases(
+  label: string,
+  status: string,
+  checklistItems: readonly unknown[],
+  extra: Overrides = {}
+): Record<string, Overrides> {
+  return Object.fromEntries(
+    (['owner', 'member', 'viewer'] as const).map((orgRole) => [
+      `rotation-${label}-${orgRole}`,
+      { ...OWNER_READY, orgRole, rotation: rotationDetail(status, checklistItems, extra) },
+    ])
+  )
+}
+const ROTATION_DETAIL_CASES: Record<string, Overrides> = {
+  ...rotationCases('in-progress-empty', 'in_progress', []),
+  ...rotationCases('in-progress-mixed', 'in_progress', ROTATION_ITEMS_MIXED, {
+    notes: 'quarterly rotation',
+  }),
+  ...rotationCases('in-progress-confirmed', 'in_progress', ROTATION_ITEMS_CONFIRMED),
+  ...rotationCases('staged-empty', 'staged', []),
+  ...rotationCases('staged-mixed', 'staged', ROTATION_ITEMS_MIXED),
+  ...rotationCases('staged-confirmed', 'staged', ROTATION_ITEMS_CONFIRMED),
+  ...rotationCases('promoted-empty', 'promoted', []),
+  ...rotationCases('promoted-mixed', 'promoted', ROTATION_ITEMS_MIXED),
+  ...rotationCases('promoted-confirmed', 'promoted', ROTATION_ITEMS_CONFIRMED),
+  ...rotationCases('stale-recovery', 'stale_recovery', ROTATION_ITEMS_MIXED),
+  ...rotationCases('retired', 'retired', ROTATION_ITEMS_CONFIRMED),
+  ...rotationCases('abandoned', 'abandoned', ROTATION_ITEMS_MIXED),
+  ...rotationCases('completed', 'completed', ROTATION_ITEMS_CONFIRMED, {
+    completedAt: '2026-10-03T12:00:00.000Z',
+  }),
+  'rotation-not-found': { ...OWNER_READY, rotation: null, notFound: true },
+  'rotation-sealed': { ...OWNER_READY, rotation: null, vaultSealed: true },
+}
+const ROTATE_DEPENDENCIES = {
+  hasDependencies: true,
+  items: [
+    { id: 'dep-1', systemName: 'billing-worker' },
+    { id: 'dep-2', systemName: 'api-gateway' },
+  ],
+}
+const ROTATE_FIELDS = [
+  { key: 'username', type: 'text' },
+  { key: 'password', type: 'secret' },
+]
+const ROTATE_READY: Overrides = {
+  ...OWNER_READY,
+  canManage: true,
+  dependencies: ROTATE_DEPENDENCIES,
+  fieldMeta: [{ key: 'value', type: 'secret' }],
+  activeRotationId: null,
+}
+const ROTATE_CASES: Record<string, Overrides> = {
+  'rotate-single-field': ROTATE_READY,
+  'rotate-multi-field': { ...ROTATE_READY, fieldMeta: ROTATE_FIELDS },
+  'rotate-no-dependencies': {
+    ...ROTATE_READY,
+    dependencies: { hasDependencies: false, items: [] },
+  },
+  'rotate-active-rotation': { ...ROTATE_READY, activeRotationId: 'rot-active' },
+  'rotate-active-multi-field': {
+    ...ROTATE_READY,
+    fieldMeta: ROTATE_FIELDS,
+    activeRotationId: 'rot-active',
+  },
+  'rotate-viewer': {
+    ...OWNER_READY,
+    orgRole: 'viewer',
+    canManage: false,
+    dependencies: null,
+    fieldMeta: null,
+    activeRotationId: null,
+  },
+  'rotate-member': {
+    ...OWNER_READY,
+    orgRole: 'member',
+    canManage: false,
+    dependencies: null,
+    fieldMeta: null,
+    activeRotationId: null,
+  },
+  'rotate-sealed': { ...OWNER_READY, vaultSealed: true, dependencies: null, fieldMeta: null },
+}
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
+  [ROTATION_DETAIL_ROUTE]: ROTATION_DETAIL_CASES,
+  [ROTATE_ROUTE]: ROTATE_CASES,
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
     'list-items': {
       ...OWNER_READY,
