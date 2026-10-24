@@ -266,6 +266,9 @@ describe('RotationDetailContent state across sections (interaction)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Reveal staged value' }))
     const revealed = await screen.findByText('new-secret-value')
     expect(follows(revealed, probe('staged-value'))).toBe(true)
+    expect(
+      screen.queryAllByTestId('probe').some((p) => p.textContent?.includes('new-secret-value'))
+    ).toBe(false)
     expect(screen.queryByRole('button', { name: 'Reveal staged value' })).toBeNull()
   })
 })

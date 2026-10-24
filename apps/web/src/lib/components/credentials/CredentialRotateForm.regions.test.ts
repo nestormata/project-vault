@@ -199,17 +199,21 @@ describe('CredentialRotateForm state across sections (interaction)', () => {
     )
     mount()
     expect(hasProbe('project.credentials-rotate.same-value-confirm')).toBe(false)
-    await fireEvent.input(screen.getByLabelText('New value'), { target: { value: 'same' } })
+    await fireEvent.input(screen.getByLabelText('New value'), { target: { value: 'dup-secret-9' } })
     await fireEvent.click(screen.getByRole('button', { name: 'Start rotation' }))
     const prompt = await screen.findByText(/is identical to its current value/)
     const point = probe('project.credentials-rotate.same-value-confirm')
     expect(follows(probe('project.credentials-rotate.notes'), prompt)).toBe(true)
     expect(follows(screen.getByRole('button', { name: 'Cancel' }), point)).toBe(true)
     expect(follows(point, probe('project.credentials-rotate.actions'))).toBe(true)
+    expect(point.closest('[role="alert"]')).toBeNull()
+    expect(
+      screen.queryAllByTestId('probe').some((p) => p.textContent?.includes('dup-secret-9'))
+    ).toBe(false)
 
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(hasProbe('project.credentials-rotate.same-value-confirm')).toBe(false)
-    expect((screen.getByLabelText('New value') as HTMLTextAreaElement).value).toBe('same')
+    expect((screen.getByLabelText('New value') as HTMLTextAreaElement).value).toBe('dup-secret-9')
     expect(initiateRotationMock).toHaveBeenCalledTimes(1)
   })
 

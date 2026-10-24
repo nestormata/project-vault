@@ -160,6 +160,9 @@ describe('MachineUserDetailContent key state (one owner)', () => {
     const reveal = probe(REVEAL)
     expect(follows(screen.getByRole('button', { name: 'Hide' }), reveal)).toBe(true)
     expect(follows(reveal, screen.getByText('Issue a new API key'))).toBe(true)
+    expect(
+      screen.queryAllByTestId('probe').some((p) => p.textContent?.includes('pvk_fresh_value'))
+    ).toBe(false)
     expect(nameInput().value).toBe('')
     await fireEvent.click(screen.getByRole('button', { name: 'Hide' }))
     expect(screen.queryByText('pvk_fresh_value')).toBeNull()

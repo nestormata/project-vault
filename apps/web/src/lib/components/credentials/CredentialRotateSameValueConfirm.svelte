@@ -45,7 +45,8 @@
         onclick={() => form.cancelSameValueConfirmation()}
       >
         Cancel
-      </button><InjectionPoint name="project.credentials-rotate.same-value-confirm" {data} />
+      </button>
     </div>
   </div>
+  <InjectionPoint name="project.credentials-rotate.same-value-confirm" {data} />
 </RegionFragment>
