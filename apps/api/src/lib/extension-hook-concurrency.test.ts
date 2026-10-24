@@ -15,6 +15,7 @@ import {
 vi.mock('../config/env.js', () => ({
   env: {
     NODE_ENV: 'test',
+    MACHINE_JWT_TTL_SECONDS: 3600,
     API_PORT: 3000,
     DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
     CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
