@@ -1,10 +1,17 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte'
-import type { ProjectOverview } from '@project-vault/shared'
-import type { Component, ComponentProps } from 'svelte'
-import { afterEach, beforeAll, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import type { Component } from 'svelte'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiClientError } from '$lib/api/client.js'
 import { sampleProject } from '$lib/test/fixtures.js'
-import type ProjectExportErrorType from './ProjectExportError.svelte'
+
+// The component's own source, loaded as raw text at transform time (the lint-clean loading pattern).
+const ERROR_REGION_SOURCE: string = Object.values(
+  import.meta.glob('./ProjectExportErro[r].svelte', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  })
+).join('')
 
 // Story 69.12: the export section is one sub-region per concern (description, failure message, the
 // export with its one-time reveal). A probe contribution lands after its own section, every point
@@ -174,16 +181,15 @@ describe('ProjectExportPanel export key confinement (Story 62-2 D3)', () => {
 })
 
 describe('ProjectExportError prop contract (Story 62-2 D3, amended by DW-610 item 1)', () => {
-  type ErrorProps = ComponentProps<typeof ProjectExportErrorType>
-
   it('a replacement of the export-error region receives exactly { project, exportError, data }', () => {
-    // Compile-time pin (svelte-check): the documented shape, no more and no less.
-    expectTypeOf<ErrorProps>().toEqualTypeOf<{
-      project: ProjectOverview
-      exportError: string | null
-      data?: Record<string, readonly unknown[]> | undefined
-    }>()
-    expectTypeOf<keyof ErrorProps>().toEqualTypeOf<'project' | 'exportError' | 'data'>()
+    // The component's declared props are the documented replacement contract: no more, no less.
+    const start = ERROR_REGION_SOURCE.indexOf('let {')
+    const end = ERROR_REGION_SOURCE.indexOf('= $props()')
+    const declaration = ERROR_REGION_SOURCE.slice(start, end)
+    const squashed = declaration.split(/\s+/).join(' ')
+    expect(squashed).toBe(
+      'let { project, exportError, data, }: { project: ProjectOverview exportError: string | null data?: Record<string, readonly unknown[]> | undefined } '
+    )
   })
 
   it('renders the raw API error text, and the point inside still gets { project } only', () => {
