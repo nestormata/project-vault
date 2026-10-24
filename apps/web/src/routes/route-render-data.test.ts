@@ -554,6 +554,7 @@ const ACCESS_REPORT_PAGE = {
   page: 1,
   report: ACCESS_REPORT,
 }
+
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -774,6 +775,10 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
       errorMessage: 'report unavailable',
     },
     'report-not-generated': { ...ACCESS_REPORT_PAGE, report: null },
+  },
+  '/(app)/projects/[projectId]/credentials/import/+page.svelte': {
+    'import-allowed': { ...OWNER_READY, canImport: true, projectId: 'p-1' },
+    'import-denied': { ...OWNER_READY, canImport: false, projectId: 'p-1' },
   },
 }
 
