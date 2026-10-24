@@ -348,6 +348,8 @@ export interface InjectionPointProps {
   'project.service-endpoints.header.actions': StandardPointProps
   'project.service-endpoints.not-found': EndpointListPointProps
   'project.service-endpoints.row': EndpointRowPointProps
+  'project.service-endpoints.row-status': EndpointRowPointProps
+  'project.service-endpoints.row-actions': EndpointRowPointProps
   'project.service-endpoints.table': EndpointListPointProps
   'project.services-detail.after': StandardPointProps
   'project.services-detail.before': StandardPointProps
@@ -893,7 +895,11 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'EndpointRowPointProps',
     ['/(app)/projects/[projectId]/service-endpoints#page'],
-    ['project.service-endpoints.row']
+    [
+      'project.service-endpoints.row',
+      'project.service-endpoints.row-status',
+      'project.service-endpoints.row-actions',
+    ]
   ),
   ...regionPoints(
     'EndpointRolePointProps',
