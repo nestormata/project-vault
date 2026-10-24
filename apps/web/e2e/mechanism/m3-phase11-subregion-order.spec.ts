@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { expect, test } from '@playwright/test'
+import { expect, test, type BrowserContext } from '@playwright/test'
 import { enrollMfaViaApi } from '../fixtures/auth.js'
 import { setPlatformOperatorViaDb } from '../fixtures/db.js'
 import {
@@ -18,15 +18,30 @@ import {
 // `/(auth)/recovery/[token]` for its M1 route-removal case, so its points are covered by the
 // `RecoveryResetContent.regions.test.ts` unit tests and the Chrome pass.
 const SENTINEL = 'mock-ui-pack:m3-p11-'
+/** Runs `body` as a platform operator (MFA enrolled, as the usage and backups pages require) and
+ * hands the operator role back to whoever held it. */
+async function asPlatformOperator(
+  context: BrowserContext,
+  label: string,
+  body: () => Promise<void>
+): Promise<void> {
+  const operator = await seedOrgOwner(context, label)
+  await enrollMfaViaApi(context)
+  const displaced = await setPlatformOperatorViaDb(operator.email, true)
+  try {
+    await body()
+  } finally {
+    await setPlatformOperatorViaDb(operator.email, false)
+    if (displaced !== null) await setPlatformOperatorViaDb(displaced, true)
+  }
+}
+
 const id = (point: string) => `mock-p11-${point.replaceAll('.', '-')}`
 
 test.describe('M3 sub-region points of the remaining batch-1 region components', () => {
   test('works: platform resource usage fills sit inside their cards', async ({ page, context }) => {
     const mismatches = trackHydrationMismatch(page)
-    const operator = await seedOrgOwner(context, 'p11-usage')
-    await enrollMfaViaApi(context)
-    const displaced = await setPlatformOperatorViaDb(operator.email, true)
-    try {
+    await asPlatformOperator(context, 'p11-usage', async () => {
       const users = 'platform.settings-resource-usage.users'
       const orgTable = 'platform.settings-resource-usage.org-table'
       await open(page, '/platform/settings/resource-usage', page.getByTestId(id(users)))
@@ -50,10 +65,7 @@ test.describe('M3 sub-region points of the remaining batch-1 region components',
       ).toBe(true)
       expect(await precedes(page.getByRole('table'), table)).toBe(true)
       expect(mismatches()).toEqual([])
-    } finally {
-      await setPlatformOperatorViaDb(operator.email, false)
-      if (displaced !== null) await setPlatformOperatorViaDb(displaced, true)
-    }
+    })
   })
 
   test('works: platform backups fills sit after the trigger control and after the list', async ({
@@ -61,10 +73,7 @@ test.describe('M3 sub-region points of the remaining batch-1 region components',
     context,
   }) => {
     const mismatches = trackHydrationMismatch(page)
-    const operator = await seedOrgOwner(context, 'p11-backups')
-    await enrollMfaViaApi(context)
-    const displaced = await setPlatformOperatorViaDb(operator.email, true)
-    try {
+    await asPlatformOperator(context, 'p11-backups', async () => {
       const intro = 'platform.backups.intro'
       const list = 'platform.backups.list'
       await open(page, '/platform/backups', page.getByTestId(id(intro)))
@@ -77,10 +86,7 @@ test.describe('M3 sub-region points of the remaining batch-1 region components',
       ).toBe(true)
       expect(await precedes(page.getByTestId(id(intro)), page.getByTestId(id(list)))).toBe(true)
       expect(mismatches()).toEqual([])
-    } finally {
-      await setPlatformOperatorViaDb(operator.email, false)
-      if (displaced !== null) await setPlatformOperatorViaDb(displaced, true)
-    }
+    })
   })
 
   test('works: credential detail value and dependencies fills keep their section order', async ({
