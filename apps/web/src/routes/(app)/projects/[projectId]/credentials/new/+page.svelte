@@ -19,7 +19,7 @@
   </CredentialsNewHeader>
 
   <!-- @region project.credentials-new.form -->
-  <CredentialsNewForm {data}>
+  <CredentialsNewForm pageData={data} data={data?.__inject}>
     <InjectionPoint name="project.credentials-new.form" data={data?.__inject} />
   </CredentialsNewForm>
 </section>

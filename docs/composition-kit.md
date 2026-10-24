@@ -427,6 +427,29 @@ whole region. The sub-regions of the first batch:
 | `/platform/settings`                | `platform.settings.form`, `.save-status`, `.smtp`, `.smtp-server`, `.smtp-account`, `.backup`, `.notifications`, `.instance-policy`, `.status-token` (+ `-reveal`, `-state`, `-actions`, `-test`) |
 | `/projects/[projectId]/credentials` | `project.credentials.filters`, `.archived-toggle`, `.results`                                                                                                                                     |
 
+The second batch (Story 69-11) splits thirteen more region components; the page's own end point is unchanged:
+
+| Page                                           | Sub-region points                                                                                              |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `/projects`                                    | `project.home.results`                                                                                         |
+| `/projects/import`                             | `project.import.error`, `.file`, `.export-key`, `.name`, `.submit`, `.done`                                    |
+| `/projects/[projectId]/credentials/new`        | `project.credentials-new.name`, `.template`, `.value`, `.fields`, `.description`, `.tags`, `.error`, `.submit` |
+| `/projects/[projectId]/credentials/import`     | `project.credentials-import.upload`, `.preview-table`, `.preview-actions`, `.done`, `.error`, `.back`          |
+| `/projects/[projectId]/members`                | `project.members.team-error`, `.team-table`, `.team-transfer`                                                  |
+| `/projects/[projectId]/status-page`            | `project.status-page.services-list`, `.services-empty`, `.services-save`                                       |
+| `/notifications`                               | `notifications.home.empty`, `.items`, `.pagination`                                                            |
+| `/settings/extensions`                         | `settings.extensions.notice`, `.summary`, `.capabilities`, `.declarations`, `.not-loaded`                      |
+| `/settings/external-identities`                | `settings.external-identities.link`, `.list`                                                                   |
+| `/settings/audit/access-report`                | `settings.audit-access-report.form`, `.error`, `.summary`, `.results`, `.pagination`                           |
+| `/settings/users/[userId]/erasure/[requestId]` | `settings.users-erasure-detail.notice`, `.inventory`, `.execute`, `.report`                                    |
+| `/platform/settings/orgs`                      | `platform.settings-orgs.list`, `.create-status`, `.create-form`                                                |
+| `/handoff`                                     | `auth.handoff.error`, `.mfa`, `.confirm`                                                                       |
+
+Two things differ from the first batch. The members team points (`project.members.team-*`) receive the page flags only
+(the same props as `project.members.header`), never the member rows. The services-card points on the status page
+receive the same `{ project, capabilities, serviceEndpoints }` as the card's own point. A point never receives a typed
+value (export key, secret value, MFA token): the form state stays in a controller class or `$bindable` props.
+
 A point sits as the last child of its section (written next to the previous node, so no whitespace text node is
 added). Under M4, a replacement that wraps the original through `pv-original:` keeps every sub-region point; a full
 replacement of the region component drops them all, and replacing one sub-region component drops only its own

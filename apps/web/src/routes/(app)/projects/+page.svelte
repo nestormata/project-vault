@@ -63,7 +63,7 @@
   </ProjectsListError>
 
   <!-- @region project.home.list -->
-  <ProjectsListContent projects={data.projects.items} bind:errorMessage>
+  <ProjectsListContent projects={data.projects.items} bind:errorMessage data={data?.__inject}>
     <InjectionPoint name="project.home.list" data={data?.__inject} />
   </ProjectsListContent>
 </section>

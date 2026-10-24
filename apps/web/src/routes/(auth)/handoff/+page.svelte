@@ -23,7 +23,7 @@
 <InjectionPoint name="auth.handoff.before" data={data?.__inject} />
 <InjectionPoint name="auth.handoff.header.actions" data={data?.__inject} />
 <!-- @region auth.handoff.content -->
-<HandoffConfirmContent {centralizeMeOrigin}>
+<HandoffConfirmContent {centralizeMeOrigin} data={data?.__inject}>
   <InjectionPoint name="auth.handoff.content" data={data?.__inject} />
 </HandoffConfirmContent>
 <InjectionPoint name="auth.handoff.after" data={data?.__inject} />

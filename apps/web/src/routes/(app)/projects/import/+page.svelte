@@ -18,7 +18,7 @@
   </ProjectsImportHeader>
 
   <!-- @region project.import.content -->
-  <ProjectsImportContent>
+  <ProjectsImportContent data={data?.__inject}>
     <InjectionPoint name="project.import.content" data={data?.__inject} />
   </ProjectsImportContent>
 </section>

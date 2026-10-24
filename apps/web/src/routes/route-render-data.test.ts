@@ -386,6 +386,276 @@ const CREDENTIAL_ITEMS = [
     activeRotation: null,
   },
 ]
+// Story 69.11: realistic projects for the projects list, whose cards branch on role, archived state,
+// tags and description (a permissive value matches none of the string checks). Recorded BEFORE the
+// list was split into sub-region components.
+const PROJECT_ITEMS = [
+  {
+    id: 'p-owner',
+    name: 'Owner Project',
+    slug: 'owner-project',
+    description: 'An active project the caller owns',
+    role: 'owner',
+    isArchived: false,
+    tags: ['production', 'api'],
+    credentialCount: 4,
+    expiringCount: 1,
+    alertCount: 2,
+  },
+  {
+    id: 'p-viewer',
+    name: 'Viewer Project',
+    slug: 'viewer-project',
+    description: null,
+    role: 'viewer',
+    isArchived: false,
+    tags: [],
+    credentialCount: 0,
+    expiringCount: 0,
+    alertCount: 0,
+  },
+  {
+    id: 'p-member',
+    name: 'Member Project',
+    slug: 'member-project',
+    description: null,
+    role: 'member',
+    isArchived: false,
+    tags: ['shared'],
+    credentialCount: 2,
+    expiringCount: 0,
+    alertCount: 0,
+  },
+  {
+    id: 'p-archived-owner',
+    name: 'Archived Owner Project',
+    slug: 'archived-owner-project',
+    description: 'Hidden from active views',
+    role: 'owner',
+    isArchived: true,
+    tags: ['old'],
+    credentialCount: 9,
+    expiringCount: 0,
+    alertCount: 0,
+  },
+  {
+    id: 'p-archived-viewer',
+    name: 'Archived Viewer Project',
+    slug: 'archived-viewer-project',
+    description: null,
+    role: 'viewer',
+    isArchived: true,
+    tags: [],
+    credentialCount: 1,
+    expiringCount: 0,
+    alertCount: 0,
+  },
+]
+// Story 69.11: realistic erasure request data. The route's branches switch on `state`, `orgRole`,
+// `userEmail` and `piiInventory`, which a permissive value never separates. Recorded BEFORE the
+// panel was split into sub-region components.
+const ERASURE_BASE = {
+  ...OWNER_READY,
+  userId: 'u-erase',
+  requestId: 'req-1',
+  userEmail: 'jane.doe@example',
+}
+const ERASURE_INVENTORY = {
+  tables: [
+    { table: 'org_users', rowCount: 1, piiFields: ['email', 'displayName'] },
+    { table: 'audit_events', rowCount: 12, piiFields: ['actorEmail'] },
+  ],
+}
+const ERASURE_REPORT = {
+  executedAt: '2026-10-05T12:30:00.000Z',
+  piiRemoved: [{ table: 'org_users', fields: ['email', 'displayName'], method: 'hard_delete' }],
+  piiRetained: [{ table: 'audit_events', reason: 'legal retention' }],
+  retentionJustification: 'Audit rows are kept for compliance',
+  auditEventId: 'evt-1',
+}
+// Story 69.11: realistic inbox entries for the notifications page, whose cards branch on severity,
+// alert type, read state and project link, and whose footer branches on the page number. Recorded
+// BEFORE the list was split into sub-region components.
+const INBOX_ENTRIES = [
+  {
+    id: 'n-unread',
+    alertType: 'credential.expiry',
+    severity: 'critical',
+    title: 'Secret expires soon',
+    body: 'The secret expires in 3 days.',
+    projectId: 'p-1',
+    createdAt: '2026-10-04T10:00:00.000Z',
+    readAt: null,
+  },
+  {
+    id: 'n-read',
+    alertType: 'service.down',
+    severity: 'warning',
+    title: 'Service is down',
+    body: 'The health check failed.',
+    projectId: null,
+    createdAt: '2026-10-03T10:00:00.000Z',
+    readAt: '2026-10-03T12:00:00.000Z',
+  },
+  {
+    id: 'n-custom',
+    alertType: 'custom.alert',
+    severity: 'unknown',
+    title: 'Custom alert',
+    body: 'An alert type without a label.',
+    projectId: 'p-2',
+    createdAt: '2026-10-02T10:00:00.000Z',
+    readAt: null,
+  },
+]
+const NOTIFICATIONS_PAGE = {
+  ...OWNER_READY,
+  notifications: INBOX_ENTRIES,
+  status: 'all',
+  page: 1,
+  hasNext: false,
+  dormancyAlerts: [],
+  userDormancyAlerts: [],
+}
+// Story 69.11: realistic extension status data. The page switches on `allowed`, `mfaRequired`,
+// `errorMessage`, `manifest` and `healthStatus`, which a permissive value never separates.
+// Recorded BEFORE the status panel was split into sub-region components.
+const EXTENSION_MANIFEST = {
+  name: 'test.mock-extension',
+  apiVersion: '3.30.0',
+  packageVersion: '1.2.3',
+  capabilities: ['capability-gate', 'audit-event-source', 'capability-gate'],
+  loadedAt: '2026-10-04T08:00:00.000Z',
+}
+const EXTENSIONS_ALLOWED = {
+  allowed: true,
+  mfaRequired: false,
+  errorMessage: null,
+  manifest: null,
+  healthStatus: 'not_configured',
+}
+
+// Story 69.11: realistic external identities and members. The panel's list renders dates and an
+// empty state a permissive value never reaches. Recorded BEFORE the panel was split into
+// sub-region components.
+const EXTERNAL_IDENTITIES = [
+  {
+    id: 'ei-1',
+    email: 'alex@example',
+    providerName: 'test.mock-sso-extension',
+    externalSubject: 'alex-sso-subject-123',
+    createdAt: '2026-10-01T10:00:00.000Z',
+  },
+  {
+    id: 'ei-2',
+    email: 'sam@example',
+    providerName: 'corp.idp',
+    externalSubject: 'sam-subject',
+    createdAt: '2026-10-02T11:30:00.000Z',
+  },
+]
+const EXTERNAL_IDENTITY_USERS = [
+  { userId: 'u-alex', email: 'alex@example' },
+  { userId: 'u-sam', email: 'sam@example' },
+]
+// Story 69.11: a realistic access report. The page branches on the report's users (status,
+// projects), its page number and `hasNext`, the `asOf` date and the load error, none of which a
+// permissive value separates. Recorded BEFORE the panel was split into sub-region components.
+const ACCESS_REPORT_USERS = [
+  {
+    userId: 'u-active',
+    displayName: 'Active Member',
+    orgRole: 'member',
+    status: 'active',
+    projects: [
+      { projectId: 'p-alpha', projectName: 'Alpha', role: 'owner' },
+      { projectId: 'p-beta', projectName: 'Beta', role: 'viewer' },
+    ],
+  },
+  {
+    userId: 'u-off',
+    displayName: 'Former Member',
+    orgRole: 'viewer',
+    status: 'deactivated',
+    projects: [],
+  },
+]
+const ACCESS_REPORT = {
+  asOf: '2026-10-01T00:00:00.000Z',
+  generatedAt: '2026-10-05T09:30:00.000Z',
+  hasNext: false,
+  users: ACCESS_REPORT_USERS,
+}
+const ACCESS_REPORT_PAGE = {
+  ...OWNER_READY,
+  asOf: undefined,
+  page: 1,
+  report: ACCESS_REPORT,
+}
+
+// Story 69.11: realistic organizations for the platform organizations page, whose list renders
+// dates and an empty state a permissive value never reaches. Recorded BEFORE the page content was
+// split into sub-region components.
+const PLATFORM_ORGS = [
+  {
+    id: 'org-1',
+    name: 'Acme Corp',
+    slug: 'acme-corp',
+    createdAt: '2026-09-01T10:00:00.000Z',
+    memberCount: 12,
+  },
+  {
+    id: 'org-2',
+    name: 'Beta LLC',
+    slug: 'beta-llc',
+    createdAt: '2026-09-15T10:00:00.000Z',
+    memberCount: 3,
+  },
+]
+// Story 69.11: realistic status page admin data. The "Services shown" card branches on the number
+// of selected services, the endpoints list and the capability gate, which a permissive value never
+// separates. Recorded BEFORE the card was split into sub-region components.
+const STATUS_PAGE_ENDPOINTS = [
+  { id: 'se-1', name: 'API gateway' },
+  { id: 'se-2', name: 'Web app' },
+  { id: 'se-3', name: 'Billing' },
+]
+const STATUS_PAGE_BASE = {
+  ...OWNER_READY,
+  canManage: true,
+  projectId: 'p-1',
+  origin: 'https://vault.example.com',
+  capabilities: { 'monitoring.public-status-page': true },
+  serviceEndpoints: STATUS_PAGE_ENDPOINTS,
+  config: {
+    enabled: true,
+    token: 'tok-123',
+    legacyToken: false,
+    services: [
+      { serviceId: 'se-1', displayName: 'Gateway' },
+      { serviceId: 'se-2', displayName: 'Website' },
+    ],
+  },
+}
+// Story 69.11: realistic project members. The team card branches on the member role (owner badge vs
+// role select), an empty list and the transfer-ownership gate, none of which a permissive value
+// separates. Recorded BEFORE the team panel was split into sub-region components.
+const PROJECT_MEMBERS = [
+  { userId: 'u-owner', displayName: 'Olive Owner', email: 'olive@example', role: 'owner' },
+  { userId: 'u-admin', displayName: 'Adam Admin', email: 'adam@example', role: 'admin' },
+  { userId: 'u-view', displayName: 'Vera Viewer', email: 'vera@example', role: 'viewer' },
+]
+const MEMBERS_PAGE = {
+  ...OWNER_READY,
+  projectId: 'p-1',
+  userId: 'u-owner',
+  canManage: true,
+  canManageMembers: true,
+  canTransferOwnership: true,
+  members: PROJECT_MEMBERS,
+  invitations: [],
+}
+
 const ROTATION_DETAIL_ROUTE =
   '/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.svelte'
 const ROTATE_ROUTE = '/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.svelte'
@@ -856,6 +1126,173 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
     'backups-error-empty': { ...OWNER_READY, backups: [], errorMessage: 'backups unavailable' },
     'backups-error-rows': { ...OWNER_READY, backups: BACKUPS, errorMessage: 'backups stale' },
     'backups-denied': { ...GATES_SHUT, ...NEGATIVES_OFF },
+  },
+  '/(app)/projects/+page.svelte': {
+    'projects-mixed': {
+      ...OWNER_READY,
+      includeArchived: true,
+      projects: { items: PROJECT_ITEMS, total: 5, page: 1, limit: 100, hasNext: false },
+    },
+    'projects-active-only': {
+      ...OWNER_READY,
+      includeArchived: false,
+      projects: { items: PROJECT_ITEMS.slice(0, 3), total: 3, page: 1, limit: 100, hasNext: false },
+    },
+    'projects-empty': {
+      ...OWNER_READY,
+      projects: { items: [], total: 0, page: 1, limit: 100, hasNext: false },
+    },
+  },
+  '/(app)/settings/users/[userId]/erasure/[requestId]/+page.svelte': {
+    'erasure-pending-owner': {
+      ...ERASURE_BASE,
+      state: 'pending',
+      orgRole: 'owner',
+      piiInventory: ERASURE_INVENTORY,
+    },
+    'erasure-pending-admin': {
+      ...ERASURE_BASE,
+      state: 'pending',
+      orgRole: 'admin',
+      piiInventory: ERASURE_INVENTORY,
+    },
+    'erasure-pending-no-email': {
+      ...ERASURE_BASE,
+      state: 'pending',
+      orgRole: 'owner',
+      userEmail: null,
+      piiInventory: ERASURE_INVENTORY,
+    },
+    'erasure-pending-no-inventory': {
+      ...ERASURE_BASE,
+      state: 'pending',
+      orgRole: 'owner',
+      piiInventory: null,
+    },
+    'erasure-completed': { ...ERASURE_BASE, state: 'completed', report: ERASURE_REPORT },
+    'erasure-completed-no-audit-id': {
+      ...ERASURE_BASE,
+      state: 'completed',
+      report: { ...ERASURE_REPORT, auditEventId: null, piiRetained: [], piiRemoved: [] },
+    },
+  },
+  '/(app)/notifications/+page.svelte': {
+    'inbox-first-page': { ...NOTIFICATIONS_PAGE, hasNext: true },
+    'inbox-middle-page': { ...NOTIFICATIONS_PAGE, page: 2, hasNext: true, status: 'read' },
+    'inbox-last-page': { ...NOTIFICATIONS_PAGE, page: 3, status: 'unread' },
+    'inbox-single-page': NOTIFICATIONS_PAGE,
+    'inbox-empty-all': { ...NOTIFICATIONS_PAGE, notifications: [] },
+    'inbox-empty-unread': { ...NOTIFICATIONS_PAGE, notifications: [], status: 'unread' },
+  },
+  '/(app)/settings/extensions/+page.svelte': {
+    'extensions-denied': { allowed: false },
+    'extensions-mfa-required': { ...EXTENSIONS_ALLOWED, mfaRequired: true },
+    'extensions-error': { ...EXTENSIONS_ALLOWED, errorMessage: 'status unavailable' },
+    'extensions-loaded': {
+      ...EXTENSIONS_ALLOWED,
+      manifest: EXTENSION_MANIFEST,
+      healthStatus: 'loaded',
+    },
+    'extensions-loaded-bare': {
+      ...EXTENSIONS_ALLOWED,
+      manifest: { ...EXTENSION_MANIFEST, packageVersion: null, capabilities: [] },
+      healthStatus: 'loaded',
+    },
+    'extensions-loaded-audit-only': {
+      ...EXTENSIONS_ALLOWED,
+      manifest: { ...EXTENSION_MANIFEST, capabilities: ['audit-event-source'] },
+      healthStatus: 'loaded',
+    },
+    'extensions-load-failed': { ...EXTENSIONS_ALLOWED, healthStatus: 'load_failed' },
+    'extensions-not-configured': EXTENSIONS_ALLOWED,
+  },
+  '/(app)/projects/[projectId]/credentials/new/+page.svelte': {
+    'new-credential-member': { ...OWNER_READY, orgRole: 'member', projectId: 'p-1' },
+    'new-credential-viewer': { ...OWNER_READY, orgRole: 'viewer', projectId: 'p-1' },
+  },
+  '/(app)/settings/external-identities/+page.svelte': {
+    'identities-linked': {
+      ...OWNER_READY,
+      identities: EXTERNAL_IDENTITIES,
+      orgUsers: EXTERNAL_IDENTITY_USERS,
+    },
+    'identities-empty': { ...OWNER_READY, identities: [], orgUsers: EXTERNAL_IDENTITY_USERS },
+  },
+  '/(app)/settings/audit/access-report/+page.svelte': {
+    'report-current': ACCESS_REPORT_PAGE,
+    'report-as-of-next': {
+      ...ACCESS_REPORT_PAGE,
+      asOf: '2026-10-01',
+      page: 2,
+      report: { ...ACCESS_REPORT, hasNext: true },
+    },
+    'report-first-page-next': {
+      ...ACCESS_REPORT_PAGE,
+      report: { ...ACCESS_REPORT, hasNext: true },
+    },
+    'report-empty': { ...ACCESS_REPORT_PAGE, report: { ...ACCESS_REPORT, users: [] } },
+    'report-load-error': {
+      ...ACCESS_REPORT_PAGE,
+      report: null,
+      errorMessage: 'report unavailable',
+    },
+    'report-not-generated': { ...ACCESS_REPORT_PAGE, report: null },
+  },
+  '/(app)/projects/[projectId]/credentials/import/+page.svelte': {
+    'import-allowed': { ...OWNER_READY, canImport: true, projectId: 'p-1' },
+    'import-denied': { ...OWNER_READY, canImport: false, projectId: 'p-1' },
+  },
+  '/(app)/platform/settings/orgs/+page.svelte': {
+    'orgs-listed': { ...OWNER_READY, orgs: PLATFORM_ORGS },
+    'orgs-empty': { ...OWNER_READY, orgs: [] },
+    'orgs-empty-with-error': { ...OWNER_READY, orgs: [], errorMessage: 'orgs unavailable' },
+    'orgs-listed-with-error': {
+      ...OWNER_READY,
+      orgs: PLATFORM_ORGS,
+      errorMessage: 'orgs unavailable',
+    },
+  },
+  '/(app)/projects/[projectId]/status-page/+page.svelte': {
+    'status-page-services-selected': STATUS_PAGE_BASE,
+    'status-page-one-selected': {
+      ...STATUS_PAGE_BASE,
+      config: {
+        ...STATUS_PAGE_BASE.config,
+        services: [{ serviceId: 'se-3', displayName: 'Payments' }],
+      },
+    },
+    'status-page-none-selected': {
+      ...STATUS_PAGE_BASE,
+      config: { ...STATUS_PAGE_BASE.config, services: [] },
+    },
+    'status-page-no-endpoints': {
+      ...STATUS_PAGE_BASE,
+      serviceEndpoints: [],
+      config: { ...STATUS_PAGE_BASE.config, services: [] },
+    },
+    'status-page-capability-denied': {
+      ...STATUS_PAGE_BASE,
+      capabilities: { 'monitoring.public-status-page': false },
+    },
+    'status-page-disabled': {
+      ...STATUS_PAGE_BASE,
+      config: { enabled: false, token: null, legacyToken: false, services: [] },
+    },
+  },
+  '/(app)/projects/[projectId]/members/+page.svelte': {
+    'members-owner-transfer': MEMBERS_PAGE,
+    'members-no-transfer': { ...MEMBERS_PAGE, canTransferOwnership: false },
+    'members-only-owner': {
+      ...MEMBERS_PAGE,
+      members: PROJECT_MEMBERS.slice(0, 1),
+    },
+    'members-empty': { ...MEMBERS_PAGE, members: [] },
+    'members-no-manage-members': { ...MEMBERS_PAGE, canManageMembers: false },
+    'members-read-only': { ...MEMBERS_PAGE, canManage: false, canManageMembers: false },
+  },
+  '/(auth)/handoff/+page.svelte': {
+    'handoff-with-origin': { centralizeMeOrigin: 'https://app.centralizeme.example' },
+    'handoff-without-origin': { centralizeMeOrigin: null },
   },
 }
 

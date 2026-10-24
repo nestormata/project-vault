@@ -1,0 +1,9 @@
+<script lang="ts">
+  // Story 69.11 M3 sub-region point: `notifications.home.empty`, a render-only fill that lets the probe-order
+  // e2e prove it lands right after the PV section it targets (DOM order).
+  let { routeId = '' }: { routeId?: string } = $props()
+</script>
+
+<p data-testid="mock-p11-notifications-empty" data-route={routeId}>
+  mock-ui-pack:m3-p11-notifications.home.empty
+</p>

@@ -366,6 +366,9 @@ export interface InjectionPointProps {
   'project.status-page.link': StatusPageLinkPointProps
   'project.status-page.read-only': StatusPageAdminPointProps
   'project.status-page.services': StatusPageAdminPointProps
+  'project.status-page.services-list': StatusPageAdminPointProps
+  'project.status-page.services-empty': StatusPageAdminPointProps
+  'project.status-page.services-save': StatusPageAdminPointProps
   'root.error.after': StandardPointProps
   'root.error.before': StandardPointProps
   'root.error.header.actions': StandardPointProps
@@ -437,6 +440,9 @@ export interface InjectionPointProps {
   'settings.notifications.routing': NotificationRoutingPointProps
   'settings.notifications.test': NotificationSettingsPointProps
   'project.members.access': ProjectMembersPointProps
+  'project.members.team-error': ProjectMembersBasePointProps
+  'project.members.team-table': ProjectMembersBasePointProps
+  'project.members.team-transfer': ProjectMembersBasePointProps
   'project.members.header': ProjectMembersBasePointProps
   'project.members.invitations': ProjectMembersInvitationsPointProps
   'project.members.invite': ProjectMembersBasePointProps
@@ -459,6 +465,9 @@ export interface InjectionPointProps {
   'notifications.home.user-dormancy': StandardPointProps
   'notifications.home.tabs': StandardPointProps
   'notifications.home.list': StandardPointProps
+  'notifications.home.items': StandardPointProps
+  'notifications.home.pagination': StandardPointProps
+  'notifications.home.empty': StandardPointProps
   'platform.home.header': StandardPointProps
   'platform.audit.content': StandardPointProps
   'platform.audit.maintenance': StandardPointProps
@@ -485,6 +494,9 @@ export interface InjectionPointProps {
   'platform.settings.status-token-state': StandardPointProps
   'platform.settings.status-token-test': StandardPointProps
   'platform.settings-orgs.content': StandardPointProps
+  'platform.settings-orgs.list': StandardPointProps
+  'platform.settings-orgs.create-status': StandardPointProps
+  'platform.settings-orgs.create-form': StandardPointProps
   'platform.settings-resource-usage.content': StandardPointProps
   'platform.settings-resource-usage.intro': StandardPointProps
   'platform.settings-resource-usage.error': StandardPointProps
@@ -499,6 +511,7 @@ export interface InjectionPointProps {
   'project.home.header': StandardPointProps
   'project.home.error': StandardPointProps
   'project.home.list': StandardPointProps
+  'project.home.results': StandardPointProps
   'project.certificates.list': StandardPointProps
   'project.certificates-detail.content': StandardPointProps
   'project.certificates-new.header': StandardPointProps
@@ -527,8 +540,22 @@ export interface InjectionPointProps {
   'project.credentials-rotations-detail.summary': StandardPointProps
   'project.credentials-import.header': StandardPointProps
   'project.credentials-import.content': StandardPointProps
+  'project.credentials-import.done': StandardPointProps
+  'project.credentials-import.preview-table': StandardPointProps
+  'project.credentials-import.preview-actions': StandardPointProps
+  'project.credentials-import.upload': StandardPointProps
+  'project.credentials-import.error': StandardPointProps
+  'project.credentials-import.back': StandardPointProps
   'project.credentials-new.header': StandardPointProps
   'project.credentials-new.form': StandardPointProps
+  'project.credentials-new.name': StandardPointProps
+  'project.credentials-new.template': StandardPointProps
+  'project.credentials-new.value': StandardPointProps
+  'project.credentials-new.fields': StandardPointProps
+  'project.credentials-new.description': StandardPointProps
+  'project.credentials-new.tags': StandardPointProps
+  'project.credentials-new.error': StandardPointProps
+  'project.credentials-new.submit': StandardPointProps
   'project.domains.list': StandardPointProps
   'project.domains-detail.content': StandardPointProps
   'project.domains-new.header': StandardPointProps
@@ -549,12 +576,23 @@ export interface InjectionPointProps {
   'project.services-new.form': StandardPointProps
   'project.import.header': StandardPointProps
   'project.import.content': StandardPointProps
+  'project.import.error': StandardPointProps
+  'project.import.done': StandardPointProps
+  'project.import.file': StandardPointProps
+  'project.import.export-key': StandardPointProps
+  'project.import.name': StandardPointProps
+  'project.import.submit': StandardPointProps
   'project.new.header': StandardPointProps
   'project.new.form': StandardPointProps
   'project.preview.content': StandardPointProps
   'settings.home.header': StandardPointProps
   'settings.audit-access-report.header': StandardPointProps
   'settings.audit-access-report.report': StandardPointProps
+  'settings.audit-access-report.form': StandardPointProps
+  'settings.audit-access-report.error': StandardPointProps
+  'settings.audit-access-report.summary': StandardPointProps
+  'settings.audit-access-report.results': StandardPointProps
+  'settings.audit-access-report.pagination': StandardPointProps
   'settings.audit-forwarding.header': StandardPointProps
   'settings.audit-forwarding.config': StandardPointProps
   'settings.audit-forwarding.forwarder': StandardPointProps
@@ -566,8 +604,15 @@ export interface InjectionPointProps {
   'settings.audit-forwarding.webhook': StandardPointProps
   'settings.extensions.header': StandardPointProps
   'settings.extensions.status': StandardPointProps
+  'settings.extensions.notice': StandardPointProps
+  'settings.extensions.summary': StandardPointProps
+  'settings.extensions.capabilities': StandardPointProps
+  'settings.extensions.declarations': StandardPointProps
+  'settings.extensions.not-loaded': StandardPointProps
   'settings.external-identities.header': StandardPointProps
   'settings.external-identities.panel': StandardPointProps
+  'settings.external-identities.link': StandardPointProps
+  'settings.external-identities.list': StandardPointProps
   'settings.language.header': StandardPointProps
   'settings.language.errors': StandardPointProps
   'settings.language.options': StandardPointProps
@@ -588,12 +633,19 @@ export interface InjectionPointProps {
   'settings.users.user-dormancy': StandardPointProps
   'settings.users-erasure-detail.header': StandardPointProps
   'settings.users-erasure-detail.request': StandardPointProps
+  'settings.users-erasure-detail.notice': StandardPointProps
+  'settings.users-erasure-detail.inventory': StandardPointProps
+  'settings.users-erasure-detail.execute': StandardPointProps
+  'settings.users-erasure-detail.report': StandardPointProps
   'shares.detail.heading': StandardPointProps
   'shares.detail.body': StandardPointProps
   'auth.layout.theme': StandardPointProps
   'auth.layout.footer': StandardPointProps
   'auth.layout.body': StandardPointProps
   'auth.handoff.content': StandardPointProps
+  'auth.handoff.error': StandardPointProps
+  'auth.handoff.mfa': StandardPointProps
+  'auth.handoff.confirm': StandardPointProps
   'auth.invitations-accept.content': StandardPointProps
   'auth.login.heading': StandardPointProps
   'auth.login.reason': StandardPointProps
@@ -864,6 +916,9 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'project.status-page.header',
       'project.status-page.read-only',
       'project.status-page.services',
+      'project.status-page.services-list',
+      'project.status-page.services-empty',
+      'project.status-page.services-save',
     ]
   ),
   ...regionPoints('StatusPageLinkPointProps', [STATUS_PAGE_HOST], ['project.status-page.link']),
@@ -930,7 +985,14 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'ProjectMembersBasePointProps',
     [MEMBERS_PAGE_HOST],
-    ['project.members.header', 'project.members.invite', 'project.members.notice']
+    [
+      'project.members.header',
+      'project.members.invite',
+      'project.members.notice',
+      'project.members.team-error',
+      'project.members.team-table',
+      'project.members.team-transfer',
+    ]
   ),
   ...regionPoints('ProjectMembersPointProps', [MEMBERS_PAGE_HOST], ['project.members.access']),
   ...regionPoints(
@@ -974,6 +1036,9 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'notifications.home.user-dormancy',
       'notifications.home.tabs',
       'notifications.home.list',
+      'notifications.home.items',
+      'notifications.home.pagination',
+      'notifications.home.empty',
     ]
   ),
   ...regionPoints('StandardPointProps', ['/(app)/platform#page'], ['platform.home.header']),
@@ -1022,7 +1087,12 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/settings/orgs#page'],
-    ['platform.settings-orgs.content']
+    [
+      'platform.settings-orgs.content',
+      'platform.settings-orgs.list',
+      'platform.settings-orgs.create-status',
+      'platform.settings-orgs.create-form',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1048,7 +1118,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects#page'],
-    ['project.home.header', 'project.home.error', 'project.home.list']
+    ['project.home.header', 'project.home.error', 'project.home.list', 'project.home.results']
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1108,12 +1178,32 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials/import#page'],
-    ['project.credentials-import.header', 'project.credentials-import.content']
+    [
+      'project.credentials-import.header',
+      'project.credentials-import.content',
+      'project.credentials-import.done',
+      'project.credentials-import.preview-table',
+      'project.credentials-import.preview-actions',
+      'project.credentials-import.upload',
+      'project.credentials-import.error',
+      'project.credentials-import.back',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials/new#page'],
-    ['project.credentials-new.header', 'project.credentials-new.form']
+    [
+      'project.credentials-new.header',
+      'project.credentials-new.form',
+      'project.credentials-new.name',
+      'project.credentials-new.template',
+      'project.credentials-new.value',
+      'project.credentials-new.fields',
+      'project.credentials-new.description',
+      'project.credentials-new.tags',
+      'project.credentials-new.error',
+      'project.credentials-new.submit',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1170,7 +1260,16 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/import#page'],
-    ['project.import.header', 'project.import.content']
+    [
+      'project.import.header',
+      'project.import.content',
+      'project.import.error',
+      'project.import.done',
+      'project.import.file',
+      'project.import.export-key',
+      'project.import.name',
+      'project.import.submit',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1186,7 +1285,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/audit/access-report#page'],
-    ['settings.audit-access-report.header', 'settings.audit-access-report.report']
+    [
+      'settings.audit-access-report.header',
+      'settings.audit-access-report.report',
+      'settings.audit-access-report.form',
+      'settings.audit-access-report.error',
+      'settings.audit-access-report.summary',
+      'settings.audit-access-report.results',
+      'settings.audit-access-report.pagination',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1206,12 +1313,25 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/extensions#page'],
-    ['settings.extensions.header', 'settings.extensions.status']
+    [
+      'settings.extensions.header',
+      'settings.extensions.status',
+      'settings.extensions.notice',
+      'settings.extensions.summary',
+      'settings.extensions.capabilities',
+      'settings.extensions.declarations',
+      'settings.extensions.not-loaded',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/external-identities#page'],
-    ['settings.external-identities.header', 'settings.external-identities.panel']
+    [
+      'settings.external-identities.header',
+      'settings.external-identities.panel',
+      'settings.external-identities.link',
+      'settings.external-identities.list',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1258,7 +1378,14 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/users/[userId]/erasure/[requestId]#page'],
-    ['settings.users-erasure-detail.header', 'settings.users-erasure-detail.request']
+    [
+      'settings.users-erasure-detail.header',
+      'settings.users-erasure-detail.request',
+      'settings.users-erasure-detail.notice',
+      'settings.users-erasure-detail.inventory',
+      'settings.users-erasure-detail.execute',
+      'settings.users-erasure-detail.report',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1270,7 +1397,11 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     ['/(auth)#layout'],
     ['auth.layout.theme', 'auth.layout.footer', 'auth.layout.body']
   ),
-  ...regionPoints('StandardPointProps', ['/(auth)/handoff#page'], ['auth.handoff.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/handoff#page'],
+    ['auth.handoff.content', 'auth.handoff.error', 'auth.handoff.mfa', 'auth.handoff.confirm']
+  ),
   ...regionPoints(
     'StandardPointProps',
     ['/(auth)/invitations/accept#page'],

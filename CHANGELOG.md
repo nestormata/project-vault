@@ -23,6 +23,13 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   (`settings.users.table`, `platform.settings.smtp`, `project.credentials.filters`, ...). PV's rendered
   output is unchanged; `docs/composition-kit.md` lists the points.
 
+- **Injection points between the sections of thirteen more pages** (Story 69.11, DW-546). The projects list,
+  project import, new secret form, secrets import, project members, status page services, notifications inbox,
+  extensions status, external identities, access report, erasure request, platform organizations and sign-in
+  handoff pages are split into sub-region components, each with its own registered point (52 new points, e.g.
+  `project.credentials-new.tags`, `settings.audit-access-report.results`). PV's rendered output is unchanged;
+  `docs/composition-kit.md` lists the points.
+
 ### Fixed
 
 - **Sitewide hygiene** (Story 63.2): authenticated pages no longer open a dead `/api/v1/stream`

@@ -9,3 +9,10 @@ export type ServiceRow = {
   current: SelectedService | undefined
   index: number
 }
+
+/** What the services list and each of its rows share: the page owns the selection, the rows call back. */
+export type ServiceRowCallbacks = {
+  onToggle: (service: { id: string; name: string }) => void
+  onSetDisplayName: (serviceId: string, displayName: string) => void
+  onMove: (index: number, direction: -1 | 1) => void | Promise<void>
+}

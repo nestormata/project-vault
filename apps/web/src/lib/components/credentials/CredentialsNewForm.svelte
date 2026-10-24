@@ -13,17 +13,26 @@
   import { resolve } from '$app/paths'
   import { goto } from '$app/navigation'
   import { createCredential } from '$lib/api/credentials.js'
-  import {
-    CREDENTIAL_TEMPLATES,
-    CREDENTIAL_TEMPLATE_LABELS,
-    type CredentialTemplate,
-  } from '@project-vault/shared'
-  import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
-  import FieldSetEditor from '$lib/components/credentials/FieldSetEditor.svelte'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import type { CredentialTemplate } from '@project-vault/shared'
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
+  import CredentialsNewDescription from './CredentialsNewDescription.svelte'
+  import CredentialsNewError from './CredentialsNewError.svelte'
+  import CredentialsNewFields from './CredentialsNewFields.svelte'
+  import CredentialsNewName from './CredentialsNewName.svelte'
+  import CredentialsNewSubmit from './CredentialsNewSubmit.svelte'
+  import CredentialsNewTags from './CredentialsNewTags.svelte'
+  import CredentialsNewTemplate from './CredentialsNewTemplate.svelte'
+  import CredentialsNewValue from './CredentialsNewValue.svelte'
 
-  let { data, children }: { data: PageData; children?: Snippet } = $props()
+  let {
+    pageData,
+    data,
+    children,
+  }: {
+    pageData: PageData
+    data?: Record<string, readonly unknown[]> | undefined
+    children?: Snippet
+  } = $props()
 
   let name = $state('')
   let value = $state('')
@@ -36,7 +45,7 @@
   let errorMessage = $state<string | null>(null)
   let fieldErrors = $state<{ name?: string; value?: string }>({})
   let fieldSetErrors = $state<Record<number, string>>({})
-  const canCreate = $derived(canCreateCredential(data.orgRole))
+  const canCreate = $derived(canCreateCredential(pageData.orgRole))
   const useFieldSet = $derived(template !== '')
   function hasFieldEdits(): boolean {
     return fields.some((f) => f.value.trim() !== '')
@@ -93,9 +102,9 @@
             })),
           }
         : { ...common, value }
-      const created = await createCredential(fetch, data.projectId, body)
+      const created = await createCredential(fetch, pageData.projectId, body)
       value = ''
-      await goto(resolve(`/projects/${data.projectId}/credentials/${created.id}`))
+      await goto(resolve(`/projects/${pageData.projectId}/credentials/${created.id}`))
     } catch (error) {
       value = ''
       const mapped = mapCredentialSubmitError(error)
@@ -119,7 +128,7 @@
   <AccessNotice
     title="Create not available"
     message="Secret creation requires Member access or higher. Ask your administrator to upgrade your role."
-    backHref={`/projects/${data.projectId}/credentials`}
+    backHref={`/projects/${pageData.projectId}/credentials`}
     backLabel="Back to secrets"
   />
 {:else}
@@ -131,111 +140,29 @@
       void submitForm()
     }}
   >
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="credential-name">Name</label>
-      <input
-        id="credential-name"
-        class="w-full rounded-xl border border-slate-300 px-3 py-3"
-        type="text"
-        bind:value={name}
-        autocomplete="off"
-        required
-        aria-describedby="credential-name-help"
-      />
-      <FormHelpText id="credential-name-help" kind="text" />
-      {#if fieldErrors.name}
-        <p class="text-sm text-red-700">{fieldErrors.name}</p>
-      {/if}
-    </div>
+    <CredentialsNewName bind:name error={fieldErrors.name} {data} />
 
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="credential-template">Template</label>
-      <select
-        id="credential-template"
-        class="w-full rounded-xl border border-slate-300 px-3 py-3"
-        value={template}
-        aria-describedby="credential-template-help"
-        onchange={(event) => onTemplateChange(event.currentTarget.value as '' | CredentialTemplate)}
-      >
-        <option value="">No template — single value</option>
-        {#each CREDENTIAL_TEMPLATES as tpl (tpl)}
-          <option value={tpl}>{CREDENTIAL_TEMPLATE_LABELS[tpl]}</option>
-        {/each}
-      </select>
-      <FormHelpText id="credential-template-help" kind="select" />
-    </div>
+    <CredentialsNewTemplate {template} onChange={onTemplateChange} {data} />
 
     {#if !useFieldSet}
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="credential-value">Value</label>
-        <input
-          id="credential-value"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 font-mono"
-          type="password"
-          bind:value
-          autocomplete="new-password"
-          required
-          aria-describedby="credential-value-help"
-        />
-        <FormHelpText id="credential-value-help" kind="secret" />
-        {#if fieldErrors.value}
-          <p class="text-sm text-red-700">{fieldErrors.value}</p>
-        {/if}
-      </div>
+      <CredentialsNewValue bind:value error={fieldErrors.value} {data} />
     {:else}
-      <fieldset class="space-y-3">
-        <legend class="font-medium text-slate-900">Fields</legend>
-        {#if fields.length === 0}
-          <p class="text-sm text-slate-600">
-            This template starts empty — add at least one field before saving.
-          </p>
-        {/if}
-        <FieldSetEditor
-          bind:fields
-          errors={fieldSetErrors}
-          multilineValue={template === 'secure_note'}
-          onAdd={addField}
-          onRemove={removeField}
-        />
-      </fieldset>
-    {/if}
-
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="credential-description"
-        >Description</label
-      >
-      <textarea
-        id="credential-description"
-        class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3"
-        bind:value={description}
-        aria-describedby="credential-description-help"></textarea>
-      <FormHelpText id="credential-description-help" kind="text" />
-    </div>
-
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="credential-tags">Tags</label>
-      <input
-        id="credential-tags"
-        class="w-full rounded-xl border border-slate-300 px-3 py-3"
-        type="text"
-        placeholder="production, api"
-        bind:value={tags}
-        aria-describedby="credential-tags-help"
+      <CredentialsNewFields
+        bind:fields
+        errors={fieldSetErrors}
+        multilineValue={template === 'secure_note'}
+        onAdd={addField}
+        onRemove={removeField}
+        {data}
       />
-      <FormHelpText id="credential-tags-help" kind="text" />
-    </div>
-
-    {#if errorMessage}
-      <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-        {errorMessage}
-      </p>
     {/if}
 
-    <FormSubmitRow
-      submitLabel="Create secret"
-      pendingLabel="Creating…"
-      cancelHref={`/projects/${data.projectId}/credentials`}
-      {submitting}
-    />
+    <CredentialsNewDescription bind:description {data} />
+
+    <CredentialsNewTags bind:tags {data} />
+
+    <CredentialsNewError {errorMessage} {data} />
+
+    <CredentialsNewSubmit projectId={pageData.projectId} {submitting} {data} />
   </form>
 {/if}

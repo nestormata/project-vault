@@ -28,7 +28,7 @@
   </NavLinkRegion>
 
   <!-- @region settings.audit-access-report.report -->
-  <AccessReportPanel {data}>
+  <AccessReportPanel pageData={data} data={data?.__inject}>
     <InjectionPoint name="settings.audit-access-report.report" data={data?.__inject} />
   </AccessReportPanel>
 </div>
