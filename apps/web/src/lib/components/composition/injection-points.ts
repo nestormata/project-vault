@@ -198,6 +198,11 @@ export interface InjectionPointProps {
   'credential.detail.shares': CredentialPointProps
   'credential.detail.summary': CredentialPointProps
   'credential.detail.value': CredentialPointProps
+  'credential.detail.value-add-version': CredentialPointProps
+  'credential.detail.value-copy-status': CredentialPointProps
+  'credential.detail.value-edit-fields': CredentialPointProps
+  'credential.detail.value-fields': CredentialPointProps
+  'credential.detail.value-single': CredentialPointProps
   'credential.detail.vault-sealed': CredentialPointProps
   'credential.detail.versions': CredentialPointProps
   'credentials.home.after': StandardPointProps
@@ -713,6 +718,11 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'credential.detail.shares',
       'credential.detail.summary',
       'credential.detail.value',
+      'credential.detail.value-fields',
+      'credential.detail.value-single',
+      'credential.detail.value-copy-status',
+      'credential.detail.value-edit-fields',
+      'credential.detail.value-add-version',
       'credential.detail.vault-sealed',
       'credential.detail.versions',
     ]
