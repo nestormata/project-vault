@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte'
-import type { Component } from 'svelte'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ProjectOverview } from '@project-vault/shared'
+import type { Component, ComponentProps } from 'svelte'
+import { afterEach, beforeAll, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { ApiClientError } from '$lib/api/client.js'
 import { sampleProject } from '$lib/test/fixtures.js'
+import type ProjectExportErrorType from './ProjectExportError.svelte'
 
 // Story 69.12: the export section is one sub-region per concern (description, failure message, the
 // export with its one-time reveal). A probe contribution lands after its own section, every point
@@ -27,6 +29,7 @@ const project = sampleProject({ id: 'p1', name: 'Payments API' })
 const exported = { blob: new Blob(['x']), filename: 'p.pvexport', exportKey: KEY }
 
 let Panel: Component<Record<string, unknown>>
+let ProjectExportError: Component<Record<string, unknown>>
 beforeAll(async () => {
   const probe = (await import('$lib/test/injection/Probe.svelte')).default
   for (const point of POINTS) {
@@ -35,6 +38,8 @@ beforeAll(async () => {
     }))
   }
   Panel = (await import('./ProjectExportPanel.svelte')).default as unknown as typeof Panel
+  ProjectExportError = (await import('./ProjectExportError.svelte'))
+    .default as unknown as typeof ProjectExportError
 }, 60_000)
 beforeEach(() => {
   api.exportProject.mockReset()
@@ -164,6 +169,50 @@ describe('ProjectExportPanel export key confinement (Story 62-2 D3)', () => {
     }
     for (const el of screen.getAllByTestId('probe')) {
       expect(el.textContent).not.toMatch(/exportKey|exporting|exportError|revealed|copyStatus/)
+    }
+  })
+})
+
+describe('ProjectExportError prop contract (Story 62-2 D3, amended by DW-610 item 1)', () => {
+  type ErrorProps = ComponentProps<typeof ProjectExportErrorType>
+
+  it('a replacement of the export-error region receives exactly { project, exportError, data }', () => {
+    // Compile-time pin (svelte-check): the documented shape, no more and no less.
+    expectTypeOf<ErrorProps>().toEqualTypeOf<{
+      project: ProjectOverview
+      exportError: string | null
+      data?: Record<string, readonly unknown[]> | undefined
+    }>()
+    expectTypeOf<keyof ErrorProps>().toEqualTypeOf<'project' | 'exportError' | 'data'>()
+  })
+
+  it('renders the raw API error text, and the point inside still gets { project } only', () => {
+    render(ProjectExportError, {
+      props: { project, exportError: 'No access', data: fills },
+    })
+    expect(screen.getByText('No access')).toBeTruthy()
+    const point = probe('project.detail.export-error')
+    expect(point.getAttribute('data-keys')).toBe('data,params,project,routeId')
+    expect(point.textContent).not.toContain('No access')
+    expect(point.textContent).not.toContain('exportError')
+  })
+
+  it('renders no message for a null error, the point still renders', () => {
+    render(ProjectExportError, { props: { project, exportError: null, data: fills } })
+    expect(document.querySelector('p.text-red-700')).toBeNull()
+    expect(screen.getAllByTestId('probe')).toHaveLength(1)
+  })
+
+  it('a failed export carries the error text and never the key into the panel points', async () => {
+    api.exportProject.mockRejectedValueOnce(
+      new ApiClientError(500, null, 'An unexpected error occurred')
+    )
+    mount()
+    await fireEvent.click(exportButton())
+    await screen.findByText('An unexpected error occurred')
+    for (const el of screen.getAllByTestId('probe')) {
+      expect(el.textContent).not.toContain('An unexpected error occurred')
+      expect(el.textContent).not.toContain(KEY)
     }
   })
 })

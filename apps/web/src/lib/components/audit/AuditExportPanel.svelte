@@ -17,6 +17,8 @@
   } = $props()
 
   const controller = new AuditExportController()
+  // DW-610 item 2: the poll timer must not outlive the panel.
+  $effect(() => () => controller.dispose())
 </script>
 
 <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

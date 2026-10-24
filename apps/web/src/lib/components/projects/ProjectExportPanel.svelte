@@ -8,8 +8,11 @@
   // Story 69.1: the "Export project" section as one replaceable region. Story 69.12: the
   // description, the failure message and the export itself (with the one-time reveal) are
   // sub-regions. The export key, `exporting` and the copy status live in `ProjectExportKeyFlow`
-  // and never leave it (Story 62-2 D3): this panel only holds whether a reveal is open and the
-  // failure message, and every point (this one and the sub-regions') receives `{ project }` ONLY.
+  // and never leave it (Story 62-2 D3, amended by DW-610 item 1): this panel only holds whether a
+  // reveal is open and the failure message. The failure message (`exportError`, a non-secret API
+  // error text) is a documented prop of the `project.detail.export-error` region component, so a
+  // replacement of it receives it; every point (this one and the sub-regions') receives
+  // `{ project }` ONLY.
   let {
     project,
     data,

@@ -132,6 +132,57 @@ describe('AuditExportPanel (AC group C)', () => {
     expect(getAuditExportStatusMock.mock.calls).toHaveLength(callCountAtCap)
   }, 10000)
 
+  it('DW-610 item 2: unmounting the panel stops the poll timer (no further status calls)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    triggerAuditExportMock.mockResolvedValue({ jobId: 'job-unmount', status: 'pending' })
+    getAuditExportStatusMock.mockResolvedValue({
+      jobId: 'job-unmount',
+      status: 'processing',
+      downloadUrl: null,
+      createdAt: '2026-07-07T00:00:00.000Z',
+      completedAt: null,
+    })
+
+    const view = render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
+    await startExport()
+    await vi.advanceTimersByTimeAsync(2000)
+    const callsBeforeUnmount = getAuditExportStatusMock.mock.calls.length
+    expect(callsBeforeUnmount).toBeGreaterThan(0)
+
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(getAuditExportStatusMock.mock.calls).toHaveLength(callsBeforeUnmount)
+  })
+
+  it('DW-610 item 2: a status call still in flight at unmount does not schedule another poll', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    triggerAuditExportMock.mockResolvedValue({ jobId: 'job-late', status: 'pending' })
+    let resolveStatus: (value: unknown) => void = () => undefined
+    getAuditExportStatusMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveStatus = resolve
+      })
+    )
+
+    const view = render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
+    await startExport()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(getAuditExportStatusMock).toHaveBeenCalledTimes(1)
+
+    view.unmount()
+    resolveStatus({
+      jobId: 'job-late',
+      status: 'processing',
+      downloadUrl: null,
+      createdAt: '2026-07-07T00:00:00.000Z',
+      completedAt: null,
+    })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(getAuditExportStatusMock).toHaveBeenCalledTimes(1)
+  })
+
   it('AC-C1 failure: a 429 mid-poll shows a rate-limit message and backs off instead of failing terminally', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     triggerAuditExportMock.mockResolvedValue({ jobId: 'job-4', status: 'pending' })

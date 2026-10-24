@@ -31,6 +31,14 @@ export class AuditExportController {
   triggering = $state(false)
   #pollCount = 0
   #timer: ReturnType<typeof setTimeout> | null = null
+  #disposed = false
+
+  /** Called when the owning panel unmounts (DW-610 item 2): stops the poll timer and makes any
+   *  in-flight poll or trigger result a no-op, so nothing keeps polling for a gone panel. */
+  dispose(): void {
+    this.#disposed = true
+    this.stopPolling()
+  }
 
   stopPolling(): void {
     if (this.#timer) clearTimeout(this.#timer)
@@ -40,6 +48,7 @@ export class AuditExportController {
   // Every scheduled attempt counts toward the cap, a backed-off 429 included: otherwise a sustained
   // rate-limit (e.g. another tab polling the same job) would back off forever without reaching it.
   #scheduleNext(delayMs: number): void {
+    if (this.#disposed) return
     this.#pollCount += 1
     if (this.#pollCount >= MAX_POLLS) {
       this.capped = true
@@ -53,6 +62,7 @@ export class AuditExportController {
     if (!this.jobId) return
     try {
       const result = await getAuditExportStatus(fetch, this.jobId)
+      if (this.#disposed) return
       this.rateLimited = false
       this.status = result.status
       this.integritySummary = result.integritySummary ?? null
@@ -96,6 +106,7 @@ export class AuditExportController {
         from: toIsoRangeStart(this.from),
         to: toIsoRangeEnd(this.to),
       })
+      if (this.#disposed) return
       this.jobId = result.jobId
       this.status = 'pending'
       this.#timer = setTimeout(() => void this.poll(), POLL_INTERVAL_MS)
