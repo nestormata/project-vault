@@ -76,6 +76,7 @@
     hasNext={data.hasNext}
     {markReadLocally}
     {dismissLocally}
+    data={data?.__inject}
   >
     <InjectionPoint name="notifications.home.list" data={data?.__inject} />
   </NotificationsList>

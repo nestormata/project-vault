@@ -452,6 +452,9 @@ export interface InjectionPointProps {
   'notifications.home.user-dormancy': StandardPointProps
   'notifications.home.tabs': StandardPointProps
   'notifications.home.list': StandardPointProps
+  'notifications.home.items': StandardPointProps
+  'notifications.home.pagination': StandardPointProps
+  'notifications.home.empty': StandardPointProps
   'platform.home.header': StandardPointProps
   'platform.audit.content': StandardPointProps
   'platform.audit.maintenance': StandardPointProps
@@ -930,6 +933,9 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'notifications.home.user-dormancy',
       'notifications.home.tabs',
       'notifications.home.list',
+      'notifications.home.items',
+      'notifications.home.pagination',
+      'notifications.home.empty',
     ]
   ),
   ...regionPoints('StandardPointProps', ['/(app)/platform#page'], ['platform.home.header']),
