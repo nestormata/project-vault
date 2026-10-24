@@ -32,7 +32,11 @@
 
   <!-- @region settings.notifications.channels -->
   <div class="mb-8 overflow-hidden rounded-lg bg-white shadow">
-    <NotificationPreferencesPanel preferences={data.preferences} /><InjectionPoint
+    <NotificationPreferencesPanel
+      preferences={data.preferences}
+      {flagProps}
+      data={data?.__inject}
+    /><InjectionPoint
       name="settings.notifications.channels"
       props={{ ...flagProps, preferences: data.preferences }}
       data={data?.__inject}

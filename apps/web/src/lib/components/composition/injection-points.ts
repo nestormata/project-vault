@@ -439,6 +439,9 @@ export interface InjectionPointProps {
   'settings.notifications.header': NotificationSettingsPointProps
   'settings.notifications.routing': NotificationRoutingPointProps
   'settings.notifications.test': NotificationSettingsPointProps
+  'settings.notifications.channels-header': NotificationSettingsPointProps
+  'settings.notifications.channels-head': NotificationSettingsPointProps
+  'settings.notifications.channels-row': NotificationSettingsPointProps
   'project.members.access': ProjectMembersPointProps
   'project.members.team-error': ProjectMembersBasePointProps
   'project.members.team-table': ProjectMembersBasePointProps
@@ -982,7 +985,13 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'NotificationSettingsPointProps',
     [NOTIFICATIONS_PAGE_HOST],
-    ['settings.notifications.header', 'settings.notifications.test']
+    [
+      'settings.notifications.header',
+      'settings.notifications.test',
+      'settings.notifications.channels-header',
+      'settings.notifications.channels-head',
+      'settings.notifications.channels-row',
+    ]
   ),
   ...regionPoints(
     'NotificationPreferencesPointProps',
