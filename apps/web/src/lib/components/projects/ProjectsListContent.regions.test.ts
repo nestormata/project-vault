@@ -93,6 +93,15 @@ describe('ProjectsListContent shared card state (interaction)', () => {
     )
   })
 
+  it('ignores a second project action while one is in flight', async () => {
+    api.archiveProject.mockReturnValue(new Promise<void>(() => undefined))
+    mount({ projects: [ITEMS[0], project({ id: 'p4', name: 'Delta' })] })
+    const archive = screen.getAllByRole('button', { name: 'Archive project' })
+    await fireEvent.click(archive[0] as HTMLElement)
+    await fireEvent.click(archive[1] as HTMLElement)
+    expect(api.archiveProject).toHaveBeenCalledTimes(1)
+  })
+
   it('does not archive when the confirm is declined', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     mount()

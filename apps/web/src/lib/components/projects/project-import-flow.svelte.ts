@@ -4,17 +4,19 @@ import { ApiClientError } from '$lib/api/client.js'
 import { importProject, type ImportProjectResult } from '$lib/api/project-export.js'
 import { formatFileSize } from '$lib/utils/format-file-size.js'
 
-const IMPORT_ERROR_MESSAGES: Record<string, string> = {
-  import_decrypt_failed:
+const IMPORT_ERROR_MESSAGES = new Map<string, string>([
+  [
+    'import_decrypt_failed',
     'This file could not be decrypted with the key you provided. Double-check the export key and try again.',
-  invalid_export_payload: 'This file does not look like a valid Project Vault export.',
-  file_too_large: 'This export file is too large to import.',
-}
+  ],
+  ['invalid_export_payload', 'This file does not look like a valid Project Vault export.'],
+  ['file_too_large', 'This export file is too large to import.'],
+])
 
 // Story 28.9 AC-3 — three distinct, user-legible error cases, never one generic "import failed".
 function importErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
-    return (error.code ? IMPORT_ERROR_MESSAGES[error.code] : undefined) ?? error.message
+    return (error.code ? IMPORT_ERROR_MESSAGES.get(error.code) : undefined) ?? error.message
   }
   return error instanceof Error ? error.message : 'Import failed.'
 }
