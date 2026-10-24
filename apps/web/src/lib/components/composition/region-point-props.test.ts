@@ -14,9 +14,10 @@ const REGION_NAMES = INJECTION_POINTS.filter(
 ).map((point) => point.name)
 
 describe('region point props (Story 69.4 AC-1)', () => {
-  it('registers the 17 region points, all 3 segments, none duplicated', () => {
-    expect(REGION_NAMES).toHaveLength(17)
-    expect(new Set(REGION_NAMES).size).toBe(17)
+  it('registers the 20 region points, all 3 segments, none duplicated', () => {
+    // 17 from Story 69.4 plus the three project.members.team-* sub-regions of Story 69.11.
+    expect(REGION_NAMES).toHaveLength(20)
+    expect(new Set(REGION_NAMES).size).toBe(20)
     for (const name of REGION_NAMES) expect(name.split('.')).toHaveLength(3)
   })
 
@@ -27,6 +28,11 @@ describe('region point props (Story 69.4 AC-1)', () => {
     expectTypeOf<InjectionPointProps['project.members.notice']>().not.toHaveProperty('invitations')
     expectTypeOf<InjectionPointProps['project.members.invite']>().not.toHaveProperty('members')
     expectTypeOf<InjectionPointProps['project.members.invite']>().not.toHaveProperty('invitations')
+    expectTypeOf<InjectionPointProps['project.members.team-error']>().not.toHaveProperty('members')
+    expectTypeOf<InjectionPointProps['project.members.team-table']>().not.toHaveProperty('members')
+    expectTypeOf<InjectionPointProps['project.members.team-transfer']>().not.toHaveProperty(
+      'members'
+    )
     expectTypeOf<InjectionPointProps['project.members.access']>().toHaveProperty('members')
     expectTypeOf<InjectionPointProps['project.members.invitations']>().toHaveProperty('invitations')
     expect(REGION_NAMES).toContain('project.members.header')
