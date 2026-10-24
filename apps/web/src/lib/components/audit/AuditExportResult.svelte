@@ -2,19 +2,10 @@
   import { auditExportDownloadUrl } from '$lib/api/audit.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
-  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
-  import type { AuditExportController } from './audit-export-controller.svelte.js'
+  import type { AuditExportRegionProps } from './audit-region-props.js'
 
   // Story 69.12: how the export ended, the CSV download link or the integrity failure notice.
-  let {
-    controller,
-    pointProps,
-    data,
-  }: {
-    controller: AuditExportController
-    pointProps: InjectionPointExtras<'settings.audit.export'>
-    data?: Record<string, readonly unknown[]> | undefined
-  } = $props()
+  let { controller, pointProps, data }: AuditExportRegionProps = $props()
 
   const integrityFailedRecordCount = $derived(controller.integritySummary?.failedCount ?? 0)
 </script>

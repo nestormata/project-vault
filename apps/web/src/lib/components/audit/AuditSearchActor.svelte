@@ -1,24 +1,13 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
-  import type {
-    InjectionPointExtras,
-    SettingsAuditResultsPointProps,
-  } from '$lib/components/composition/injection-points.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { m } from '$lib/paraglide/messages.js'
+  import type { AuditSearchRegionProps } from './audit-region-props.js'
 
   // Story 69.12: the actor filters of the settings audit search form (the PV actor id, and the
   // external actor's provider and subject, which are submitted as a pair).
-  let {
-    filters,
-    pointProps,
-    data,
-  }: {
-    filters: SettingsAuditResultsPointProps['filters'] | undefined
-    pointProps: InjectionPointExtras<'settings.audit.results'>
-    data?: Record<string, readonly unknown[]> | undefined
-  } = $props()
+  let { filters, pointProps, data }: AuditSearchRegionProps = $props()
 </script>
 
 <!-- @region settings.audit.search-actor -->

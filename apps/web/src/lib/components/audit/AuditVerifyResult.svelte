@@ -1,21 +1,12 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
-  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
-  import type { AuditVerifyController } from './audit-verify-controller.svelte.js'
+  import type { AuditVerifyRegionProps } from './audit-region-props.js'
 
   // Story 69.12: Story 8.1's own AC-15/UX-DR13 requirement: the response's `summary` string is the
   // headline result, rendered verbatim (not a raw JSON dump), "designed to be comprehensible to a
   // non-cryptographer", followed by the records that failed verification.
-  let {
-    controller,
-    pointProps,
-    data,
-  }: {
-    controller: AuditVerifyController
-    pointProps: InjectionPointExtras<'settings.audit.verify'>
-    data?: Record<string, readonly unknown[]> | undefined
-  } = $props()
+  let { controller, pointProps, data }: AuditVerifyRegionProps = $props()
 
   const result = $derived(controller.result)
 </script>

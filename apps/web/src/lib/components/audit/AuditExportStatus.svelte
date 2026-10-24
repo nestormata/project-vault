@@ -1,20 +1,11 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
-  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
-  import type { AuditExportController } from './audit-export-controller.svelte.js'
+  import type { AuditExportRegionProps } from './audit-region-props.js'
 
   // Story 69.12: what is happening to the export (a start or poll error, the wait, a rate limit, the
   // poll cap with its Check again button). The controller owns every flag.
-  let {
-    controller,
-    pointProps,
-    data,
-  }: {
-    controller: AuditExportController
-    pointProps: InjectionPointExtras<'settings.audit.export'>
-    data?: Record<string, readonly unknown[]> | undefined
-  } = $props()
+  let { controller, pointProps, data }: AuditExportRegionProps = $props()
 </script>
 
 <!-- @region settings.audit.export-status -->

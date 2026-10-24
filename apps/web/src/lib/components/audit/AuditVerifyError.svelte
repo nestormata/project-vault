@@ -1,20 +1,11 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
-  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
-  import type { AuditVerifyController } from './audit-verify-controller.svelte.js'
+  import type { AuditVerifyRegionProps } from './audit-region-props.js'
 
   // Story 69.12: why the integrity check did not run (too many requests, a server message or a
   // generic failure).
-  let {
-    controller,
-    pointProps,
-    data,
-  }: {
-    controller: AuditVerifyController
-    pointProps: InjectionPointExtras<'settings.audit.verify'>
-    data?: Record<string, readonly unknown[]> | undefined
-  } = $props()
+  let { controller, pointProps, data }: AuditVerifyRegionProps = $props()
 </script>
 
 <!-- @region settings.audit.verify-error -->

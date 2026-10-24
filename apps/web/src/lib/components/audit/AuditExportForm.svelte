@@ -1,20 +1,11 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
-  import type { AuditExportController } from './audit-export-controller.svelte.js'
+  import type { AuditExportRegionProps } from './audit-region-props.js'
 
   // Story 69.12: the date range and the Export CSV button of the export card. The controller owns
   // the dates and the trigger.
-  let {
-    controller,
-    pointProps,
-    data,
-  }: {
-    controller: AuditExportController
-    pointProps: InjectionPointExtras<'settings.audit.export'>
-    data?: Record<string, readonly unknown[]> | undefined
-  } = $props()
+  let { controller, pointProps, data }: AuditExportRegionProps = $props()
 </script>
 
 <!-- @region settings.audit.export-form -->
