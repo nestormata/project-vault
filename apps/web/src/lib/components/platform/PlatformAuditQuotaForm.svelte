@@ -104,11 +104,7 @@
         class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
         role="alert"
       >
-        This would allocate an estimated {formatBytes(
-          editor.overcommitPending.estimatedPhysicalBytes
-        )}
-        of physical storage against a {formatBytes(editor.overcommitPending.instanceLimitBytes)} instance
-        limit. Continue anyway?
+        {`This would allocate an estimated ${formatBytes(editor.overcommitPending.estimatedPhysicalBytes)} of physical storage against a ${formatBytes(editor.overcommitPending.instanceLimitBytes)} instance limit. Continue anyway?`}
         <button
           type="button"
           class="ml-2 rounded border border-amber-400 px-2 py-1 font-semibold"

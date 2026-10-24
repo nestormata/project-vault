@@ -271,6 +271,7 @@ describe('PlatformResourceUsageContent shared editor (AC-4 interaction)', () => 
     await save()
     const alert = await screen.findByRole('alert')
     const text = (alert.textContent ?? '').replace(/\s+/g, ' ')
+    expect(alert.textContent).toMatch(/estimated .* of physical storage/)
     expect(text).toContain('estimated 60.0 GB of physical storage')
     expect(text).toContain('against a 50.0 GB instance limit')
     await fireEvent.click(screen.getByRole('button', { name: 'Continue anyway' }))
