@@ -1,4 +1,5 @@
 import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
+import { isRedirect } from '@sveltejs/kit'
 import { ApiClientError } from '$lib/api/client.js'
 import { listAuditEvents, type AuditEventItem } from '$lib/api/audit.js'
 import { requireUser } from '$lib/server/require-user.js'
@@ -62,6 +63,9 @@ const ownLoad = (async ({ fetch, url, locals }) => {
       errorMessage: null as string | null,
     }
   } catch (err) {
+    // A dead session surfaces as a SvelteKit Redirect (Story 62-6): never swallow it into the
+    // error state below.
+    if (isRedirect(err)) throw err
     // AC-B1/O1 — a search failure (e.g. a transient 429) must not crash the whole page; show an
     // honest error state instead of a raw 500, and let the filter/export/verify panels below
     // remain usable (per AC-O1's "do not hide the whole page because the table failed" rule).

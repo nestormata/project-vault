@@ -1,5 +1,5 @@
 import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
-import { fail, error } from '@sveltejs/kit'
+import { fail, error, isRedirect } from '@sveltejs/kit'
 import { ApiClientError } from '$lib/api/client.js'
 import {
   dismissInboxEntry,
@@ -70,6 +70,8 @@ const ownLoad = (async ({ fetch, url, locals }) => {
     hasNext = inbox.data.hasNext
     inboxPage = inbox.data.page
   } catch (err) {
+    // A dead session surfaces as a SvelteKit Redirect (Story 62-6): pass it through, not a 500.
+    if (isRedirect(err)) throw err
     if (!(err instanceof ApiClientError && err.status === 403)) {
       throw error(500, 'Failed to load notifications')
     }
@@ -97,7 +99,8 @@ const ownActions = {
     const id = String(data.get('id'))
     try {
       await markInboxEntryRead(fetch, id)
-    } catch {
+    } catch (err) {
+      if (isRedirect(err)) throw err
       return fail(422, { error: 'Failed to mark notification read' })
     }
     return { success: true }
@@ -106,7 +109,8 @@ const ownActions = {
   markAllRead: async ({ fetch }) => {
     try {
       await markAllInboxRead(fetch)
-    } catch {
+    } catch (err) {
+      if (isRedirect(err)) throw err
       return fail(422, { error: 'Failed to mark all notifications read' })
     }
     return { success: true }
@@ -130,7 +134,8 @@ const ownActions = {
     if (!reason) return fail(422, { error: 'A reason is required to dismiss this alert.' })
     try {
       await dismissSecurityAlert(fetch, alertId, reason)
-    } catch {
+    } catch (err) {
+      if (isRedirect(err)) throw err
       return fail(422, { error: 'Failed to dismiss dormancy alert' })
     }
     return { success: true }

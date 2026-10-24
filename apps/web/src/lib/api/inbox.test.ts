@@ -57,7 +57,8 @@ describe('getNotificationInbox', () => {
   })
 
   it.each([
-    [jsonResponse({ message: 'nope' }, { status: 500 }), /failed to load/i],
+    // Story 62-6: a non-2xx now keeps its status/code (ApiClientError carrying the server message).
+    [jsonResponse({ message: 'nope' }, { status: 500 }), /nope/i],
     [new Response('', { status: 200 }), /failed to load/i],
   ])('rejects a non-success or empty response', async (response, expected) => {
     await expect(getNotificationInbox(vi.fn().mockResolvedValue(response))).rejects.toThrow(
@@ -116,5 +117,14 @@ describe('inbox mutations', () => {
         'notification-1'
       )
     ).resolves.toBe(false)
+  })
+
+  it('rethrows a network or server failure instead of reporting it as not found', async () => {
+    await expect(
+      dismissInboxEntry(vi.fn().mockRejectedValue(new TypeError('fetch failed')), 'n1')
+    ).rejects.toThrow('fetch failed')
+    await expect(
+      dismissInboxEntry(vi.fn().mockResolvedValue(new Response(null, { status: 500 })), 'n1')
+    ).rejects.toMatchObject({ status: 500 })
   })
 })

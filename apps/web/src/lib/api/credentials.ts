@@ -14,7 +14,7 @@ import type {
   SystemType,
 } from '@project-vault/shared'
 import { DEFAULT_FIELD_KEY } from '@project-vault/shared'
-import { apiFetch, parseApiEnvelope } from './client.js'
+import { apiFetch, fetchResponseWithRefresh, parseApiEnvelope } from './client.js'
 
 // Story 13.2 — create accepts either the legacy single-value shape or a structured field set.
 type CreateCredentialCommon = {
@@ -364,14 +364,17 @@ export async function previewCredentialImport(
   projectId: string,
   file: File
 ) {
-  const formData = new FormData()
-  formData.append('file', file)
-
-  const response = await fetchFn(`/api/v1/projects/${projectId}/credentials/import`, {
-    method: 'POST',
-    credentials: 'include',
-    body: formData,
-  })
+  const response = await fetchResponseWithRefresh(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/import`,
+    () => {
+      // Rebuilt per attempt: a FormData body cannot be replayed.
+      const formData = new FormData()
+      formData.append('file', file)
+      return { method: 'POST', credentials: 'include', body: formData }
+    },
+    'Request failed'
+  )
 
   return parseApiEnvelope<ImportPreview>(response)
 }

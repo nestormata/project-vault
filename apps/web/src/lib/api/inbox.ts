@@ -1,4 +1,4 @@
-import { apiFetch } from './client.js'
+import { ApiClientError, apiFetch, apiFetchBody } from './client.js'
 
 export type UserMeResponse = {
   userId: string
@@ -50,40 +50,32 @@ export async function getNotificationInbox(
   if (query.limit) params.set('limit', String(query.limit))
   if (query.status) params.set('status', query.status)
   const suffix = params.size > 0 ? `?${params.toString()}` : ''
-  const response = await fetchFn(`/api/v1/notifications/inbox${suffix}`, {
-    credentials: 'include',
-  })
-  const body = (await response.json().catch(() => null)) as InboxListResponse | null
-  if (!response.ok || !body) {
-    throw new Error('Failed to load notification inbox')
-  }
+  // `{ data: { items, ... } }` is the contract callers read (`inbox.data.items`), so keep the whole
+  // body rather than apiFetch's `data` unwrap.
+  const body = await apiFetchBody<InboxListResponse | null>(
+    fetchFn,
+    `/api/v1/notifications/inbox${suffix}`
+  )
+  if (!body) throw new Error('Failed to load notification inbox')
   return body
 }
 
-export async function markInboxEntryRead(fetchFn: typeof fetch, id: string) {
-  const response = await fetchFn(`/api/v1/notifications/inbox/${id}/read`, {
-    method: 'POST',
-    credentials: 'include',
-  })
-  if (!response.ok && response.status !== 204) {
-    throw new Error('Failed to mark notification read')
-  }
+export async function markInboxEntryRead(fetchFn: typeof fetch, id: string): Promise<void> {
+  await apiFetch<undefined>(fetchFn, `/api/v1/notifications/inbox/${id}/read`, { method: 'POST' })
 }
 
-export async function markAllInboxRead(fetchFn: typeof fetch) {
-  const response = await fetchFn('/api/v1/notifications/inbox/read-all', {
-    method: 'POST',
-    credentials: 'include',
-  })
-  if (!response.ok && response.status !== 204) {
-    throw new Error('Failed to mark all notifications read')
-  }
+export async function markAllInboxRead(fetchFn: typeof fetch): Promise<void> {
+  await apiFetch<undefined>(fetchFn, '/api/v1/notifications/inbox/read-all', { method: 'POST' })
 }
 
-export async function dismissInboxEntry(fetchFn: typeof fetch, id: string) {
-  const response = await fetchFn(`/api/v1/notifications/inbox/${id}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  return response.ok || response.status === 204
+export async function dismissInboxEntry(fetchFn: typeof fetch, id: string): Promise<boolean> {
+  try {
+    await apiFetch<undefined>(fetchFn, `/api/v1/notifications/inbox/${id}`, { method: 'DELETE' })
+    return true
+  } catch (error) {
+    // A 4xx answer (no such entry, refused) is a definite "not dismissed". A dead session redirect,
+    // a network failure or a 5xx must surface as such rather than being swallowed into "not found".
+    if (error instanceof ApiClientError && error.status < 500) return false
+    throw error
+  }
 }
