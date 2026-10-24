@@ -5,7 +5,7 @@ Paraglide loads its message-format plugin through `../project.inlang/settings.js
 compile could change without any commit, and an offline compile silently produced no messages.
 
 The plugin is now an exact-pinned devDependency of `apps/web`: `@inlang/plugin-message-format`
-**4.4.4**, the version `@latest` resolved to on 2026-10-02 (MIT, Opral US Inc.). `settings.json`
+**4.5.5** (bumped from 4.4.4, which `@latest` resolved to on 2026-10-02; MIT, Opral US Inc.). `settings.json`
 loads it from `./node_modules/@inlang/plugin-message-format/dist/index.js`. inlang resolves a
 relative module path from the directory that contains `project.inlang`. The file is installed from
 `pnpm-lock.yaml`, whose integrity hash pins its bytes, so compiling makes no network request.

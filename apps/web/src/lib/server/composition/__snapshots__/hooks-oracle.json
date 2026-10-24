@@ -1,16 +1,16 @@
 {
   "headerSets": {
     "H1": "{\"content-security-policy\":\"frame-ancestors 'none'\",\"x-frame-options\":\"DENY\"}",
-    "H2": "{\"content-security-policy\":\"frame-ancestors 'none'\",\"content-type\":\"text/plain;charset=UTF-8\",\"x-frame-options\":\"DENY\"}",
-    "H3": "{\"location\":\"/vault\"}",
-    "H4": "{\"location\":\"/dashboard\"}",
-    "H5": "{\"location\":\"/login\"}",
-    "H6": "{\"location\":\"/login?reason=session-expired\"}",
-    "H7": "{\"cache-control\":\"no-store\",\"content-type\":\"application/json\",\"retry-after\":\"5\"}",
+    "H2": "{\"content-security-policy\":\"frame-ancestors 'none'\",\"content-type\":\"text/plain;charset=UTF-8\",\"vary\":\"Cookie\",\"x-frame-options\":\"DENY\"}",
+    "H3": "{\"location\":\"/vault\",\"vary\":\"Cookie\"}",
+    "H4": "{\"location\":\"/dashboard\",\"vary\":\"Cookie\"}",
+    "H5": "{\"location\":\"/login\",\"vary\":\"Cookie\"}",
+    "H6": "{\"location\":\"/login?reason=session-expired\",\"vary\":\"Cookie\"}",
+    "H7": "{\"cache-control\":\"no-store\",\"content-type\":\"application/json\",\"retry-after\":\"5\",\"vary\":\"Cookie\"}",
     "H8": "{\"content-security-policy\":\"frame-ancestors 'none'\",\"x-frame-options\":\"DENY\",\"referrer-policy\":\"strict-origin\"}",
-    "H9": "{\"content-security-policy\":\"frame-ancestors 'none'\",\"content-type\":\"text/plain;charset=UTF-8\",\"referrer-policy\":\"strict-origin\",\"x-frame-options\":\"DENY\"}",
+    "H9": "{\"content-security-policy\":\"frame-ancestors 'none'\",\"content-type\":\"text/plain;charset=UTF-8\",\"referrer-policy\":\"strict-origin\",\"vary\":\"Cookie\",\"x-frame-options\":\"DENY\"}",
     "H10": "{\"content-security-policy\":\"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\",\"x-frame-options\":\"DENY\"}",
-    "H11": "{\"content-security-policy\":\"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\",\"content-type\":\"text/plain;charset=UTF-8\",\"x-frame-options\":\"DENY\"}"
+    "H11": "{\"content-security-policy\":\"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\",\"content-type\":\"text/plain;charset=UTF-8\",\"vary\":\"Cookie\",\"x-frame-options\":\"DENY\"}"
   },
   "cases": {
     "/ anonymous vault=ready": "status=200 location=null setHeaders=H1 headers=H2 cookies=[] user=null resolved=[\"/\"] chunk=<html lang=\"en\">",
