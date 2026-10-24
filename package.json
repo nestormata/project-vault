@@ -16,7 +16,7 @@
     "test": "turbo test",
     "typecheck": "turbo typecheck",
     "generate-spec": "turbo generate-spec",
-    "jscpd": "5.4.1",
+    "jscpd": "jscpd apps packages scripts",
     "db:migrate": "pnpm --filter @project-vault/db db:migrate",
     "check-rls": "tsx scripts/check-rls-coverage.ts",
     "check-function-executability": "tsx scripts/check-function-executability.ts",
