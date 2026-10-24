@@ -28,7 +28,7 @@
   </NavLinkRegion>
 
   <!-- @region settings.users-erasure-detail.request -->
-  <ErasureRequestPanel {data}>
+  <ErasureRequestPanel pageData={data} data={data?.__inject}>
     <InjectionPoint name="settings.users-erasure-detail.request" data={data?.__inject} />
   </ErasureRequestPanel>
 </div>

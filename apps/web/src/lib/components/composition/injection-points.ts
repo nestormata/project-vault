@@ -551,6 +551,10 @@ export interface InjectionPointProps {
   'settings.users.user-dormancy': StandardPointProps
   'settings.users-erasure-detail.header': StandardPointProps
   'settings.users-erasure-detail.request': StandardPointProps
+  'settings.users-erasure-detail.notice': StandardPointProps
+  'settings.users-erasure-detail.inventory': StandardPointProps
+  'settings.users-erasure-detail.execute': StandardPointProps
+  'settings.users-erasure-detail.report': StandardPointProps
   'shares.detail.heading': StandardPointProps
   'shares.detail.body': StandardPointProps
   'auth.layout.theme': StandardPointProps
@@ -1168,7 +1172,14 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/users/[userId]/erasure/[requestId]#page'],
-    ['settings.users-erasure-detail.header', 'settings.users-erasure-detail.request']
+    [
+      'settings.users-erasure-detail.header',
+      'settings.users-erasure-detail.request',
+      'settings.users-erasure-detail.notice',
+      'settings.users-erasure-detail.inventory',
+      'settings.users-erasure-detail.execute',
+      'settings.users-erasure-detail.report',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
