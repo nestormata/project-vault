@@ -359,6 +359,9 @@ export interface InjectionPointProps {
   'project.status-page.link': StatusPageLinkPointProps
   'project.status-page.read-only': StatusPageAdminPointProps
   'project.status-page.services': StatusPageAdminPointProps
+  'project.status-page.services-list': StatusPageAdminPointProps
+  'project.status-page.services-empty': StatusPageAdminPointProps
+  'project.status-page.services-save': StatusPageAdminPointProps
   'root.error.after': StandardPointProps
   'root.error.before': StandardPointProps
   'root.error.header.actions': StandardPointProps
@@ -852,6 +855,9 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'project.status-page.header',
       'project.status-page.read-only',
       'project.status-page.services',
+      'project.status-page.services-list',
+      'project.status-page.services-empty',
+      'project.status-page.services-save',
     ]
   ),
   ...regionPoints('StatusPageLinkPointProps', [STATUS_PAGE_HOST], ['project.status-page.link']),
