@@ -626,7 +626,56 @@ const detailPage = (
   ...overrides,
 })
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
+// Story 69.14: machine user detail states a permissive value cannot select (an active or a
+// deactivated user, a manager or a viewer, revoked and active keys with and without dates, no
+// description, no keys), recorded BEFORE the split.
+const MACHINE_USER = {
+  name: 'Deploy bot',
+  description: 'Deploys to staging',
+  role: 'member',
+  createdAt: '2026-09-01T08:00:00.000Z',
+  deactivatedAt: null,
+  scopeBoundary: {
+    canAccess: ['staging secrets', 'read credentials'],
+    cannotAccess: ['production secrets'],
+  },
+}
+const MACHINE_USER_KEYS = {
+  items: [
+    {
+      id: 'k-1',
+      name: 'CI key',
+      expiresAt: '2026-12-01T00:00:00.000Z',
+      lastUsedAt: '2026-10-02T10:00:00.000Z',
+      isRevoked: false,
+    },
+    { id: 'k-2', name: 'Old key', expiresAt: null, lastUsedAt: null, isRevoked: true },
+  ],
+  total: 2,
+}
+const MACHINE_USER_BASE: Overrides = {
+  ...OWNER_READY,
+  projectId: 'p-1',
+  machineUserId: 'mu-1',
+  machineUser: MACHINE_USER,
+  apiKeys: MACHINE_USER_KEYS,
+}
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
+  '/(app)/projects/[projectId]/machine-users/[machineUserId]/+page.svelte': {
+    'machine-active-manager': MACHINE_USER_BASE,
+    'machine-active-viewer': { ...MACHINE_USER_BASE, orgRole: 'viewer' },
+    'machine-deactivated-manager': {
+      ...MACHINE_USER_BASE,
+      machineUser: { ...MACHINE_USER, deactivatedAt: '2026-10-10T00:00:00.000Z' },
+    },
+    'machine-no-description-no-keys': {
+      ...MACHINE_USER_BASE,
+      orgRole: 'admin',
+      machineUser: { ...MACHINE_USER, description: null },
+      apiKeys: { items: [], total: 0 },
+    },
+    'machine-not-found': { ...MACHINE_USER_BASE, notFound: true, machineUser: null },
+  },
   '/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte': {
     'detail-legacy-member': detailPage('member', 'member'),
     'detail-legacy-viewer': detailPage('viewer', 'viewer'),
