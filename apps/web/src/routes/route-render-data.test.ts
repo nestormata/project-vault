@@ -413,6 +413,28 @@ const PROJECT_ITEMS = [
     alertCount: 0,
   },
 ]
+// Story 69.11: realistic erasure request data. The route's branches switch on `state`, `orgRole`,
+// `userEmail` and `piiInventory`, which a permissive value never separates. Recorded BEFORE the
+// panel was split into sub-region components.
+const ERASURE_BASE = {
+  ...OWNER_READY,
+  userId: 'u-erase',
+  requestId: 'req-1',
+  userEmail: 'jane.doe@example.com',
+}
+const ERASURE_INVENTORY = {
+  tables: [
+    { table: 'org_users', rowCount: 1, piiFields: ['email', 'displayName'] },
+    { table: 'audit_events', rowCount: 12, piiFields: ['actorEmail'] },
+  ],
+}
+const ERASURE_REPORT = {
+  executedAt: '2026-10-05T12:30:00.000Z',
+  piiRemoved: [{ table: 'org_users', fields: ['email', 'displayName'], method: 'hard_delete' }],
+  piiRetained: [{ table: 'audit_events', reason: 'legal retention' }],
+  retentionJustification: 'Audit rows are kept for compliance',
+  auditEventId: 'evt-1',
+}
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -537,6 +559,39 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
     'projects-empty': {
       ...OWNER_READY,
       projects: { items: [], total: 0, page: 1, limit: 100, hasNext: false },
+    },
+  },
+  '/(app)/settings/users/[userId]/erasure/[requestId]/+page.svelte': {
+    'erasure-pending-owner': {
+      ...ERASURE_BASE,
+      state: 'pending',
+      orgRole: 'owner',
+      piiInventory: ERASURE_INVENTORY,
+    },
+    'erasure-pending-admin': {
+      ...ERASURE_BASE,
+      state: 'pending',
+      orgRole: 'admin',
+      piiInventory: ERASURE_INVENTORY,
+    },
+    'erasure-pending-no-email': {
+      ...ERASURE_BASE,
+      state: 'pending',
+      orgRole: 'owner',
+      userEmail: null,
+      piiInventory: ERASURE_INVENTORY,
+    },
+    'erasure-pending-no-inventory': {
+      ...ERASURE_BASE,
+      state: 'pending',
+      orgRole: 'owner',
+      piiInventory: null,
+    },
+    'erasure-completed': { ...ERASURE_BASE, state: 'completed', report: ERASURE_REPORT },
+    'erasure-completed-no-audit-id': {
+      ...ERASURE_BASE,
+      state: 'completed',
+      report: { ...ERASURE_REPORT, auditEventId: null, piiRetained: [], piiRemoved: [] },
     },
   },
 }
