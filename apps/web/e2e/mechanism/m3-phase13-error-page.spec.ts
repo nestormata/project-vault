@@ -29,23 +29,29 @@ test.describe('M3 region points on the root error page', () => {
       const at = (id: string) => document.querySelector(`[data-testid="${id}"]`)
       const header = at(ids.header)
       const content = at(ids.content)
-      const heading = document.querySelector('h1.text-3xl')
+      const heading = document.querySelector('main h1')
       const follows = (a: Element | null, b: Element | null) =>
         a !== null &&
         b !== null &&
         (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
       return {
+        pvHeaderBeforeFill: follows(document.querySelector('header'), header),
         headerBeforeContent: follows(header, content),
         contentBeforeHeading: follows(content, heading),
       }
     }, ID)
-    expect(order).toEqual({ headerBeforeContent: true, contentBeforeHeading: true })
+    expect(order).toEqual({
+      pvHeaderBeforeFill: true,
+      headerBeforeContent: true,
+      contentBeforeHeading: true,
+    })
     expect(mismatches()).toEqual([])
   })
 
   test('fails: a 500 renders the same regions and leaks neither a stack nor the thrown message', async ({
     page,
   }) => {
+    const mismatches = trackHydrationMismatch(page)
     const response = await page.goto('/boom')
     expect(response?.status()).toBe(500)
     await expect(page.getByTestId(ID.content)).toContainText(`${SENTINEL}-root.error.content`)
@@ -53,6 +59,7 @@ test.describe('M3 region points on the root error page', () => {
     await expect(page.getByTestId(ID.header)).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Something went wrong' })).toBeVisible()
     const body = await page.content()
+    expect(mismatches()).toEqual([])
     expect(body).not.toContain('boom-internal-detail')
     expect(body).not.toMatch(/\bat [A-Za-z_.<>]+ \(|node_modules|\.ts:\d+/)
   })

@@ -100,6 +100,10 @@ describe('HandoffConfirmContent states (Story 69.13 pin)', () => {
     api.confirmHandoff.mockReturnValue(new Promise(() => undefined))
     const submitting = open(READY)
     await confirm()
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirming...' }))
+    const cancel = new MouseEvent('click', { bubbles: true, cancelable: true })
+    screen.getByRole('link', { name: 'Not me' }).dispatchEvent(cancel)
+    states.set('submitting-not-me-default-prevented', cancel.defaultPrevented)
     record('submitting', submitting)
     states.set('submitting-calls', api.confirmHandoff.mock.calls.length)
     resetScenario()
@@ -111,10 +115,23 @@ describe('HandoffConfirmContent states (Story 69.13 pin)', () => {
     record('mfa', mfa)
     resetScenario()
 
+    api.confirmHandoff.mockResolvedValueOnce({ mfaRequired: true, mfaToken: 'mfa-tok-1' })
+    api.verifyMfaLogin.mockRejectedValueOnce({ code: 'mfa_token_expired' })
+    const expired = open(READY, ORIGIN)
+    await confirm()
+    await fireEvent.input(await screen.findByLabelText(/authenticator code/i), {
+      target: { value: '123456' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /verify mfa code/i }))
+    await waitFor(() => expect(expired.container.querySelector('button')).toBeNull())
+    record('mfa-expired-with-origin', expired)
+    states.set('mfa-expired-verify-calls', api.verifyMfaLogin.mock.calls.length)
+    resetScenario()
+
     api.confirmHandoff.mockRejectedValueOnce(new ApiClientError(401, null, 'raw body message'))
     const rejected = open(READY)
     await confirm()
-    await screen.findByText(/no longer valid|could not|try again|started/i)
+    await waitFor(() => expect(rejected.container.querySelector('[role="alert"]')).not.toBeNull())
     record('rejected', rejected)
     resetScenario()
 
@@ -132,6 +149,32 @@ describe('HandoffConfirmContent states (Story 69.13 pin)', () => {
     await confirm()
     await waitFor(() => expect(loginFailed.container.querySelector('button')).toBeNull())
     record('login-failed-with-origin', loginFailed)
+    resetScenario()
+
+    api.confirmHandoff.mockRejectedValueOnce(new ApiClientError(500, null, 'boom'))
+    const serverError = open(READY)
+    await confirm()
+    await waitFor(() =>
+      expect(serverError.container.querySelector('[role="alert"]')).not.toBeNull()
+    )
+    record('other-status-error', serverError)
+    resetScenario()
+
+    api.confirmHandoff.mockResolvedValueOnce({ ok: true })
+    api.getCurrentUser.mockRejectedValueOnce(new Error('session lookup failed'))
+    const noSession = open(READY)
+    await confirm()
+    await waitFor(() => expect(noSession.container.querySelector('[role="alert"]')).not.toBeNull())
+    record('confirmed-but-session-lookup-fails', noSession)
+    states.set('confirmed-but-session-lookup-fails-goto', gotoMock.mock.calls.length)
+    resetScenario()
+
+    record(
+      'ready-padded-synthetic-label',
+      open(
+        `?pendingId=${PENDING}&organizationName=Acme%20Corp&accountLabel=%20service-provisioned%2Bx%40invalid.projectvault%20`
+      )
+    )
     resetScenario()
 
     api.confirmHandoff.mockRejectedValueOnce(new Error('network'))
