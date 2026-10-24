@@ -94,7 +94,7 @@ function hostRelease(hostDir: string): string | null {
   }
 }
 
-async function preflight(
+export async function preflight(
   options: VerifyOptions
 ): Promise<{ lock?: CompositionLock; problems: string[] }> {
   const found = lockProblems(options.appRoot)
@@ -286,7 +286,7 @@ export interface ExtractResult {
   problems: string[]
 }
 
-function outProblem(out: string): string | null {
+export function outProblem(out: string): string | null {
   if (pathExists(out) && statPath(out).isDirectory()) return `--out ${out} is a directory`
   const parent = dirname(out)
   if (!pathExists(parent) || !statPath(parent).isDirectory()) {

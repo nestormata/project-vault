@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.10.0
+
+- **`pv-verify --only tsconfig --out <file>`: the composed `svelte-check` configuration** (Story 68-26). Writes
+  a tsconfig that extends the app's `tsconfig.json` and excludes exactly the lock's `excludedPvTests` (plus
+  the app tsconfig's own `exclude`, which an extending config would otherwise replace), so `svelte-check
+--tsconfig <file>` skips PV's tests of a subject the pack overrode, replaced or removed, the same ones the
+  composed Vitest run skips. Before, those tests were still type-checked against the replacement and failed
+  with the replaced PV server-load contract (CM 16-3). It runs the `pv-verify` preflight first (lock present
+  and current, guard entries untouched, `excludedPvTests` equal to what the lock's own overrides, removals and
+  replacements imply, `--pack` regeneration) and fails closed, writing nothing, on any of them, on an entry
+  that is not an exact relative path (absolute, `..`, backslash, glob) and on an unreadable app tsconfig.
+  No consumer-chosen exclusion and no blanket test glob exists. Additive: no existing flag, lock field or
+  exit code changes; the usage and the `--only` error message list the new step.
+
 ## 0.9.0
 
 - **Behavior injection for component-scoped region points: the per-route opt-in `hostRoutes`** (Story 69-1,
