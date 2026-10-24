@@ -27,6 +27,10 @@ const revealCredentialValueMock = vi.hoisted(() => vi.fn())
 const createCredentialShareMock = vi.hoisted(() => vi.fn())
 const createExternalCredentialShareMock = vi.hoisted(() => vi.fn())
 const updateCredentialLifecycleMock = vi.hoisted(() => vi.fn())
+const addCredentialVersionMock = vi.hoisted(() => vi.fn())
+const addCredentialDependencyMock = vi.hoisted(() => vi.fn())
+const archiveCredentialDependencyMock = vi.hoisted(() => vi.fn())
+const confirmChecklistItemMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn(async () => {}) }))
 vi.mock('$lib/api/credential-shares.js', () => ({
@@ -40,10 +44,10 @@ vi.mock('$lib/api/credentials.js', async () => {
     await vi.importActual<typeof import('$lib/api/credentials.js')>('$lib/api/credentials.js')
   return {
     updateCredentialLifecycle: updateCredentialLifecycleMock,
-    addCredentialDependency: vi.fn(),
-    archiveCredentialDependency: vi.fn(),
+    addCredentialDependency: addCredentialDependencyMock,
+    archiveCredentialDependency: archiveCredentialDependencyMock,
     revealCredentialValue: revealCredentialValueMock,
-    addCredentialVersion: vi.fn(),
+    addCredentialVersion: addCredentialVersionMock,
     parseRevealedFields: actual.parseRevealedFields,
     isFieldsValue: actual.isFieldsValue,
     listCredentialDependencies: vi.fn(async () => ({
@@ -58,9 +62,10 @@ vi.mock('$lib/api/credentials.js', async () => {
 vi.mock('$lib/api/rotations.js', async () => {
   const actual =
     await vi.importActual<typeof import('$lib/api/rotations.js')>('$lib/api/rotations.js')
-  return { ...actual, confirmChecklistItem: vi.fn() }
+  return { ...actual, confirmChecklistItem: confirmChecklistItemMock }
 })
 
+import { ApiClientError } from '$lib/api/client.js'
 import CredentialDetailPage from './+page.svelte'
 
 // The snapshot carries localized times (formatDateTime prints hours), so pin the zone: the committed
@@ -563,6 +568,191 @@ async function interactionStates(): Promise<Record<string, string>> {
   await click('Create share link')
   await waitFor(() => expect(screen.getByText('share boom')).toBeTruthy())
   out['share create error'] = html(mounted.container)
+  cleanup()
+
+  // Story 69-14: states of the secret value and dependent systems sections that the matrix above
+  // does not reach (copy statuses, add-version and field-set failures, dependency mutations).
+  Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => {}) } })
+  revealCredentialValueMock.mockResolvedValue({ value: 'COPY-VALUE-FIXTURE', versionNumber: 3 })
+  mounted = render(CredentialDetailPage, { props: { data: baseData() } })
+  await click('Reveal value')
+  await waitFor(() => expect(screen.getByText('COPY-VALUE-FIXTURE')).toBeTruthy())
+  await click(/^copy/i)
+  await waitFor(() => expect(screen.getAllByRole('status').length).toBeGreaterThan(0))
+  out['legacy revealed copy success status'] = html(mounted.container)
+  cleanup()
+
+  Object.assign(navigator, {
+    clipboard: {
+      writeText: vi.fn(async () => {
+        throw new Error('denied')
+      }),
+    },
+  })
+  mounted = render(CredentialDetailPage, { props: { data: baseData() } })
+  await click(/copy/i)
+  await waitFor(() => expect(screen.getAllByRole('status').length).toBeGreaterThan(0))
+  out['legacy copy without reveal, failure status'] = html(mounted.container)
+  cleanup()
+
+  Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => {}) } })
+  revealCredentialValueMock.mockImplementation(
+    async (_f: unknown, _p: string, _c: string, opts?: { field?: string }) => ({
+      fields: [{ key: opts?.field ?? 'password', sensitive: true, value: `FIELD-${opts?.field}` }],
+      versionNumber: 2,
+    })
+  )
+  mounted = render(CredentialDetailPage, { props: { data: owner(multi) } })
+  await fireEvent.click(
+    within(screen.getByTestId('field-row-password')).getByRole('button', { name: /copy/i })
+  )
+  await waitFor(() => expect(screen.getAllByRole('status').length).toBeGreaterThan(0))
+  out['multi per-field copy success status'] = html(mounted.container)
+  cleanup()
+
+  revealCredentialValueMock.mockResolvedValue({ value: 'LEGACY-VALUE-FIXTURE', versionNumber: 3 })
+  addCredentialVersionMock.mockRejectedValueOnce(
+    new ApiClientError(409, { code: 'version_conflict' }, 'conflict')
+  )
+  mounted = render(CredentialDetailPage, { props: { data: baseData() } })
+  await fireEvent.input(screen.getByLabelText('New value'), { target: { value: 'next-value' } })
+  await click('Add version')
+  await waitFor(() => expect(screen.getByText(/Someone just added a version/)).toBeTruthy())
+  out['add version conflict error'] = html(mounted.container)
+  cleanup()
+
+  addCredentialVersionMock.mockRejectedValueOnce(
+    new ApiClientError(410, { code: 'credential_archived' }, 'archived')
+  )
+  mounted = render(CredentialDetailPage, { props: { data: baseData() } })
+  await fireEvent.input(screen.getByLabelText('New value'), { target: { value: 'next-value' } })
+  await click('Add version')
+  await waitFor(() => expect(screen.getByText(/This secret is archived/)).toBeTruthy())
+  out['add version archived banner'] = html(mounted.container)
+  cleanup()
+
+  addCredentialVersionMock.mockResolvedValueOnce({})
+  mounted = render(CredentialDetailPage, { props: { data: baseData() } })
+  const newValue = screen.getByLabelText('New value') as HTMLTextAreaElement
+  await fireEvent.input(newValue, { target: { value: 'next-value' } })
+  await click('Add version')
+  await waitFor(() => expect(addCredentialVersionMock).toHaveBeenCalled())
+  await waitFor(() => expect(newValue.value).toBe(''))
+  out['add version saved, textarea cleared'] = html(mounted.container)
+  cleanup()
+
+  revealCredentialValueMock.mockImplementation(async () => ({
+    fields: [
+      { key: 'host', sensitive: false, value: 'db.internal.example' },
+      { key: 'password', sensitive: true, value: 'FIELD-password' },
+      { key: 'token', sensitive: true, value: 'FIELD-token' },
+    ],
+    versionNumber: 2,
+  }))
+  mounted = render(CredentialDetailPage, { props: { data: owner(multi) } })
+  await click('Edit fields')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save fields' })).toBeTruthy())
+  await fireEvent.click(screen.getAllByRole('button', { name: /add field/i })[0] as HTMLElement)
+  await click('Save fields')
+  out['multi field-set editor validation error'] = html(mounted.container)
+  cleanup()
+
+  mounted = render(CredentialDetailPage, { props: { data: owner(multi) } })
+  await click('Edit fields')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save fields' })).toBeTruthy())
+  addCredentialVersionMock.mockRejectedValueOnce(
+    new ApiClientError(410, { code: 'credential_archived' }, 'archived')
+  )
+  await click('Save fields')
+  await waitFor(() => expect(screen.getByText(/This secret is archived/)).toBeTruthy())
+  out['multi field-set save archived banner'] = html(mounted.container)
+  cleanup()
+
+  revealCredentialValueMock.mockRejectedValueOnce(new Error('load boom'))
+  mounted = render(CredentialDetailPage, { props: { data: owner(multi) } })
+  await click('Edit fields')
+  await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull())
+  out['multi field-set load error'] = html(mounted.container)
+  cleanup()
+
+  addCredentialDependencyMock.mockResolvedValueOnce(
+    sampleDependency({ id: 'dep-new', systemName: 'new-system' })
+  )
+  mounted = render(CredentialDetailPage, { props: { data: baseData() } })
+  await fireEvent.click(screen.getByText('Add dependent system', { selector: 'summary' }))
+  await fireEvent.input(screen.getByLabelText('System name'), { target: { value: 'new-system' } })
+  await click('Add dependent system')
+  await waitFor(() => expect(screen.getByText(/new-system \(service\)/)).toBeTruthy())
+  out['dependency added'] = html(mounted.container)
+  cleanup()
+
+  addCredentialDependencyMock.mockRejectedValueOnce(new Error('dependency boom'))
+  mounted = render(CredentialDetailPage, { props: { data: baseData() } })
+  await fireEvent.click(screen.getByText('Add dependent system', { selector: 'summary' }))
+  await fireEvent.input(screen.getByLabelText('System name'), { target: { value: 'new-system' } })
+  await click('Add dependent system')
+  await waitFor(() => expect(screen.getByText('dependency boom')).toBeTruthy())
+  out['dependency add error'] = html(mounted.container)
+  cleanup()
+
+  addCredentialDependencyMock.mockRejectedValueOnce(
+    new ApiClientError(410, { code: 'project_archived' }, 'archived')
+  )
+  mounted = render(CredentialDetailPage, { props: { data: baseData() } })
+  await fireEvent.click(screen.getByText('Add dependent system', { selector: 'summary' }))
+  await fireEvent.input(screen.getByLabelText('System name'), { target: { value: 'new-system' } })
+  await click('Add dependent system')
+  await waitFor(() => expect(screen.getByText(/This project is archived/)).toBeTruthy())
+  out['dependency add archived banner'] = html(mounted.container)
+  cleanup()
+
+  archiveCredentialDependencyMock.mockResolvedValueOnce(undefined)
+  mounted = render(CredentialDetailPage, { props: { data: baseData({ dependencies }) } })
+  await fireEvent.click(screen.getAllByRole('button', { name: 'Archive' })[0] as HTMLElement)
+  await waitFor(() => expect(screen.queryByText(/billing-worker/)).toBeNull())
+  out['dependency archived'] = html(mounted.container)
+  cleanup()
+
+  archiveCredentialDependencyMock.mockRejectedValueOnce(new Error('archive boom'))
+  mounted = render(CredentialDetailPage, { props: { data: baseData({ dependencies }) } })
+  await fireEvent.click(screen.getAllByRole('button', { name: 'Archive' })[0] as HTMLElement)
+  await waitFor(() => expect(screen.getByText('archive boom')).toBeTruthy())
+  out['dependency archive error'] = html(mounted.container)
+  cleanup()
+
+  confirmChecklistItemMock.mockResolvedValueOnce({
+    item: { status: 'confirmed', confirmedBy: 'user-2', confirmedAt: LATER },
+  })
+  mounted = render(CredentialDetailPage, { props: { data: baseData({ dependencies }) } })
+  await fireEvent.click(
+    mounted.container.querySelector('#dependency-updated-dep-pending') as HTMLElement
+  )
+  await waitFor(() => expect(confirmChecklistItemMock).toHaveBeenCalled())
+  out['dependency checklist confirmed'] = html(mounted.container)
+  cleanup()
+
+  confirmChecklistItemMock.mockRejectedValueOnce(
+    new ApiClientError(
+      409,
+      { code: 'already_confirmed', confirmedBy: 'user-3', confirmedAt: LATER } as never,
+      'already'
+    )
+  )
+  mounted = render(CredentialDetailPage, { props: { data: baseData({ dependencies }) } })
+  await fireEvent.click(
+    mounted.container.querySelector('#dependency-updated-dep-pending') as HTMLElement
+  )
+  await waitFor(() => expect(confirmChecklistItemMock).toHaveBeenCalledTimes(2))
+  out['dependency checklist already confirmed'] = html(mounted.container)
+  cleanup()
+
+  confirmChecklistItemMock.mockRejectedValueOnce(new Error('confirm boom'))
+  mounted = render(CredentialDetailPage, { props: { data: baseData({ dependencies }) } })
+  await fireEvent.click(
+    mounted.container.querySelector('#dependency-updated-dep-pending') as HTMLElement
+  )
+  await waitFor(() => expect(screen.getByText('confirm boom')).toBeTruthy())
+  out['dependency checklist confirm error'] = html(mounted.container)
   cleanup()
 
   return out

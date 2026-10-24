@@ -188,6 +188,8 @@ export interface InjectionPointProps {
   'credential.detail.after': CredentialPointProps
   'credential.detail.before': CredentialPointProps
   'credential.detail.dependencies': CredentialPointProps
+  'credential.detail.dependencies-add': CredentialPointProps
+  'credential.detail.dependencies-list': CredentialPointProps
   'credential.detail.footer': CredentialPointProps
   'credential.detail.header.actions': CredentialPointProps
   'credential.detail.lifecycle': CredentialPointProps
@@ -198,6 +200,11 @@ export interface InjectionPointProps {
   'credential.detail.shares': CredentialPointProps
   'credential.detail.summary': CredentialPointProps
   'credential.detail.value': CredentialPointProps
+  'credential.detail.value-add-version': CredentialPointProps
+  'credential.detail.value-copy-status': CredentialPointProps
+  'credential.detail.value-edit-fields': CredentialPointProps
+  'credential.detail.value-fields': CredentialPointProps
+  'credential.detail.value-single': CredentialPointProps
   'credential.detail.vault-sealed': CredentialPointProps
   'credential.detail.versions': CredentialPointProps
   'credentials.home.after': StandardPointProps
@@ -459,7 +466,10 @@ export interface InjectionPointProps {
   'platform.audit.results': StandardPointProps
   'platform.audit.search': StandardPointProps
   'platform.audit.verify': StandardPointProps
+  'platform.backups.alerts': StandardPointProps
   'platform.backups.content': StandardPointProps
+  'platform.backups.intro': StandardPointProps
+  'platform.backups.list': StandardPointProps
   'platform.settings.content': StandardPointProps
   'platform.settings.backup': StandardPointProps
   'platform.settings.form': StandardPointProps
@@ -476,6 +486,15 @@ export interface InjectionPointProps {
   'platform.settings.status-token-test': StandardPointProps
   'platform.settings-orgs.content': StandardPointProps
   'platform.settings-resource-usage.content': StandardPointProps
+  'platform.settings-resource-usage.intro': StandardPointProps
+  'platform.settings-resource-usage.error': StandardPointProps
+  'platform.settings-resource-usage.orgs': StandardPointProps
+  'platform.settings-resource-usage.users': StandardPointProps
+  'platform.settings-resource-usage.audit-entries': StandardPointProps
+  'platform.settings-resource-usage.storage': StandardPointProps
+  'platform.settings-resource-usage.audit-log-storage': StandardPointProps
+  'platform.settings-resource-usage.allocation': StandardPointProps
+  'platform.settings-resource-usage.org-table': StandardPointProps
   'platform.upgrade.content': StandardPointProps
   'project.home.header': StandardPointProps
   'project.home.error': StandardPointProps
@@ -491,7 +510,21 @@ export interface InjectionPointProps {
   'project.credentials.results': StandardPointProps
   'project.credentials-rotate.header': StandardPointProps
   'project.credentials-rotate.form': StandardPointProps
+  'project.credentials-rotate.actions': StandardPointProps
+  'project.credentials-rotate.dependencies': StandardPointProps
+  'project.credentials-rotate.field-values': StandardPointProps
+  'project.credentials-rotate.fields': StandardPointProps
+  'project.credentials-rotate.notes': StandardPointProps
+  'project.credentials-rotate.same-value-confirm': StandardPointProps
+  'project.credentials-rotate.value': StandardPointProps
   'project.credentials-rotations-detail.content': StandardPointProps
+  'project.credentials-rotations-detail.abandon': StandardPointProps
+  'project.credentials-rotations-detail.checklist': StandardPointProps
+  'project.credentials-rotations-detail.complete': StandardPointProps
+  'project.credentials-rotations-detail.promote': StandardPointProps
+  'project.credentials-rotations-detail.retire': StandardPointProps
+  'project.credentials-rotations-detail.staged-value': StandardPointProps
+  'project.credentials-rotations-detail.summary': StandardPointProps
   'project.credentials-import.header': StandardPointProps
   'project.credentials-import.content': StandardPointProps
   'project.credentials-new.header': StandardPointProps
@@ -503,6 +536,11 @@ export interface InjectionPointProps {
   'project.machine-users.header': StandardPointProps
   'project.machine-users.list': StandardPointProps
   'project.machine-users-detail.content': StandardPointProps
+  'project.machine-users-detail.deactivate': StandardPointProps
+  'project.machine-users-detail.key-issue': StandardPointProps
+  'project.machine-users-detail.key-reveal': StandardPointProps
+  'project.machine-users-detail.keys': StandardPointProps
+  'project.machine-users-detail.summary': StandardPointProps
   'project.machine-users-new.header': StandardPointProps
   'project.machine-users-new.form': StandardPointProps
   'project.services.list': StandardPointProps
@@ -565,6 +603,10 @@ export interface InjectionPointProps {
   'auth.recovery.request': StandardPointProps
   'auth.recovery.login-link': StandardPointProps
   'auth.recovery-detail.content': StandardPointProps
+  'auth.recovery-detail.status': StandardPointProps
+  'auth.recovery-detail.codes': StandardPointProps
+  'auth.recovery-detail.password': StandardPointProps
+  'auth.recovery-detail.mfa': StandardPointProps
   'auth.register.heading': StandardPointProps
   'auth.register.login-link': StandardPointProps
   'vault.home.header': StandardPointProps
@@ -678,6 +720,8 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [
       'credential.detail.actions',
       'credential.detail.dependencies',
+      'credential.detail.dependencies-list',
+      'credential.detail.dependencies-add',
       'credential.detail.footer',
       'credential.detail.lifecycle',
       'credential.detail.metadata',
@@ -687,6 +731,11 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'credential.detail.shares',
       'credential.detail.summary',
       'credential.detail.value',
+      'credential.detail.value-fields',
+      'credential.detail.value-single',
+      'credential.detail.value-copy-status',
+      'credential.detail.value-edit-fields',
+      'credential.detail.value-add-version',
       'credential.detail.vault-sealed',
       'credential.detail.versions',
     ]
@@ -943,7 +992,12 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/backups#page'],
-    ['platform.backups.content']
+    [
+      'platform.backups.content',
+      'platform.backups.intro',
+      'platform.backups.alerts',
+      'platform.backups.list',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -973,7 +1027,18 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/settings/resource-usage#page'],
-    ['platform.settings-resource-usage.content']
+    [
+      'platform.settings-resource-usage.content',
+      'platform.settings-resource-usage.intro',
+      'platform.settings-resource-usage.error',
+      'platform.settings-resource-usage.orgs',
+      'platform.settings-resource-usage.users',
+      'platform.settings-resource-usage.audit-entries',
+      'platform.settings-resource-usage.storage',
+      'platform.settings-resource-usage.audit-log-storage',
+      'platform.settings-resource-usage.allocation',
+      'platform.settings-resource-usage.org-table',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1014,12 +1079,31 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials/[credentialId]/rotate#page'],
-    ['project.credentials-rotate.header', 'project.credentials-rotate.form']
+    [
+      'project.credentials-rotate.header',
+      'project.credentials-rotate.form',
+      'project.credentials-rotate.dependencies',
+      'project.credentials-rotate.fields',
+      'project.credentials-rotate.field-values',
+      'project.credentials-rotate.value',
+      'project.credentials-rotate.notes',
+      'project.credentials-rotate.same-value-confirm',
+      'project.credentials-rotate.actions',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]#page'],
-    ['project.credentials-rotations-detail.content']
+    [
+      'project.credentials-rotations-detail.content',
+      'project.credentials-rotations-detail.summary',
+      'project.credentials-rotations-detail.staged-value',
+      'project.credentials-rotations-detail.checklist',
+      'project.credentials-rotations-detail.complete',
+      'project.credentials-rotations-detail.promote',
+      'project.credentials-rotations-detail.abandon',
+      'project.credentials-rotations-detail.retire',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1054,7 +1138,14 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/machine-users/[machineUserId]#page'],
-    ['project.machine-users-detail.content']
+    [
+      'project.machine-users-detail.content',
+      'project.machine-users-detail.summary',
+      'project.machine-users-detail.deactivate',
+      'project.machine-users-detail.key-reveal',
+      'project.machine-users-detail.key-issue',
+      'project.machine-users-detail.keys',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1198,7 +1289,13 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(auth)/recovery/[token]#page'],
-    ['auth.recovery-detail.content']
+    [
+      'auth.recovery-detail.content',
+      'auth.recovery-detail.status',
+      'auth.recovery-detail.codes',
+      'auth.recovery-detail.password',
+      'auth.recovery-detail.mfa',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',

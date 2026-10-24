@@ -14,7 +14,7 @@
 <InjectionPoint name="platform.settings-resource-usage.before" data={data?.__inject} />
 <InjectionPoint name="platform.settings-resource-usage.header.actions" data={data?.__inject} />
 <!-- @region platform.settings-resource-usage.content -->
-<PlatformResourceUsageContent {data}>
+<PlatformResourceUsageContent pageData={data} data={data.__inject}>
   <InjectionPoint name="platform.settings-resource-usage.content" data={data?.__inject} />
 </PlatformResourceUsageContent>
 <InjectionPoint name="platform.settings-resource-usage.after" data={data?.__inject} />

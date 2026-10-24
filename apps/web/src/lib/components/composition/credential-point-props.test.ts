@@ -19,6 +19,8 @@ const HOST = '/(app)/projects/[projectId]/credentials/[credentialId]#page'
 const REGIONS = [
   'credential.detail.actions',
   'credential.detail.dependencies',
+  'credential.detail.dependencies-add',
+  'credential.detail.dependencies-list',
   'credential.detail.footer',
   'credential.detail.lifecycle',
   'credential.detail.metadata',
@@ -28,6 +30,11 @@ const REGIONS = [
   'credential.detail.shares',
   'credential.detail.summary',
   'credential.detail.value',
+  'credential.detail.value-add-version',
+  'credential.detail.value-copy-status',
+  'credential.detail.value-edit-fields',
+  'credential.detail.value-fields',
+  'credential.detail.value-single',
   'credential.detail.vault-sealed',
   'credential.detail.versions',
 ] as const

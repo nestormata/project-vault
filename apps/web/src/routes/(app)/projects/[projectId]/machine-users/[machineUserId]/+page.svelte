@@ -13,7 +13,7 @@
 <InjectionPoint name="project.machine-users-detail.before" data={data?.__inject} />
 <InjectionPoint name="project.machine-users-detail.header.actions" data={data?.__inject} />
 <!-- @region project.machine-users-detail.content -->
-<MachineUserDetailContent {data}>
+<MachineUserDetailContent pageData={data} data={data?.__inject}>
   <InjectionPoint name="project.machine-users-detail.content" data={data?.__inject} />
 </MachineUserDetailContent>
 <InjectionPoint name="project.machine-users-detail.after" data={data?.__inject} />
