@@ -4,6 +4,8 @@
 // resolve without the hook's redirect; after 68-6 the route-id rule protects them. And the
 // `/%68andoff` rows (code review, Nestor 2026-10-03): on `main` they get the default headers;
 // after 68-6 the header policy matches the decoded pathname too, so they get the handoff headers.
+// Paraglide 2.29 adds `Vary: Cookie` to every response because the cookie strategy decides the locale
+// (cache correctness), so the snapshot was regenerated once for that header on 2026-10-24.
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { describeResponse, fakeKitRequest } from './kit-request-test-helpers.js'
 
