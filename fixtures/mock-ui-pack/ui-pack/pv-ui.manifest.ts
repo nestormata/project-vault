@@ -257,6 +257,12 @@ export default defineUiPack({
     'project.machine-users-detail.keys': [
       { component: './injections/ProjectMachineUsersDetailKeysFill.svelte' },
     ],
+    // Sub-region points of Story 69.12 (batch 3 of the region splits): render-only fills for the
+    // probe-order e2e on four pages an org owner can reach without extra setup.
+    'project.new.slug': [{ component: './injections/NewProjectSlugFill.svelte' }],
+    'project.machine-users-new.role': [{ component: './injections/MachineUserRoleFill.svelte' }],
+    'settings.audit.export-form': [{ component: './injections/AuditExportFormFill.svelte' }],
+    'project.detail.export-key': [{ component: './injections/ProjectExportKeyFill.svelte' }],
     'shell.head': [{ component: './injections/HeadMarker.svelte' }],
   },
   replacements: {
