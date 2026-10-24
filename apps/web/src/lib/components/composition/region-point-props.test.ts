@@ -14,11 +14,12 @@ const REGION_NAMES = INJECTION_POINTS.filter(
 ).map((point) => point.name)
 
 describe('region point props (Story 69.4 AC-1)', () => {
-  it('registers the 34 region points, all 3 segments, none duplicated', () => {
-    // 17 from Story 69.4, the three project.members.team-* sub-regions of Story 69.11 and the 14
-    // settings.audit.* export, verify, search and results sub-regions of Story 69.12.
-    expect(REGION_NAMES).toHaveLength(34)
-    expect(new Set(REGION_NAMES).size).toBe(34)
+  it('registers the 37 region points, all 3 segments, none duplicated', () => {
+    // 17 from Story 69.4, the three project.members.team-* sub-regions of Story 69.11 and, from
+    // Story 69.12, the 14 settings.audit.* export, verify, search and results sub-regions plus the
+    // three settings.notifications.channels-* sub-regions.
+    expect(REGION_NAMES).toHaveLength(37)
+    expect(new Set(REGION_NAMES).size).toBe(37)
     for (const name of REGION_NAMES) expect(name.split('.')).toHaveLength(3)
   })
 

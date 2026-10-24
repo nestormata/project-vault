@@ -285,6 +285,9 @@ export interface InjectionPointProps {
   'project.detail.after': ProjectPointProps
   'project.detail.before': ProjectPointProps
   'project.detail.export': ProjectPointProps
+  'project.detail.export-intro': ProjectPointProps
+  'project.detail.export-error': ProjectPointProps
+  'project.detail.export-key': ProjectPointProps
   'project.detail.header.actions': ProjectPointProps
   'project.detail.not-found': ProjectPointProps
   'project.detail.summary': ProjectPointProps
@@ -454,6 +457,9 @@ export interface InjectionPointProps {
   'settings.notifications.header': NotificationSettingsPointProps
   'settings.notifications.routing': NotificationRoutingPointProps
   'settings.notifications.test': NotificationSettingsPointProps
+  'settings.notifications.channels-header': NotificationSettingsPointProps
+  'settings.notifications.channels-head': NotificationSettingsPointProps
+  'settings.notifications.channels-row': NotificationSettingsPointProps
   'project.members.access': ProjectMembersPointProps
   'project.members.team-error': ProjectMembersBasePointProps
   'project.members.team-table': ProjectMembersBasePointProps
@@ -585,6 +591,11 @@ export interface InjectionPointProps {
   'project.machine-users-detail.summary': StandardPointProps
   'project.machine-users-new.header': StandardPointProps
   'project.machine-users-new.form': StandardPointProps
+  'project.machine-users-new.name': StandardPointProps
+  'project.machine-users-new.role': StandardPointProps
+  'project.machine-users-new.description': StandardPointProps
+  'project.machine-users-new.error': StandardPointProps
+  'project.machine-users-new.submit': StandardPointProps
   'project.services.list': StandardPointProps
   'project.services-detail.content': StandardPointProps
   'project.services-new.header': StandardPointProps
@@ -599,6 +610,11 @@ export interface InjectionPointProps {
   'project.import.submit': StandardPointProps
   'project.new.header': StandardPointProps
   'project.new.form': StandardPointProps
+  'project.new.name': StandardPointProps
+  'project.new.slug': StandardPointProps
+  'project.new.description': StandardPointProps
+  'project.new.error': StandardPointProps
+  'project.new.submit': StandardPointProps
   'project.preview.content': StandardPointProps
   'settings.home.header': StandardPointProps
   'settings.audit-access-report.header': StandardPointProps
@@ -640,6 +656,8 @@ export interface InjectionPointProps {
   'settings.themes.selection-error': StandardPointProps
   'settings.themes.list': StandardPointProps
   'settings.themes.admin': StandardPointProps
+  'settings.themes.reload': StandardPointProps
+  'settings.themes.org-default': StandardPointProps
   'settings.users.header': StandardPointProps
   'settings.users.default-language': StandardPointProps
   'settings.users.machine-dormancy': StandardPointProps
@@ -859,6 +877,9 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     ['/(app)/projects/[projectId]#page'],
     [
       'project.detail.export',
+      'project.detail.export-intro',
+      'project.detail.export-error',
+      'project.detail.export-key',
       'project.detail.not-found',
       'project.detail.summary',
       'project.detail.tiles',
@@ -1003,7 +1024,13 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'NotificationSettingsPointProps',
     [NOTIFICATIONS_PAGE_HOST],
-    ['settings.notifications.header', 'settings.notifications.test']
+    [
+      'settings.notifications.header',
+      'settings.notifications.test',
+      'settings.notifications.channels-header',
+      'settings.notifications.channels-head',
+      'settings.notifications.channels-row',
+    ]
   ),
   ...regionPoints(
     'NotificationPreferencesPointProps',
@@ -1273,7 +1300,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/machine-users/new#page'],
-    ['project.machine-users-new.header', 'project.machine-users-new.form']
+    [
+      'project.machine-users-new.header',
+      'project.machine-users-new.form',
+      'project.machine-users-new.name',
+      'project.machine-users-new.role',
+      'project.machine-users-new.description',
+      'project.machine-users-new.error',
+      'project.machine-users-new.submit',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1307,7 +1342,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/new#page'],
-    ['project.new.header', 'project.new.form']
+    [
+      'project.new.header',
+      'project.new.form',
+      'project.new.name',
+      'project.new.slug',
+      'project.new.description',
+      'project.new.error',
+      'project.new.submit',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1394,6 +1437,8 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'settings.themes.selection-error',
       'settings.themes.list',
       'settings.themes.admin',
+      'settings.themes.reload',
+      'settings.themes.org-default',
     ]
   ),
   ...regionPoints(

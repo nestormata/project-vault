@@ -18,7 +18,7 @@
   </ProjectsNewHeader>
 
   <!-- @region project.new.form -->
-  <ProjectsNewForm>
+  <ProjectsNewForm data={data?.__inject}>
     <InjectionPoint name="project.new.form" data={data?.__inject} />
   </ProjectsNewForm>
 </section>
