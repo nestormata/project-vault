@@ -98,7 +98,7 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
     await expect(LOAD(page)).toContainText(`credential=${credentialId}`)
   })
 
-  test('works: a viewer sees the fills with projectRole viewer, PV controls unchanged, and the composed action denies from server state', async ({
+  test('works: a viewer sees the fills with projectRole viewer, PV controls follow the effective role, and the composed action denies from server state', async ({
     context,
     browser,
   }) => {
@@ -115,9 +115,15 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
       const actions = viewerPage.getByTestId(ACTIONS_FILL)
       await expect(actions).toHaveAttribute('data-project-role', 'viewer')
       await expect(actions).toHaveAttribute('data-org-role', 'admin')
-      // PV's own controls follow PV's own gating: no archive, no reveal
+      // PV's own controls follow PV's own gating, which mirrors the API's effective project role
+      // (DW-606): an org admin bypasses the project `viewer` row, so Reveal is offered (the API
+      // allows it); archive stays project-owner-or-org-owner, so it is not.
       await expect(viewerPage.getByRole('button', { name: 'Archive secret' })).toHaveCount(0)
-      await expect(viewerPage.getByRole('button', { name: 'Reveal value' })).toHaveCount(0)
+      await expect(viewerPage.getByRole('button', { name: 'Reveal value' })).toHaveCount(1)
+      const reveal = await viewerContext.request.get(
+        `/api/v1/projects/${projectId}/credentials/${credentialId}/value`
+      )
+      expect(reveal.status(), 'the API reveals for an org admin over a viewer row').toBe(200)
       await expect(viewerPage.getByRole('heading', { level: 1 })).toBeVisible()
       // The fill posts a FORGED `projectRole=owner` field (hidden input); the action ignores it and
       // decides from the project the API returns for this session.

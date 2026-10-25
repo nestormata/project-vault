@@ -7,7 +7,7 @@ vi.mock('$app/navigation', () => ({
 }))
 
 vi.mock('$app/state', () => ({
-  page: { url: new URL('http://localhost/projects') },
+  page: { url: new URL('http://localhost/projects'), data: { user: { orgRole: 'owner' } } },
 }))
 
 import { goto } from '$app/navigation'

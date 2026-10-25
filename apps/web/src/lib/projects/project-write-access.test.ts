@@ -46,3 +46,24 @@ describe('canWriteInProject (Story 69.17)', () => {
     expect(canWriteInProject('member', null)).toBe(false)
   })
 })
+
+// DW-606 follow-up: the whole matrix of the API's effective-role rule (org owner/admin bypass; else
+// the project membership role; else the org role). The project payload's `role` already folds the
+// "no row" fallback in (membership role ?? org role), so "no row" is `{ role: <org role> }`.
+describe('canWriteInProject matrix (mirrors apps/api effectiveProjectRoleForCaller)', () => {
+  it.each([
+    ['org owner, viewer row', 'owner', { role: 'viewer' }, true],
+    ['org owner, no row', 'owner', { role: 'owner' }, true],
+    ['org admin, viewer row', 'admin', { role: 'viewer' }, true],
+    ['org admin, no row', 'admin', { role: 'admin' }, true],
+    ['org member, viewer row', 'member', { role: 'viewer' }, false],
+    ['org member, member row', 'member', { role: 'member' }, true],
+    ['org member, owner row', 'member', { role: 'owner' }, true],
+    ['org member, no row', 'member', { role: 'member' }, true],
+    ['org viewer, no row', 'viewer', { role: 'viewer' }, false],
+    ['org viewer, member row', 'viewer', { role: 'member' }, true],
+    ['org member, project not loaded', 'member', null, false],
+  ] as const)('%s', (_label, orgRole, project, expected) => {
+    expect(canWriteInProject(orgRole, project)).toBe(expected)
+  })
+})
