@@ -28,12 +28,12 @@ without a version change — nor on the exact wording of any `message`.
 Four mechanisms exist. They are not interchangeable; each is accepted only by the routes it was
 designed for.
 
-| Scheme | Transport | Used by |
-|---|---|---|
-| `cookieAuth` | `access-token` cookie | Human/browser sessions. The web app's entire surface. |
-| `machineBearer` | `Authorization: Bearer <JWT>` | The `/api/v1/machine/**` routes only. |
-| `apiKey` | `Authorization: Bearer pk_...` | `POST /api/v1/auth/machine-token` only. |
-| `serviceProvisioningToken` | `x-service-provisioning-token: <secret>` | The service-provisioning routes only. |
+| Scheme                     | Transport                                | Used by                                               |
+| -------------------------- | ---------------------------------------- | ----------------------------------------------------- |
+| `cookieAuth`               | `access-token` cookie                    | Human/browser sessions. The web app's entire surface. |
+| `machineBearer`            | `Authorization: Bearer <JWT>`            | The `/api/v1/machine/**` routes only.                 |
+| `apiKey`                   | `Authorization: Bearer pk_...`           | `POST /api/v1/auth/machine-token` only.               |
+| `serviceProvisioningToken` | `x-service-provisioning-token: <secret>` | The service-provisioning routes only.                 |
 
 ### Session (`cookieAuth`)
 
@@ -47,6 +47,45 @@ worked example of how the two guards combine.
 Note that `owner` is not universally treated as a superset of `admin`. A small number of routes
 gate on the literal role `admin` — the extension-status routes are the notable case — so an
 organization's owner is refused there. This is deliberate, not a bug.
+
+### Project roles: a project `viewer` is read-only
+
+Project membership has the same four roles. The **effective project role** of a caller is:
+
+- their organization role, if it is `owner` or `admin` (they bypass project membership);
+- otherwise their project membership role, if they have one;
+- otherwise their organization role.
+
+Every `POST`, `PUT`, `PATCH` and `DELETE` route under `/api/v1/projects/{projectId}/…` requires an
+effective project role of at least `member`, **in addition to** the route's own organization-role
+floor and any in-handler check (project owner, project admin, sharer). A caller below it gets:
+
+```json
+{
+  "code": "insufficient_project_role",
+  "message": "Your role in this project does not permit this action"
+}
+```
+
+with status `403`. No handler code runs and no audit row is written for a refused write. Reads are
+unchanged: a project viewer can list and open what the project holds, but cannot reveal a secret's
+value (the reveal routes have required `member` since Story 4.5).
+
+| Caller                                              | Project write (create, edit, delete, pause, snooze, tag, export, rotate) |
+| --------------------------------------------------- | ------------------------------------------------------------------------ |
+| Org `owner` / `admin` (any project row)             | allowed, subject to the route's own rules                                |
+| Org `member` + project `owner` / `admin` / `member` | allowed, subject to the route's own rules                                |
+| Org `member` + project `viewer`                     | `403 insufficient_project_role`                                          |
+| Org `member` with no project row                    | the route's own answer (usually `404`, the project is not visible)       |
+| Org `viewer` (any project row)                      | `403 insufficient_role` on routes whose org floor is `member`            |
+| Platform operator                                   | no bypass: the rows above apply to their org and project roles           |
+
+One write is exempt: `POST …/credentials/{credentialId}/shares/{shareId}/revoke` stays open to a
+project viewer, because revoking only narrows exposure; its own rule (the sharer or an org
+admin/owner) still applies. The check never tells apart a project in another organization, or one
+that does not exist: both fall back to the organization role, and the route returns its usual
+`404`. The full per-route list is pinned by
+`apps/api/src/__tests__/project-write-role-inventory.test.ts`.
 
 ### Machine token (`apiKey` → `machineBearer`)
 
@@ -91,10 +130,10 @@ are calling rather than assuming.
 
 List routes accept two query parameters:
 
-| Parameter | Range | Default |
-|---|---|---|
-| `page` | integer ≥ 1 | `1` |
-| `limit` | integer 1–100 | `20` |
+| Parameter | Range         | Default |
+| --------- | ------------- | ------- |
+| `page`    | integer ≥ 1   | `1`     |
+| `limit`   | integer 1–100 | `20`    |
 
 `page` is 1-based, not 0-based. `hasNext` is computed as `page * limit < total`, so paging is
 `while (hasNext) page++`. Requesting a page past the end returns an empty `items` array with
@@ -119,16 +158,16 @@ Errors are a **flat** object — they are not wrapped in `data`:
 
 Common status codes carry consistent meanings across the API:
 
-| Status | Meaning |
-|---|---|
-| `400` | The request was structurally valid but semantically wrong for this resource. |
-| `401` | No credential presented, or the presented one is invalid/expired. |
-| `403` | Authenticated, but the role, MFA state, or scope is insufficient. |
-| `404` | Not found — also returned instead of `403` where the resource's *existence* is itself sensitive. |
-| `409` | A conflict with current state (duplicate name, already-revoked key, deactivated identity). |
-| `422` | Request-schema validation failed (bad body, query, or params). |
-| `429` | Rate limited. |
-| `503` | A required side effect (typically the audit write) failed, so the request failed closed. |
+| Status | Meaning                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------ |
+| `400`  | The request was structurally valid but semantically wrong for this resource.                     |
+| `401`  | No credential presented, or the presented one is invalid/expired.                                |
+| `403`  | Authenticated, but the role, MFA state, or scope is insufficient.                                |
+| `404`  | Not found — also returned instead of `403` where the resource's _existence_ is itself sensitive. |
+| `409`  | A conflict with current state (duplicate name, already-revoked key, deactivated identity).       |
+| `422`  | Request-schema validation failed (bad body, query, or params).                                   |
+| `429`  | Rate limited.                                                                                    |
+| `503`  | A required side effect (typically the audit write) failed, so the request failed closed.         |
 
 Note that a `503 audit_write_failed` is a deliberate fail-closed, not an outage: Project Vault
 refuses to release a secret it could not record releasing. Retry it; do not treat it as a
@@ -182,9 +221,9 @@ every authenticated route and its exact schemas without an operator saying so.
 Enable them by setting `ENABLE_API_DOCS=true` (they are also on automatically when `NODE_ENV` is
 `development` or `test`). When enabled:
 
-| Route | Serves |
-|---|---|
-| `GET /api/v1/docs` | Swagger UI. |
+| Route                      | Serves                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| `GET /api/v1/docs`         | Swagger UI.                                                                   |
 | `GET /api/v1/openapi.json` | The same document `make generate-spec` writes, with the live release version. |
 
 Both routes are unauthenticated when enabled, and both remain reachable while the vault is

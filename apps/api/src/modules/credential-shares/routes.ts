@@ -744,6 +744,9 @@ export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
     },
     security: {
       minimumRole: 'member',
+      // Story 69.17: revoking only narrows exposure, so a sharer later demoted to project viewer
+      // keeps it; the sharer-or-org-admin check below is this route's authorization.
+      minimumProjectRole: 'viewer',
       writeAuditEvent: false,
       rateLimit: {
         max: 30,
