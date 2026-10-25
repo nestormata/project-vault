@@ -10,6 +10,8 @@ import { createApp } from '../app.js'
 const PROJECT_WRITE_ROLE_MATRIX: Record<string, 'member' | 'admin' | 'owner' | null> = {
   'POST /api/v1/projects/:projectId/alerts/:alertId/dismiss': 'member',
   'POST /api/v1/projects/:projectId/alerts/:alertId/snooze': 'member',
+  // Archive and unarchive (project and secret) then apply archiveAuthority() in the handler: the
+  // project owner row or the org owner (Story 69.20).
   'POST /api/v1/projects/:projectId/archive': 'member',
   'POST /api/v1/projects/:projectId/certificates': 'member',
   'DELETE /api/v1/projects/:projectId/certificates/:certificateId': 'member',

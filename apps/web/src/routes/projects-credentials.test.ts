@@ -1188,6 +1188,25 @@ describe('project credential routes', () => {
     expect(screen.getByText('primary-db (database)')).toBeTruthy()
   })
 
+  it.each([
+    ['member', 'owner', true],
+    ['owner', 'member', true],
+    ['admin', 'admin', false],
+    ['member', 'admin', false],
+    ['viewer', 'owner', false],
+  ] as const)(
+    'org %s with project role %s: Archive secret offered = %s (the API archive rule, DW-618)',
+    (orgRole, role, offered) => {
+      const base = baseCredentialDetailData()
+      render(CredentialDetailPage, {
+        props: {
+          data: { ...base, orgRole, project: base.project ? { ...base.project, role } : null },
+        },
+      })
+      expect(screen.queryByRole('button', { name: 'Archive secret' }) !== null).toBe(offered)
+    }
+  )
+
   it('AC-D3: the 200-cap 422 renders the exact server message inline and retains the entered values', async () => {
     addCredentialDependencyMock.mockRejectedValue(
       new ApiClientError(

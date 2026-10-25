@@ -27,6 +27,8 @@ export default mergeConfig(baseVitestConfig, {
         'src/schemas/password-strength.ts',
         'src/utils/absolute-url.ts',
         'src/utils/service-provisioned-email.ts',
+        // Story 69.20: the archive rule shared by the API and the web (archive-authority.test.ts).
+        'src/utils/archive-authority.ts',
         'src/validation/rotation-cron-description.ts',
         'src/schemas/vault.ts',
         // Story 43.13 AC-5: fourth addition to this manual allowlist (see the comment above).

@@ -1,5 +1,5 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test'
-import { enrollMfaViaApi, registerAndLoginViaApi, registerViaInvitation } from '../fixtures/auth.js'
+import { expect, test, type Page } from '@playwright/test'
+import { enrollMfaViaApi, registerAndLoginViaApi, signInInvitee } from '../fixtures/auth.js'
 import {
   createCredentialViaApi,
   createInvitationViaApi,
@@ -9,7 +9,6 @@ import {
 import { extractTokenFromAcceptUrl, readLatestInvitationAcceptUrl } from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 import { gotoHydrated } from '../fixtures/hydration.js'
-import { LoginPage } from '../pages/LoginPage.js'
 
 // J39 (Story 69.17, DW-606): a user invited to a project as `viewer` is read-only. The project's
 // write controls are absent, and the API refuses the same writes made with the viewer's own
@@ -32,22 +31,6 @@ async function expectWriteControls(page: Page, projectId: string, visible: boole
   )
   await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(count)
   await expect(page.getByRole('button', { name: 'Pause monitoring' })).toHaveCount(count)
-}
-
-async function signInInvitedViewer(
-  browserContext: BrowserContext,
-  email: string,
-  token: string
-): Promise<Page> {
-  const page = await browserContext.newPage()
-  const password = 'e2e-Viewer-Password-123'
-  await registerViaInvitation(page, token, password)
-  const loginPage = new LoginPage(page)
-  await loginPage.goto()
-  await loginPage.fillAndSubmit({ email, password })
-  await expect(page).toHaveURL(/\/dashboard/)
-  await browserContext.request.post('/api/v1/users/me/onboarding', { data: { completed: true } })
-  return page
 }
 
 test.describe('J39 — a project viewer is read-only', () => {
@@ -79,7 +62,12 @@ test.describe('J39 — a project viewer is read-only', () => {
     await createInvitationViaApi(ownerContext, project.id, { email: viewerEmail, role: 'viewer' })
     const token = extractTokenFromAcceptUrl(await readLatestInvitationAcceptUrl(viewerEmail))
     const viewerContext = await browser.newContext()
-    const viewerPage = await signInInvitedViewer(viewerContext, viewerEmail, token)
+    const viewerPage = await signInInvitee(
+      viewerContext,
+      viewerEmail,
+      token,
+      'e2e-Viewer-Password-123'
+    )
 
     const ownerPage = await ownerContext.newPage()
     await expectWriteControls(ownerPage, project.id, true)

@@ -7,12 +7,12 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import {
     CREDENTIAL_ARCHIVED_BANNER,
-    canArchiveCredential,
     canRevealCredential,
     credentialKeyOf,
     isCredentialArchived,
     type CredentialPointExtras,
   } from '$lib/credentials/credential-detail-helpers.js'
+  import { canArchiveInProject } from '$lib/projects/project-write-access.js'
   import { resetOn } from '$lib/utils/reset-on.js'
   import CredentialArchiveActions from './CredentialArchiveActions.svelte'
   import CredentialLifecycleForm from './CredentialLifecycleForm.svelte'
@@ -53,7 +53,7 @@
   const canReveal = $derived(canRevealCredential(orgRole, project))
   // Story 28.5 AC6: authorization mirrors AC2/AC3 exactly (project-owner-or-org-owner), checked via
   // the page-load role/ownership data already available, no new API call.
-  const canArchive = $derived(canArchiveCredential(orgRole, project))
+  const canArchive = $derived(canArchiveInProject(orgRole, project))
 
   // AC-L1: local override applied after a successful lifecycle save so the metadata tiles update
   // without a full page reload; null means "show the credential's value".

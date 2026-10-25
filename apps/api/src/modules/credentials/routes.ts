@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod/v4'
 import {
+  type ArchiveAuthority,
   OperationalEvent,
   ImportValidationError,
   CredentialOperationalContextResponseSchema,
@@ -108,8 +109,8 @@ import {
   detectImportFileType,
   stageCredentialImport,
 } from './import-service.js'
-import { rejectIfProjectArchived, resolveArchiveAuthorization } from '../projects/archive-guards.js'
-import { callerProjectRole } from '../projects/routes.js'
+import { rejectIfProjectArchived } from '../projects/archive-guards.js'
+import { callerArchiveAuthorization } from '../projects/routes.js'
 import { credentialRevealAbandonedVersionExcludedTotal } from '../rotation/metrics.js'
 import {
   findBlockingRotationIdsForCredential,
@@ -548,19 +549,6 @@ async function withCredentialParams<T>(
   return result
 }
 
-// Story 28.5 AC2/AC3/ADR-mirror-4.4-05: archive/unarchive is restricted to the secret's project
-// owner OR an org owner — the identical authorization floor as project archival, reused rather
-// than redefined so the two can never drift apart. Returns which path authorized the caller (or
-// null if neither) so the audit row can record "acted as project owner" vs. "acted via org-owner
-// override".
-async function callerCredentialArchiveAuthorization(
-  secureCtx: SecureRouteContext,
-  projectId: string
-): Promise<'project_owner' | 'org_owner' | null> {
-  const callerRole = await callerProjectRole(secureCtx, projectId)
-  return resolveArchiveAuthorization(callerRole, orgRoleOrDeny(secureCtx.auth))
-}
-
 // Story 28.5 AC2 "Audit gap (denied/blocked attempts)": mirrors project archival's
 // logArchiveDenied — SecureRoute's same-tx audit writer only fires on the success path, so a
 // 403/409 rejection on this MFA-gated lifecycle action is never written to the audit log. Emit a
@@ -581,7 +569,7 @@ type CredentialArchiveTogglePreflight =
       params: { projectId: string; credentialId: string }
       secureCtx: SecureRouteContext
       credential: { id: string; name: string; archivedAt: Date | null }
-      authorizedVia: 'project_owner' | 'org_owner'
+      authorizedVia: ArchiveAuthority
     }
   | { ok: false }
 
@@ -632,7 +620,7 @@ async function loadCredentialForArchiveToggle(
     return { ok: false }
   }
 
-  const authorizedVia = await callerCredentialArchiveAuthorization(secureCtx, params.projectId)
+  const authorizedVia = await callerArchiveAuthorization(secureCtx, params.projectId)
   if (!authorizedVia) {
     logCredentialArchiveDenied(req, {
       credentialId: params.credentialId,
@@ -1820,7 +1808,7 @@ export function credentialRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'admin', // org-level floor; in-handler project-owner check is stricter.
+      minimumRole: 'member', // broad floor; the in-handler archiveAuthority() rule decides.
       requireMfa: true,
       rateLimit: {
         max: 10,
@@ -1928,7 +1916,7 @@ export function credentialRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'admin',
+      minimumRole: 'member', // broad floor; the in-handler archiveAuthority() rule decides.
       requireMfa: true,
       rateLimit: {
         max: 10,

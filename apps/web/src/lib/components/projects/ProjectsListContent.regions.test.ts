@@ -157,6 +157,24 @@ describe('ProjectsListContent shared card state (interaction)', () => {
     expect(document.getElementById('project-tags-p1')).toBeNull()
   })
 
+  it.each([
+    ['member', 'owner', true],
+    ['owner', 'member', true],
+    ['member', 'admin', false],
+    ['admin', 'admin', false],
+    ['viewer', 'owner', false],
+  ])(
+    'org %s with project role %s: Archive offered = %s (the API archive rule, DW-618)',
+    (orgRole, role, offered) => {
+      pageState.data = { user: { orgRole } }
+      mount({ projects: [project({ role })] })
+      expect(screen.queryByRole('button', { name: 'Archive project' }) !== null).toBe(offered)
+      cleanup()
+      mount({ projects: [project({ role, isArchived: true })] })
+      expect(screen.queryByRole('button', { name: 'Unarchive' }) !== null).toBe(offered)
+    }
+  )
+
   it('offers no tag editor to a viewer or on an archived project', () => {
     mount({ projects: [project({ role: 'viewer' }), project({ id: 'p9', isArchived: true })] })
     expect(document.getElementById('project-tags-p1')).toBeNull()

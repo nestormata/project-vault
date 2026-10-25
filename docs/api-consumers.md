@@ -90,6 +90,14 @@ that does not exist: both fall back to the organization role, and the route retu
 `404`. The full per-route list is pinned by
 `apps/api/src/__tests__/project-write-role-inventory.test.ts`.
 
+Archiving has one more rule. `POST …/{projectId}/archive`, `…/unarchive` and the same two routes
+under `…/credentials/{credentialId}` take an organization floor of `member`, and then the caller
+must hold the project's `owner` row or be the organization `owner`. An org `member` who owns the
+project may archive it; an org `admin` without the owner row gets `403 insufficient_role`, and an
+org `member` with no project row gets `404`. The audit row records `authorizedVia: project_owner`
+or `org_owner`. The web app shows its Archive and Unarchive controls by the same rule
+(`archiveAuthority` in `@project-vault/shared`).
+
 ### Machine token (`apiKey` → `machineBearer`)
 
 Non-interactive callers use a two-step exchange: present a `pk_` API key to

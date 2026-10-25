@@ -8,12 +8,15 @@ import {
   __resetExtensionStateForTests,
   __setExtensionStateForTests,
 } from '../../extensions/loader.js'
+import { AuditEvent } from '@project-vault/shared'
+import { archiveAuditRowsFor } from '../../__tests__/helpers/archive-audit-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import {
   assertRoutesFailClosedWhileSealed,
   bootstrapRouteIntegrationTest,
   cookieHeader,
+  type CookieJar,
   createProjectViaApi as createProject,
   expectAuditWriteFailed,
   initVaultForTest,
@@ -34,10 +37,11 @@ const TEST_PASSPHRASE = PROJECT_ROUTE_TEST_VAULT_SECRET
 const PROJECTS_URL = '/api/v1/projects'
 const FORCED_AUDIT_FAILURE = 'forced audit failure'
 
-const { registerOwner, addUserToOrg } = createMembershipTestHelpers({
-  emailPrefix: 'archival',
-  orgNamePrefix: 'Archival',
-})
+const { registerOwner, addUserToOrg, addProjectMember, projectRoleOf } =
+  createMembershipTestHelpers({
+    emailPrefix: 'archival',
+    orgNamePrefix: 'Archival',
+  })
 
 function archiveUrl(projectId: string): string {
   return `${PROJECTS_URL}/${projectId}/archive`
@@ -416,6 +420,127 @@ describe('project archival routes (4.4)', () => {
       } finally {
         auditSpy.mockRestore()
       }
+    })
+  })
+
+  // Story 69.20 (DW-618): the org floor is `member`; archiveAuthority() (project owner row OR org
+  // owner) decides. The web controls call the same rule.
+  describe('archive authority by role (69.20)', () => {
+    type Setup = { orgId: string; projectId: string; ownerCookies: CookieJar }
+
+    async function projectOwnedByOrgOwner(label: string): Promise<Setup> {
+      const owner = await registerOwner(app, label)
+      const projectId = await createProject(app, owner.cookies, label)
+      return { orgId: owner.orgId, projectId, ownerCookies: owner.cookies }
+    }
+
+    async function callerWith(
+      setup: Setup,
+      label: string,
+      orgRole: string,
+      projectRole: string | null
+    ) {
+      const caller = await addUserToOrg(app, setup.orgId, label, { orgRole })
+      if (projectRole)
+        await addProjectMember(setup.orgId, setup.projectId, caller.userId, projectRole)
+      return caller
+    }
+
+    it('an org member who created (and so owns) the project archives and unarchives it, audited as project_owner', async () => {
+      const owner = await registerOwner(app, 'member-owner')
+      const member = await addUserToOrg(app, owner.orgId, 'member-owner-caller', {
+        orgRole: 'member',
+      })
+      const projectId = await createProject(app, member.cookies, 'member-owner')
+      expect(await projectRoleOf(owner.orgId, projectId, member.userId)).toBe('owner')
+
+      const archived = await archiveProject(app, member.cookies, projectId)
+      expect(archived.statusCode).toBe(200)
+      expect(await currentArchivedAt(owner.orgId, projectId)).not.toBeNull()
+      expect(
+        await archiveAuditRowsFor(owner.orgId, AuditEvent.PROJECT_ARCHIVED, projectId)
+      ).toEqual([{ actorUserId: member.userId, payload: { authorizedVia: 'project_owner' } }])
+
+      const restored = await unarchiveProject(app, member.cookies, projectId)
+      expect(restored.statusCode).toBe(200)
+      expect(await currentArchivedAt(owner.orgId, projectId)).toBeNull()
+      expect(
+        await archiveAuditRowsFor(owner.orgId, AuditEvent.PROJECT_UNARCHIVED, projectId)
+      ).toEqual([{ actorUserId: member.userId, payload: { authorizedVia: 'project_owner' } }])
+    })
+
+    it('an org admin holding the owner row archives (project_owner)', async () => {
+      const setup = await projectOwnedByOrgOwner('admin-owner-row')
+      const admin = await callerWith(setup, 'admin-owner-row-caller', 'admin', 'owner')
+
+      const res = await archiveProject(app, admin.cookies, setup.projectId)
+      expect(res.statusCode).toBe(200)
+      expect(
+        await archiveAuditRowsFor(setup.orgId, AuditEvent.PROJECT_ARCHIVED, setup.projectId)
+      ).toEqual([{ actorUserId: admin.userId, payload: { authorizedVia: 'project_owner' } }])
+    })
+
+    it('an org owner without a row archives (org_owner)', async () => {
+      const setup = await projectOwnedByOrgOwner('org-owner-no-row')
+      const orgOwner = await callerWith(setup, 'org-owner-no-row-caller', 'owner', null)
+
+      const res = await archiveProject(app, orgOwner.cookies, setup.projectId)
+      expect(res.statusCode).toBe(200)
+      expect(
+        await archiveAuditRowsFor(setup.orgId, AuditEvent.PROJECT_ARCHIVED, setup.projectId)
+      ).toEqual([{ actorUserId: orgOwner.userId, payload: { authorizedVia: 'org_owner' } }])
+    })
+
+    it.each([
+      ['an org member with a project admin row', 'member', 'admin', 403, 'insufficient_role'],
+      ['an org member with a project member row', 'member', 'member', 403, 'insufficient_role'],
+      [
+        'an org member with a project viewer row',
+        'member',
+        'viewer',
+        403,
+        'insufficient_project_role',
+      ],
+      ['an org member with no project row', 'member', null, 404, 'project_not_found'],
+      ['an org admin with a project admin row', 'admin', 'admin', 403, 'insufficient_role'],
+      ['an org admin with no project row', 'admin', null, 403, 'insufficient_role'],
+      ['an org viewer holding an owner row', 'viewer', 'owner', 403, 'insufficient_role'],
+    ])(
+      '%s is refused on archive and unarchive and nothing changes',
+      async (_label, orgRole, projectRole, status, code) => {
+        const setup = await projectOwnedByOrgOwner(`refused-${orgRole}-${projectRole ?? 'none'}`)
+        const caller = await callerWith(setup, `refused-${orgRole}-caller`, orgRole, projectRole)
+
+        const archive = await archiveProject(app, caller.cookies, setup.projectId)
+        expect(archive.statusCode).toBe(status)
+        expect(archive.json()).toMatchObject({ code })
+        expect(await currentArchivedAt(setup.orgId, setup.projectId)).toBeNull()
+
+        expect((await archiveProject(app, setup.ownerCookies, setup.projectId)).statusCode).toBe(
+          200
+        )
+        const unarchive = await unarchiveProject(app, caller.cookies, setup.projectId)
+        expect(unarchive.statusCode).toBe(status)
+        expect(unarchive.json()).toMatchObject({ code })
+        expect(await currentArchivedAt(setup.orgId, setup.projectId)).not.toBeNull()
+        expect(
+          await archiveAuditRowsFor(setup.orgId, AuditEvent.PROJECT_UNARCHIVED, setup.projectId)
+        ).toEqual([])
+      }
+    )
+
+    it("an org member who owns a project in their own org gets 404 for another org's project", async () => {
+      const owner = await registerOwner(app, 'member-owner-cross')
+      const member = await addUserToOrg(app, owner.orgId, 'member-owner-cross-caller', {
+        orgRole: 'member',
+      })
+      await createProject(app, member.cookies, 'member-owner-cross-own')
+      const foreign = await projectOwnedByOrgOwner('member-owner-cross-foreign')
+
+      const res = await archiveProject(app, member.cookies, foreign.projectId)
+      expect(res.statusCode).toBe(404)
+      expect(res.json()).toMatchObject({ code: 'project_not_found' })
+      expect(await currentArchivedAt(foreign.orgId, foreign.projectId)).toBeNull()
     })
   })
 
