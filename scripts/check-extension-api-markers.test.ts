@@ -86,6 +86,52 @@ export type OldFoo = string`,
     ).toEqual([])
   })
 
+  describe('the notice window runs from the release that deprecated the export (policy clock)', () => {
+    const marker = (notice: string) =>
+      `/**\n * @deprecated\n * replacement: NewFoo\n * earliest-removal: 2.0.0\n * notice-window-ends: ${notice}\n */\nexport type OldFoo = string`
+    const twoReleases = (olderSection: string) =>
+      [
+        '# Changelog',
+        '## 1.5.0 — 2026-10-25',
+        '### Deprecated',
+        '- OldFoo is still deprecated.',
+        '## 1.4.0 — 2026-08-18',
+        '### Deprecated',
+        olderSection,
+        '',
+      ].join('\n\n')
+    const NINETY_DAYS_AFTER_OLDER = '2026-11-16'
+    const check = (notice: string, changelogSource: string) =>
+      checkDeprecationMarkers({
+        indexSource: marker(notice),
+        changelogSource,
+        currentVersion: '1.5.0',
+      })
+
+    it('accepts 90 days after the deprecating release even when a later release restates it', () => {
+      expect(check(NINETY_DAYS_AFTER_OLDER, twoReleases('- OldFoo'))).toEqual([])
+    })
+
+    it('still rejects 89 days after the deprecating release', () => {
+      expect(check('2026-11-15', twoReleases('- OldFoo')).join('\n')).toContain('90 days')
+    })
+
+    it('does not take a longer name in an older section as the deprecating release', () => {
+      expect(check(NINETY_DAYS_AFTER_OLDER, twoReleases('- OldFooBar')).join('\n')).toContain(
+        '90 days'
+      )
+    })
+
+    it('fails closed when no dated entry publishes the deprecation', () => {
+      expect(
+        check(
+          NINETY_DAYS_AFTER_OLDER,
+          '# Changelog\n\n## 1.5.0\n\n### Deprecated\n\n- OldFoo\n'
+        ).join('\n')
+      ).toContain('no dated CHANGELOG entry publishes this deprecation')
+    })
+  })
+
   it('requires the newest CHANGELOG entry to announce each deprecated export', () => {
     const errors = checkDeprecationMarkers({
       indexSource: `/**

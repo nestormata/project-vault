@@ -12,6 +12,8 @@ const PROJECTS = '/api/v1/projects'
 const PROJECT = '/api/v1/projects/:projectId'
 const SECRET_SOURCE_MARKER = 'cm-handler-source-marker'
 
+// The extension name `loadedApiRoutesState()` gives every test state.
+const ACME = 'com.acme.api-routes'
 const CALLBACK_KEY = 'POST /callback'
 const WEBHOOK_KEY = 'POST /cm/webhooks/:provider'
 
@@ -275,7 +277,7 @@ describe('Story 68.8 AC-6 — recording: boot log lines and the status summary',
       ([payload]) => payload.eventType === OperationalEvent.EXTENSION_API_ROUTES_APPLIED
     )
     expect(summary?.[0]).toMatchObject({
-      extensionName: 'com.acme.api-routes',
+      extensionName: ACME,
       added: ['GET /cm/a'],
       overrides: [
         {
@@ -298,7 +300,7 @@ describe('Story 68.8 AC-6 — recording: boot log lines and the status summary',
     )
     expect(replaceSecurity).toHaveLength(1)
     expect(replaceSecurity[0]?.[0]).toMatchObject({
-      extensionName: 'com.acme.api-routes',
+      extensionName: ACME,
       method: 'GET',
       url: PROJECTS,
       mode: 'replace',
@@ -393,6 +395,81 @@ describe('Story 68.8 AC-18 — shared_default_key warn against PV explicit keys'
       sharedWith: 'POST /api/v1/projects/callback',
     })
     await app.close()
+  })
+})
+
+describe('Story 69.18 — ungated extension project writes are recorded at boot', () => {
+  const GATED = 'POST /cm/projects/:projectId/notes'
+  const OPTED_OUT = 'POST /cm/projects/:projectId/notes/revoke'
+  const ANONYMOUS = 'POST /cm/projects/:projectId/hook'
+  const READ = 'GET /cm/projects/:projectId/notes'
+
+  function declaration() {
+    const add = (key: string, security: Record<string, unknown>) => {
+      const [method, url] = key.split(' ')
+      return { method, url, options: { security: { writeAuditEvent: false, ...security } } }
+    }
+    return {
+      add: [
+        add(GATED, {}),
+        add(OPTED_OUT, { minimumProjectRole: 'viewer' }),
+        add(ANONYMOUS, { requireAuth: false }),
+        add(READ, {}),
+      ],
+    }
+  }
+
+  async function ungatedWarns(apiVersion: string) {
+    const state = loadedApiRoutesState(
+      declaration(),
+      routesFor([GATED, OPTED_OUT, ANONYMOUS, READ]),
+      {},
+      apiVersion
+    )
+    const { app, log } = await boot(state, async (instance) => {
+      pvRoutes(instance)
+      await instance.after()
+    })
+    await app.close()
+    return log.warn.mock.calls
+      .map(([payload]) => payload)
+      .filter(
+        (payload) => payload.eventType === OperationalEvent.EXTENSION_API_ROUTE_PROJECT_ROLE_UNGATED
+      )
+      .map(({ extensionName, route, reason }) => ({ extensionName, route, reason }))
+  }
+
+  it('names the opted-out and the anonymous routes on the current contract, never the gated one or a read', async () => {
+    expect(await ungatedWarns('3.37.0')).toEqual([
+      { extensionName: ACME, route: ANONYMOUS, reason: 'unauthenticated' },
+      { extensionName: ACME, route: OPTED_OUT, reason: 'declared_viewer' },
+    ])
+  })
+
+  it('names every project write of a legacy manifest, so the operator sees what is ungated', async () => {
+    const warns = await ungatedWarns('3.36.0')
+    expect(warns).toEqual(
+      expect.arrayContaining([
+        { extensionName: ACME, route: GATED, reason: 'legacy_contract' },
+        { extensionName: ACME, route: OPTED_OUT, reason: 'declared_viewer' },
+        { extensionName: ACME, route: ANONYMOUS, reason: 'legacy_contract' },
+      ])
+    )
+    expect(warns).toHaveLength(3)
+  })
+
+  it('logs nothing for PV routes or for a pack without project writes', async () => {
+    const { app, log } = await boot(loadedApiRoutesState({ add: [] }, {}), async (instance) => {
+      pvRoutes(instance)
+      await instance.after()
+    })
+    await app.close()
+    expect(
+      log.warn.mock.calls.filter(
+        ([payload]) =>
+          payload.eventType === OperationalEvent.EXTENSION_API_ROUTE_PROJECT_ROLE_UNGATED
+      )
+    ).toEqual([])
   })
 })
 

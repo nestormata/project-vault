@@ -482,6 +482,81 @@ describe('Story 68.8 AC-2 (a) — the security object inside an entry is integri
     expectInvalid(add(security), `apiRoutes.add[0].options.${message}`)
   })
 
+  describe('Story 69.18 — minimumProjectRole', () => {
+    const projectAdd = (url: string, security: unknown) => ({
+      add: [{ method: 'POST', url, options: { security } }],
+    })
+    const projectOverride = (security: unknown) => ({
+      override: [
+        {
+          method: 'POST',
+          url: '/api/v1/projects/:projectId/archive',
+          mode: 'replace',
+          replaceSecurity: true,
+          security,
+        },
+      ],
+    })
+
+    it.each(['viewer', 'member', 'admin', 'owner'])(
+      'accepts %s on a route under :projectId (add and replaceSecurity override)',
+      (role) => {
+        expect(
+          registers(projectAdd('/cm/projects/:projectId/notes', { minimumProjectRole: role }))
+        ).not.toThrow()
+        expect(registers(projectOverride({ minimumProjectRole: role }))).not.toThrow()
+      }
+    )
+
+    it('rejects a role outside the enum, naming the field', () => {
+      expectInvalid(
+        projectAdd('/cm/projects/:projectId/notes', { minimumProjectRole: 'Member' }),
+        'apiRoutes.add[0].options.security.minimumProjectRole must be one of owner, admin, member, viewer'
+      )
+    })
+
+    it('rejects it on a URL without a :projectId segment, naming the route', () => {
+      expectInvalid(
+        projectAdd('/cm/projects/:projectIdentifier/notes', { minimumProjectRole: 'member' }),
+        'apiRoutes.add[0].options.security.minimumProjectRole needs a :projectId segment in the route URL (POST /cm/projects/:projectIdentifier/notes)'
+      )
+    })
+
+    it("rejects a role above 'viewer' on an unauthenticated route", () => {
+      expectInvalid(
+        projectAdd('/cm/projects/:projectId/hook', {
+          requireAuth: false,
+          minimumProjectRole: 'member',
+        }),
+        "minimumProjectRole above 'viewer' needs an authenticated route, not requireAuth: false (POST /cm/projects/:projectId/hook)"
+      )
+      expect(
+        registers(
+          projectAdd('/cm/projects/:projectId/hook', {
+            requireAuth: false,
+            minimumProjectRole: 'viewer',
+          })
+        )
+      ).not.toThrow()
+    })
+
+    it('is refused on an override without replaceSecurity like every other security key', () => {
+      expectInvalid(
+        {
+          override: [
+            {
+              method: 'POST',
+              url: '/api/v1/projects/:projectId/archive',
+              mode: 'replace',
+              security: { minimumProjectRole: 'viewer' },
+            },
+          ],
+        },
+        'apiRoutes.override[0]: security is only honoured with replaceSecurity: true'
+      )
+    })
+  })
+
   it('entries that differ only by a trailing slash are the same route and fail as duplicates', () => {
     expectInvalid(
       {

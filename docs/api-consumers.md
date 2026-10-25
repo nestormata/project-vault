@@ -67,7 +67,10 @@ floor and any in-handler check (project owner, project admin, sharer). A caller 
 }
 ```
 
-with status `403`. No handler code runs and no audit row is written for a refused write. Reads are
+with status `403`. No handler code runs and no audit row is written for a refused write. The same
+rule covers extension routes under a `:projectId` segment built on `@project-vault/extension-api`
+3.37.0 or later, unless the extension declares otherwise for a route (see
+[the extension authoring guide](extensions/authoring.md)). Reads are
 unchanged: a project viewer can list and open what the project holds, but cannot reveal a secret's
 value (the reveal routes have required `member` since Story 4.5).
 

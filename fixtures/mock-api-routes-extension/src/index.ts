@@ -2,6 +2,7 @@ import { z } from 'zod/v4'
 import {
   EXTENSION_API_VERSION,
   type ApiRouteContext,
+  type ApiRouteMethod,
   type ApiRoutesDeclaration,
   type ApiRoutesHooks,
   type ExtensionHooks,
@@ -40,6 +41,8 @@ export type ApiRoutesScenario =
   | 'app-hooks-append'
   | 'app-hooks-throw'
   | 'credential-sharing'
+  | 'project-role'
+  | 'project-role-legacy'
 
 let scenario: ApiRoutesScenario = 'default'
 
@@ -572,8 +575,102 @@ function sharingRoutes(host: HostServices | undefined): ApiRoutesHooks['routes']
   }
 }
 
+/**
+ * Story 69.18 — project writes in every shape the project-role gate distinguishes: an add with the
+ * default, an add that opts out (`'viewer'`), one that raises it (`'admin'`), an unscoped add (no
+ * PV transaction, like CentralizeMe's composed routes), a read, and overrides of PV project writes
+ * with and without `replaceSecurity`. Each handler only counts and names itself, so a 200 proves
+ * the gate let the caller through and a 403 that it did not.
+ */
+const NOTES_URL = '/api/v1/cm/projects/:projectId/notes'
+const PV_PROJECT_WRITES = {
+  replace: 'POST /api/v1/projects/:projectId/services',
+  wrap: 'PUT /api/v1/projects/:projectId/tags',
+  replaceSecurity: 'POST /api/v1/projects/:projectId/archive',
+  replaceSecurityViewer: 'POST /api/v1/projects/:projectId/unarchive',
+} as const
+const NO_AUDIT = { writeAuditEvent: false } as const
+// The overrides replace PV's schema (body and response) so the fixture's own answer serializes.
+const NamedRouteSchema = z.object({ data: z.object({ route: z.string() }) })
+
+function routeOf(key: string): { method: ApiRouteMethod; url: string } {
+  const [method, url] = key.split(' ') as [ApiRouteMethod, string]
+  return { method, url }
+}
+
+const PROJECT_ROLE_ADDS: NonNullable<ApiRoutesDeclaration['add']> = [
+  { method: 'POST', url: NOTES_URL, options: { security: NO_AUDIT } },
+  {
+    method: 'POST',
+    url: `${NOTES_URL}/narrow`,
+    options: { security: { ...NO_AUDIT, minimumProjectRole: 'viewer' } },
+  },
+  {
+    method: 'POST',
+    url: `${NOTES_URL}/admin`,
+    options: { security: { ...NO_AUDIT, minimumProjectRole: 'admin' } },
+  },
+  {
+    method: 'POST',
+    url: `${NOTES_URL}/unscoped`,
+    options: { security: { ...NO_AUDIT, requireOrgScope: false } },
+  },
+  { method: 'GET', url: NOTES_URL, options: { security: NO_AUDIT } },
+]
+const PROJECT_ROLE_OVERRIDES: NonNullable<ApiRoutesDeclaration['override']> = [
+  { ...routeOf(PV_PROJECT_WRITES.replace), mode: 'replace', schema: 'replace' },
+  { ...routeOf(PV_PROJECT_WRITES.wrap), mode: 'wrap', schema: 'replace' },
+  {
+    ...routeOf(PV_PROJECT_WRITES.replaceSecurity),
+    mode: 'replace',
+    schema: 'replace',
+    replaceSecurity: true,
+    security: NO_AUDIT,
+  },
+  {
+    ...routeOf(PV_PROJECT_WRITES.replaceSecurityViewer),
+    mode: 'replace',
+    schema: 'replace',
+    replaceSecurity: true,
+    security: { ...NO_AUDIT, minimumProjectRole: 'viewer' },
+  },
+]
+const projectRoleDeclaration: ApiRoutesDeclaration = {
+  add: PROJECT_ROLE_ADDS,
+  override: PROJECT_ROLE_OVERRIDES,
+}
+
+function projectRoleRoutes(): ApiRoutesHooks['routes'] {
+  const entries = [...PROJECT_ROLE_ADDS, ...PROJECT_ROLE_OVERRIDES]
+  return Object.fromEntries(
+    entries.map((entry) => {
+      const key = `${entry.method} ${entry.url}`
+      return [
+        key,
+        {
+          handler: async () => {
+            count(key)
+            return { data: { route: key } }
+          },
+          schema: { response: { 200: NamedRouteSchema } },
+        },
+      ]
+    })
+  )
+}
+
+function projectRoleScenario(apiVersion: string): ScenarioDefinition {
+  return {
+    manifest: { name: NAME, apiVersion, capabilities: [], apiRoutes: projectRoleDeclaration },
+    hooks: () => ({ apiRoutes: { routes: projectRoleRoutes() } }),
+  }
+}
+
 function scenarios(): Record<ApiRoutesScenario, ScenarioDefinition> {
   return {
+    'project-role': projectRoleScenario(EXTENSION_API_VERSION),
+    // The last contract before the default gate (3.36.0): its routes keep the old behaviour.
+    'project-role-legacy': projectRoleScenario('3.36.0'),
     'credential-sharing': {
       manifest: {
         name: NAME,

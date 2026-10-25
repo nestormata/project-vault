@@ -52,6 +52,7 @@ describe('@project-vault/extension-api public value exports', () => {
       'assertExtensionEmittersContained',
       'checkBackgroundPromisesHandled',
       'checkExtensionEmitters',
+      'checkProjectWriteRoles',
       'defineExtension',
       'isApiRouteDelegatedContext',
       'isExtensionApiVersionSupported',

@@ -16,6 +16,7 @@ const SECURITY_KEYS = [
   'requireOrgScope',
   'minimumRole',
   'allowedRoles',
+  'minimumProjectRole',
   'requireMfa',
   'requirePlatformOperator',
   'writeAuditEvent',
@@ -84,6 +85,29 @@ function validateRoles(fields: Map<string, unknown>, path: string): void {
   if (allowedRoles === undefined) return
   if (!Array.isArray(allowedRoles)) fail(`${path}.allowedRoles must be an array`)
   allowedRoles.forEach((role, index) => assertRole(role, `${path}.allowedRoles[${index}]`))
+}
+
+const PROJECT_ID_SEGMENT = /(?:^|\/):projectId(?:\/|$)/
+
+/**
+ * Story 69.18: `minimumProjectRole` reads the `:projectId` path parameter and ranks the caller, so
+ * it is meaningless on a URL without that segment and, above `viewer`, on an anonymous route.
+ * Either would be skipped at request time, leaving the route weaker than declared.
+ */
+function validateProjectRole(fields: Map<string, unknown>, path: string, routeKey: string): void {
+  const role = fields.get('minimumProjectRole')
+  if (role === undefined) return
+  const rolePath = `${path}.minimumProjectRole`
+  assertRole(role, rolePath)
+  const url = routeKey.slice(routeKey.indexOf(' ') + 1)
+  if (!PROJECT_ID_SEGMENT.test(url)) {
+    fail(`${rolePath} needs a :projectId segment in the route URL (${routeKey})`)
+  }
+  if (fields.get('requireAuth') === false && role !== 'viewer') {
+    fail(
+      `${rolePath} above 'viewer' needs an authenticated route, not requireAuth: false (${routeKey})`
+    )
+  }
 }
 
 function validateRateLimit(value: unknown, path: string): void {
@@ -205,6 +229,7 @@ export function validateApiRouteSecurity(value: unknown, path: string, routeKey 
     if (flag !== undefined && typeof flag !== 'boolean') fail(`${path}.${key} must be a boolean`)
   }
   validateRoles(fields, path)
+  validateProjectRole(fields, path, routeKey)
   validateAudit(fields.get('writeAuditEvent'), `${path}.writeAuditEvent`)
   validateRateLimit(fields.get('rateLimit'), `${path}.rateLimit`)
   assertOptionalText(fields.get('capability'), `${path}.capability`)
