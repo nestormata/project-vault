@@ -3,7 +3,7 @@ import { withOrg } from '@project-vault/db'
 import { auditLogEntries, userIdentityTokens } from '@project-vault/db/schema'
 
 /** Story 69.20: the archive audit rows for one resource, with the actor resolved to its user id. */
-export async function archiveAuditRowsFor(
+export function archiveAuditRowsFor(
   orgId: string,
   eventType: string,
   resourceId: string
