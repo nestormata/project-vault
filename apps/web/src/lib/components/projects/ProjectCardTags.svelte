@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { ProjectListPage } from '$lib/api/projects.js'
+  import { page } from '$app/state'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
-  import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
+  import { canCreateCredentialInProject } from '$lib/credentials/permissions.js'
   import { m } from '$lib/paraglide/messages.js'
   import type { ProjectsListActions } from './projects-list-actions.svelte.js'
 
@@ -11,7 +12,14 @@
     actions,
   }: { project: ProjectListPage['items'][number]; actions: ProjectsListActions } = $props()
 
-  const canEdit = $derived(canCreateCredential(project.role as never) && !project.isArchived)
+  // DW-606: the tags route needs org member+ AND an effective project role of member+ (an org
+  // owner/admin bypasses a project viewer row). The caller's org role comes from the layout data
+  // (the list payload's `role` is the project role, which is not the org role); without it the
+  // editor stays hidden.
+  const orgRole = $derived(page.data.user?.orgRole)
+  const canEdit = $derived(
+    orgRole !== undefined && canCreateCredentialInProject(orgRole, project) && !project.isArchived
+  )
 </script>
 
 <div class="mt-4">

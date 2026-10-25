@@ -153,6 +153,18 @@ describe('CredentialValueSection sub-regions (probe order)', () => {
     ).toBe(true)
   })
 
+  it('an org admin holding a project viewer row still gets Reveal (the API bypass, DW-606)', () => {
+    mount({ orgRole: 'admin', project: sampleProject({ id: projectId, role: 'viewer' }) })
+    expect(screen.getByRole('button', { name: 'Reveal value' })).toBeTruthy()
+    expect(probeCount('credential.detail.value-single')).toBe(1)
+  })
+
+  it('an org member holding a project viewer row gets no Reveal', () => {
+    mount({ orgRole: 'member', project: sampleProject({ id: projectId, role: 'viewer' }) })
+    expect(screen.queryByRole('button', { name: 'Reveal value' })).toBeNull()
+    expect(probeCount('credential.detail.value-single')).toBe(0)
+  })
+
   it('a viewer of a single-field secret gets only the section point', () => {
     mount({ orgRole: 'viewer', project: sampleProject({ id: projectId, role: 'viewer' }) })
     expect(screen.getAllByTestId('probe')).toHaveLength(1)

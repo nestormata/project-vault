@@ -14,6 +14,11 @@ vi.mock('$app/navigation', () => ({
   invalidateAll: invalidateAllMock,
 }))
 
+// DW-606: the tag editor reads the caller's org role from the layout data.
+vi.mock('$app/state', () => ({
+  page: { url: new URL('http://localhost/projects'), data: { user: { orgRole: 'member' } } },
+}))
+
 vi.mock('$lib/api/projects.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('$lib/api/projects.js')>()
   return {

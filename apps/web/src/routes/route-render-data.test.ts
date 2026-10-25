@@ -25,6 +25,9 @@ process.env.TZ = 'America/Panama'
 // whitespace collapse; no regex over HTML.
 
 const previewState = vi.hoisted(() => ({ project: null as unknown }))
+// DW-606: the project card tag editor reads the caller's org role from the layout data
+// (`page.data.user.orgRole`); only the projects list page sets it, every other route sees `{}`.
+const pageState = vi.hoisted(() => ({ data: {} as Record<string, unknown> }))
 
 vi.mock('$lib/state/preview-project.svelte.js', () => ({
   getPreviewProject: () => previewState.project,
@@ -33,7 +36,9 @@ vi.mock('$app/state', () => ({
   page: {
     status: 404,
     error: { message: 'Not Found' },
-    data: {},
+    get data() {
+      return pageState.data
+    },
     params: {},
     url: new URL('http://localhost/'),
     route: { id: null },
@@ -1450,6 +1455,8 @@ describe('route render data-rich snapshot (Story 69.5 AC-5)', () => {
     const result: Record<string, string> = {}
     for (const [file, module] of Object.entries(routes).sort(([a], [b]) => a.localeCompare(b))) {
       const isLayout = !file.endsWith('+page.svelte') && !file.endsWith('+error.svelte')
+      pageState.data =
+        file === './(app)/projects/+page.svelte' ? { user: { orgRole: 'member' } } : {}
       for (const [name, variant] of Object.entries(VARIANTS)) {
         result[`${file} [${name}]`] = outcome(module.default, isLayout, variant)
       }

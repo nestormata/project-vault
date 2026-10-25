@@ -44,13 +44,23 @@ describe('archivedBannerFor', () => {
 })
 
 describe('role derivations', () => {
-  const project = (role: 'owner' | 'member' | 'viewer') => sampleProject({ role })
+  const project = (role: 'owner' | 'admin' | 'member' | 'viewer') => sampleProject({ role })
   it('canRevealCredential needs a creator org role, a project and a non-viewer project role', () => {
     expect(canRevealCredential('member', project('member'))).toBe(true)
     expect(canRevealCredential('owner', project('owner'))).toBe(true)
     expect(canRevealCredential('member', project('viewer'))).toBe(false)
     expect(canRevealCredential('viewer', project('member'))).toBe(false)
     expect(canRevealCredential('member', null)).toBe(false)
+  })
+  it('canRevealCredential mirrors the API effective role: org owner/admin bypass a viewer row (DW-606)', () => {
+    expect(canRevealCredential('admin', project('viewer'))).toBe(true)
+    expect(canRevealCredential('owner', project('viewer'))).toBe(true)
+    expect(canRevealCredential('admin', project('member'))).toBe(true)
+    // an org viewer never reveals, even with a project member row (the route needs org member+)
+    expect(canRevealCredential('viewer', project('owner'))).toBe(false)
+    // a member with a viewer row is a viewer; a member with a member row reveals
+    expect(canRevealCredential('member', project('viewer'))).toBe(false)
+    expect(canRevealCredential('member', project('member'))).toBe(true)
   })
   it('canArchiveCredential is project-owner-or-org-owner and needs a project', () => {
     expect(canArchiveCredential('member', project('owner'))).toBe(true)

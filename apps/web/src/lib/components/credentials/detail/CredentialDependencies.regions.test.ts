@@ -152,6 +152,26 @@ describe('CredentialDependencies sub-regions (probe order)', () => {
   })
 })
 
+describe('CredentialDependencies effective project role (DW-606)', () => {
+  it('an org admin holding a project viewer row keeps the add region, as the API allows', () => {
+    mount({
+      dependencies: POPULATED,
+      orgRole: 'admin',
+      project: sampleProject({ id: projectId, role: 'viewer' }),
+    })
+    expect(probeCount('credential.detail.dependencies-add')).toBe(1)
+  })
+
+  it('an org member holding a project viewer row gets no add region', () => {
+    mount({
+      dependencies: POPULATED,
+      orgRole: 'member',
+      project: sampleProject({ id: projectId, role: 'viewer' }),
+    })
+    expect(probeCount('credential.detail.dependencies-add')).toBe(0)
+  })
+})
+
 describe('CredentialDependencies state (one owner across sub-regions)', () => {
   it('adds a dependency to the list, resets the form, and keeps the form open', async () => {
     addMock.mockResolvedValue(sampleDependency({ id: 'dep-new', systemName: 'new-system' }))
