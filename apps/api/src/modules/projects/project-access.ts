@@ -1,7 +1,9 @@
+import type { Tx } from '@project-vault/db'
 import type { SecureRouteContext } from '../../lib/secure-route.js'
 import type { OrgRole } from '../../plugins/require-org-role.js'
 import { getProjectMembershipRole } from './member-management.js'
 import { orgRoleOrDeny } from '../../lib/auth-role.js'
+import { isUuid } from '../../middleware/rls.js'
 
 function isOrgAdminOrOwner(orgRole: OrgRole): boolean {
   return orgRole === 'owner' || orgRole === 'admin'
@@ -55,17 +57,32 @@ export async function effectiveProjectRole(
   secureCtx: SecureRouteContext,
   projectId: string
 ): Promise<OrgRole> {
+  return effectiveProjectRoleForCaller(secureCtx.tx, secureCtx.auth, projectId)
+}
+
+/**
+ * Story 69.17: `effectiveProjectRole()` for callers that hold only the transaction and the auth
+ * context (the secureRoute project-role gate runs before any handler context exists). A
+ * `projectId` that is not a UUID can never match a membership row, so the query is skipped and
+ * the org role applies, exactly as for a project the caller has no row in.
+ */
+export async function effectiveProjectRoleForCaller(
+  tx: Tx,
+  auth: SecureRouteContext['auth'],
+  projectId: string
+): Promise<OrgRole> {
+  const orgRole = orgRoleOrDeny(auth)
   // Short-circuit: org owner/admin never needs the `project_memberships` row at all — skip the
   // query entirely rather than fetching a row `resolveEffectiveProjectRoleForOrgRole()` would
   // discard anyway.
-  if (isOrgAdminOrOwner(orgRoleOrDeny(secureCtx.auth))) return orgRoleOrDeny(secureCtx.auth)
-  const projectRole = await getProjectMembershipRole(secureCtx.tx, {
-    orgId: secureCtx.auth.orgId,
+  if (isOrgAdminOrOwner(orgRole) || !isUuid(projectId)) return orgRole
+  const projectRole = await getProjectMembershipRole(tx, {
+    orgId: auth.orgId,
     projectId,
-    userId: secureCtx.auth.userId,
+    userId: auth.userId,
   })
   return resolveEffectiveProjectRoleForOrgRole({
-    orgRole: orgRoleOrDeny(secureCtx.auth),
+    orgRole,
     membershipRole: projectRole as OrgRole | undefined,
   })
 }

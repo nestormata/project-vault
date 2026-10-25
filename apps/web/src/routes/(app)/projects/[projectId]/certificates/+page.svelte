@@ -7,7 +7,7 @@
 
   let { data } = $props()
 
-  const canManage = $derived(canManageMonitoredAssets(data.orgRole))
+  const canManage = $derived(canManageMonitoredAssets(data))
 </script>
 
 <svelte:head>

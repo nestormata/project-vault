@@ -33,6 +33,7 @@ import { env } from '../config/env.js'
 import { requireOrgRole, type OrgRole } from '../plugins/require-org-role.js'
 import { enforceUserRateLimit } from './route-helpers.js'
 import { setRlsOrgContext } from '../middleware/rls.js'
+import { effectiveProjectRoleForCaller } from '../modules/projects/project-access.js'
 import { forEachSequential } from './for-each-sequential.js'
 import {
   installDelegationStages,
@@ -90,6 +91,8 @@ export type SecureRouteRegistration = {
   defaultAuditEventType: string | null
   // Story 71.3 AC-1: true only for a route whose resolved `security` declares `delegation`.
   delegation: boolean
+  // Story 69.17: the resolved project-role gate, or null when none runs.
+  minimumProjectRole: OrgRole | null
 }
 
 type RouteFastify = {
@@ -151,6 +154,12 @@ export type SecureRouteRegistrationOptions = {
     requireOrgScope?: boolean
     minimumRole?: OrgRole
     allowedRoles?: OrgRole[]
+    // Story 69.17 (DW-606): the minimum EFFECTIVE project role (org owner/admin bypass, else the
+    // caller's own membership row, else the org role) for the project named by `:projectId`,
+    // checked in addition to the org-role floor. Every PV POST/PUT/PATCH/DELETE route whose URL
+    // has a `:projectId` segment defaults to 'member', so a project viewer is read-only; declare
+    // another role only with a reason. An extension's own security is never defaulted.
+    minimumProjectRole?: OrgRole
     requireMfa?: boolean
     writeAuditEvent?: boolean | AuditConfig
     rateLimit?: false | { max: number; timeWindowMs?: number; key?: string }
@@ -468,6 +477,9 @@ type ResolvedSecurity = {
   extensionSecurity: boolean
   // Story 71.3: the normalized `security.delegation`, or false for a session route.
   delegation: false | NormalizedDelegation
+  // Story 69.17: null when no project-role check runs (no `:projectId` write, an extension's own
+  // security, or an explicit 'viewer', which every caller meets).
+  minimumProjectRole: OrgRole | null
 }
 
 type RequestPhase = 'rls' | 'handler' | 'audit'
@@ -505,7 +517,64 @@ function resolveSecurity(
     rateLimitKeyIsDefault: rateLimit !== false && rateLimit.key === undefined,
     extensionSecurity,
     delegation: normalizeDelegation(security.delegation),
+    minimumProjectRole: resolveMinimumProjectRole(options, extensionSecurity),
   }
+}
+
+const PROJECT_ID_SEGMENT = /(?:^|\/):projectId(?:\/|$)/
+
+function hasProjectIdParam(url: string): boolean {
+  return PROJECT_ID_SEGMENT.test(url)
+}
+
+function resolveMinimumProjectRole(
+  options: SecureRouteRegistrationOptions,
+  extensionSecurity: boolean
+): OrgRole | null {
+  const declared = options.security?.minimumProjectRole
+  if (declared !== undefined) return declared === 'viewer' ? null : declared
+  if (extensionSecurity || !MUTATING_METHODS.has(options.method)) return null
+  return hasProjectIdParam(options.url) ? 'member' : null
+}
+
+const INSUFFICIENT_PROJECT_ROLE = {
+  code: 'insufficient_project_role',
+  message: 'Your role in this project does not permit this action',
+} as const
+
+function projectIdParamOf(request: FastifyRequest): string {
+  return stringValueForKey(normalizeRecord(request.params), 'projectId') ?? ''
+}
+
+// Story 69.17 AC-1: runs inside the request transaction (the membership row is RLS-scoped) and
+// before the handler and the default audit write, so a denied write runs no business code and
+// writes no row. The decision reads only the caller's org role and own membership row: a project
+// in another org, or a missing one, falls back to the org role and reaches the handler's own 404.
+async function rejectIfBelowProjectRole(
+  tx: Tx,
+  auth: AuthContext,
+  minimumProjectRole: OrgRole,
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<boolean> {
+  const projectId = projectIdParamOf(request)
+  const effectiveRole = await effectiveProjectRoleForCaller(tx, auth, projectId)
+  if (roleRank(effectiveRole) >= roleRank(minimumProjectRole)) return false
+  request.log.warn(
+    {
+      eventType: 'project.write_denied',
+      orgId: auth.orgId,
+      projectId,
+      callerId: auth.userId,
+      effectiveRole,
+      minimumProjectRole,
+      method: request.method,
+      route: request.routeOptions?.url,
+    },
+    'Project write denied by project role'
+  )
+  reply.status(403).send(INSUFFICIENT_PROJECT_ROLE)
+  return true
 }
 
 async function handlePublicRequest(
@@ -701,6 +770,7 @@ async function runProtectedHandler({
   auth,
   options,
   requireOrgScope,
+  minimumProjectRole,
   request,
   reply,
   auditWriter,
@@ -709,6 +779,7 @@ async function runProtectedHandler({
   auth: AuthContext
   options: SecureRouteRegistrationOptions
   requireOrgScope: boolean
+  minimumProjectRole: OrgRole | null
   request: FastifyRequest
   reply: FastifyReply
   auditWriter: NonNullable<SecureRouteRegistrationOptions['auditWriter']>
@@ -734,6 +805,12 @@ async function runProtectedHandler({
     state.phase = 'rls'
     await setRlsOrgContext(tx as { execute: (query: unknown) => Promise<unknown> }, auth.orgId)
     state.phase = 'handler'
+    if (
+      minimumProjectRole &&
+      (await rejectIfBelowProjectRole(typedTx, auth, minimumProjectRole, request, reply))
+    ) {
+      return reply
+    }
     const restoreReplySend = withAuditSendGuard(reply, Boolean(auditConfig))
     let handlerResult: unknown
     try {
@@ -921,6 +998,7 @@ async function handleSecureRouteRequest({
       auth,
       options,
       requireOrgScope: resolvedSecurity.requireOrgScope,
+      minimumProjectRole: resolvedSecurity.minimumProjectRole,
       request,
       reply,
       auditWriter: options.auditWriter ?? defaultAuditWriter,
@@ -1026,7 +1104,23 @@ function assertSecureRouteConfig(
   if (!resolvedSecurity.requireOrgScope && auditConfigFor(options)) {
     throw new Error('SecureRoute: writeAuditEvent requires requireOrgScope')
   }
+  assertProjectRoleConfig(options, resolvedSecurity)
   assertCapabilityConfig(options, resolvedSecurity)
+}
+
+// Story 69.17: the project-role gate reads `:projectId` inside the org-scoped transaction, so a
+// declared role on a URL without that segment, or a gate on a route without org scope, would be
+// silently skipped. Integrity checks, never a policy.
+function assertProjectRoleConfig(
+  options: SecureRouteRegistrationOptions,
+  resolvedSecurity: ResolvedSecurity
+): void {
+  if (options.security?.minimumProjectRole !== undefined && !hasProjectIdParam(options.url)) {
+    throw new Error('SecureRoute: minimumProjectRole requires a :projectId route parameter')
+  }
+  if (resolvedSecurity.minimumProjectRole && !resolvedSecurity.requireOrgScope) {
+    throw new Error('SecureRoute: minimumProjectRole requires requireOrgScope')
+  }
 }
 
 /** Story 68.8 AC-3: the effective-config assertion names the extension route that failed it. */
@@ -1102,6 +1196,7 @@ function recordRegistration(
     rateLimitKeyIsDefault: resolvedSecurity.rateLimitKeyIsDefault,
     defaultAuditEventType: defaultAudit?.eventType ?? null,
     delegation: resolvedSecurity.delegation !== false,
+    minimumProjectRole: resolvedSecurity.minimumProjectRole,
   })
 }
 

@@ -345,6 +345,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         201: PaymentRecordResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -416,6 +417,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         200: PaymentRecordResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -467,6 +469,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -539,6 +542,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         201: CertificateRecordResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -617,6 +621,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         200: CertificateRecordResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -668,6 +673,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -736,6 +742,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         201: DomainRecordResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -807,6 +814,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         200: DomainRecordResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -858,6 +866,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -936,6 +945,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         201: ServiceEndpointResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -1025,13 +1035,14 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         200: ServiceEndpointResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
     security: {
-      minimumRole: 'viewer',
+      minimumRole: 'member',
       rateLimit: {
         ...WRITE_RATE_LIMIT,
         key: 'PATCH /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId',
@@ -1081,13 +1092,14 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
     security: {
-      minimumRole: 'viewer',
+      minimumRole: 'member',
       rateLimit: {
         ...WRITE_RATE_LIMIT,
         key: 'DELETE /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId',
@@ -1209,6 +1221,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         200: MonitoringAlertResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: ApiErrorSchema,
         422: ApiErrorSchema,
