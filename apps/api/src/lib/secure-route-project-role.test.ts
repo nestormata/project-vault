@@ -9,7 +9,6 @@ import {
   type StubRoute,
 } from '../__tests__/helpers/secure-route-stubs.js'
 import {
-  secureAddedApiRoute,
   secureRoute,
   type SecureRouteRegistration,
   type SecureRouteRegistrationOptions,
@@ -187,10 +186,64 @@ describe('secureRoute project-role gate (Story 69.17)', () => {
     )
   })
 
-  it('refuses at registration a gated write without org scope', () => {
-    expect(() =>
-      register({ security: { requireOrgScope: false, writeAuditEvent: false } })
-    ).toThrow('SecureRoute: minimumProjectRole requires requireOrgScope')
+  describe('a gated write without org scope (Story 69.18)', () => {
+    const unscoped = { security: { requireOrgScope: false, writeAuditEvent: false } } as const
+
+    it('refuses a project viewer from its own org-scoped read, before the handler', async () => {
+      effectiveProjectRoleForCaller.mockResolvedValue('viewer')
+      const db = stubDb()
+      const { route, handler } = register({ ...unscoped, db })
+
+      const { reply } = await invoke(route)
+
+      expect(reply.statusCode).toBe(403)
+      expect(reply.body).toMatchObject({ code: 'insufficient_project_role' })
+      expect(handler).not.toHaveBeenCalled()
+      expect(db.tx.execute).toHaveBeenCalledOnce()
+      expect(effectiveProjectRoleForCaller).toHaveBeenCalledWith(
+        db.tx,
+        expect.objectContaining({ userId: 'stub-user' }),
+        PROJECT_ID
+      )
+    })
+
+    it('lets a project member through to a handler that gets no PV transaction', async () => {
+      effectiveProjectRoleForCaller.mockResolvedValue('member')
+      const { route, handler } = register({ ...unscoped, db: stubDb() })
+
+      const { reply } = await invoke(route)
+
+      expect(reply.statusCode).toBe(200)
+      expect(handler).toHaveBeenCalledOnce()
+      expect(handler.mock.calls.at(0)?.at(0)).not.toHaveProperty('tx')
+    })
+
+    it('fails closed when the role lookup throws', async () => {
+      effectiveProjectRoleForCaller.mockRejectedValue(new Error('db down'))
+      const { route, handler } = register({ ...unscoped, db: stubDb() })
+
+      await expect(invoke(route)).rejects.toThrow('db down')
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    it('answers 503 and runs no handler when the RLS context cannot be set', async () => {
+      const db = stubDb()
+      db.tx.execute.mockRejectedValue(new Error('rls down'))
+      const { route, handler } = register({ ...unscoped, db })
+
+      const { reply } = await invoke(route)
+
+      expect(reply.statusCode).toBe(503)
+      expect(reply.body).toMatchObject({ code: 'service_unavailable' })
+      expect(handler).not.toHaveBeenCalled()
+      expect(effectiveProjectRoleForCaller).not.toHaveBeenCalled()
+    })
+  })
+
+  it('refuses at registration a PV project write on an anonymous route', () => {
+    expect(() => register({ security: { requireAuth: false, writeAuditEvent: false } })).toThrow(
+      'SecureRoute: minimumProjectRole requires requireAuth'
+    )
   })
 
   it('records the resolved gate in the per-app registry', () => {
@@ -223,26 +276,5 @@ describe('secureRoute project-role gate (Story 69.17)', () => {
 
     expect(reply.statusCode).toBe(403)
     expect(cm).not.toHaveBeenCalled()
-  })
-
-  it("does not default an extension's own security (an added route)", async () => {
-    const url = `${PREFIX}/:projectId/cm-things`
-    const handler = vi.fn(async () => ({ data: { ok: true } }))
-    const table = tableFor(
-      { add: [{ method: 'POST', url, options: { security: { writeAuditEvent: false } } }] },
-      { [`POST ${url}`]: { handler } }
-    )
-    const entry = table.adds.at(0)
-    if (!entry) throw new Error('expected one added route')
-    const instance = stubInstance({ table })
-    secureAddedApiRoute(instance as never, entry)
-
-    await runStubRoute(onlyRoute(instance), {
-      params: { projectId: PROJECT_ID },
-      log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
-    })
-
-    expect(handler).toHaveBeenCalledOnce()
-    expect(effectiveProjectRoleForCaller).not.toHaveBeenCalled()
   })
 })

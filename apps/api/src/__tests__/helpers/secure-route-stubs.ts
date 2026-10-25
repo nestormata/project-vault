@@ -135,18 +135,23 @@ export function stubDb(): {
 export function loadedApiRoutesState(
   apiRoutes: unknown,
   routes: Record<string, unknown>,
-  extraHooks: Record<string, unknown> = {}
+  extraHooks: Record<string, unknown> = {},
+  apiVersion = '3.27.0'
 ): ExtensionState {
   return {
     status: 'loaded',
-    manifest: { name: 'com.acme.api-routes', apiVersion: '3.27.0', capabilities: [], apiRoutes },
+    manifest: { name: 'com.acme.api-routes', apiVersion, capabilities: [], apiRoutes },
     hooks: { apiRoutes: { routes }, ...extraHooks },
     loadedAt: new Date().toISOString(),
   } as unknown as ExtensionState
 }
 
-export function tableFor(apiRoutes: unknown, routes: Record<string, unknown>): ApiRouteTable {
-  const table = buildApiRouteTable(loadedApiRoutesState(apiRoutes, routes))
+export function tableFor(
+  apiRoutes: unknown,
+  routes: Record<string, unknown>,
+  apiVersion?: string
+): ApiRouteTable {
+  const table = buildApiRouteTable(loadedApiRoutesState(apiRoutes, routes, {}, apiVersion))
   if (!table) throw new Error('expected an apiRoutes table')
   return table
 }

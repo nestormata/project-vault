@@ -4,6 +4,7 @@ import {
   assertExtensionEmittersContained,
   checkBackgroundPromisesHandled,
   checkExtensionEmitters,
+  checkProjectWriteRoles,
 } from './conformance.js'
 
 describe('checkExtensionEmitters', () => {
@@ -67,5 +68,90 @@ describe('checkBackgroundPromisesHandled', () => {
     const before = process.listenerCount('unhandledRejection')
     await checkBackgroundPromisesHandled(() => undefined)
     expect(process.listenerCount('unhandledRejection')).toBe(before)
+  })
+})
+
+describe('checkProjectWriteRoles (Story 69.18)', () => {
+  const add = (method: string, url: string, security?: object) => ({
+    method,
+    url,
+    ...(security ? { options: { security } } : {}),
+  })
+  const manifest = (apiVersion: string) => ({
+    apiVersion,
+    apiRoutes: {
+      add: [
+        add('POST', '/cm/projects/:projectId/notes'),
+        add('POST', '/cm/projects/:projectId/notes/revoke', { minimumProjectRole: 'viewer' }),
+        add('DELETE', '/cm/projects/:projectId/notes/all', { minimumProjectRole: 'admin' }),
+        add('POST', '/cm/projects/:projectId/hook', { requireAuth: false }),
+        add('GET', '/cm/projects/:projectId/notes'),
+        add('POST', '/cm/folders/:folderId'),
+      ],
+      override: [
+        { method: 'POST', url: '/api/v1/projects/:projectId/archive', mode: 'replace' },
+        {
+          method: 'POST',
+          url: '/api/v1/projects/:projectId/unarchive',
+          mode: 'replace',
+          replaceSecurity: true,
+          security: {},
+        },
+      ],
+    },
+  })
+
+  it('reports the gate the host applies to each owned project write on the current contract', () => {
+    expect(checkProjectWriteRoles(manifest('3.37.0'))).toEqual({
+      ok: false,
+      routes: [
+        {
+          route: 'POST /cm/projects/:projectId/notes',
+          minimumProjectRole: 'member',
+          ungated: null,
+        },
+        {
+          route: 'POST /cm/projects/:projectId/notes/revoke',
+          minimumProjectRole: null,
+          ungated: 'declared_viewer',
+        },
+        {
+          route: 'DELETE /cm/projects/:projectId/notes/all',
+          minimumProjectRole: 'admin',
+          ungated: null,
+        },
+        {
+          route: 'POST /cm/projects/:projectId/hook',
+          minimumProjectRole: null,
+          ungated: 'unauthenticated',
+        },
+        {
+          route: 'POST /api/v1/projects/:projectId/unarchive',
+          minimumProjectRole: 'member',
+          ungated: null,
+        },
+      ],
+    })
+  })
+
+  it('flags every undeclared project write of an older manifest as legacy_contract', () => {
+    const { routes } = checkProjectWriteRoles(manifest('3.36.0'))
+    expect(
+      routes.filter((route) => route.ungated === 'legacy_contract').map((r) => r.route)
+    ).toEqual([
+      'POST /cm/projects/:projectId/notes',
+      'POST /cm/projects/:projectId/hook',
+      'POST /api/v1/projects/:projectId/unarchive',
+    ])
+  })
+
+  it('is ok for a manifest whose project writes are all gated, or that has none', () => {
+    expect(
+      checkProjectWriteRoles({
+        apiVersion: '3.37.0',
+        apiRoutes: { add: [add('PUT', '/cm/projects/:projectId/x')] },
+      }).ok
+    ).toBe(true)
+    expect(checkProjectWriteRoles({ apiVersion: '3.37.0' })).toEqual({ ok: true, routes: [] })
   })
 })

@@ -297,6 +297,9 @@ export const OperationalEvent = {
   EXTENSION_API_ROUTES_APPLIED: 'extension.api_routes.applied',
   EXTENSION_API_ROUTE_REPLACE_SECURITY: 'extension.api_route.replace_security',
   EXTENSION_API_ROUTE_SHARED_DEFAULT_KEY: 'extension.api_route.shared_default_key',
+  // Story 69.18: one warn per extension write under `:projectId` that runs without the project-role
+  // gate (declared 'viewer', a manifest older than the default, or an unauthenticated route).
+  EXTENSION_API_ROUTE_PROJECT_ROLE_UNGATED: 'extension.api_route.project_role_ungated',
   // Story 68.14: one warn per app-level change an extension's `apiRoutes.app` makes at boot (error
   // handler / not-found handler wrap or replace, each prepended or appended global hook phase;
   // never handler source), and one error per request whose extension error/not-found handler threw

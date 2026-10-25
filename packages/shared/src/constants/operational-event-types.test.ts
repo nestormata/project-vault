@@ -50,6 +50,12 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 69.18 ungated extension project-write event type', () => {
+    expect(OperationalEvent.EXTENSION_API_ROUTE_PROJECT_ROLE_UNGATED).toBe(
+      'extension.api_route.project_role_ungated'
+    )
+  })
+
   it('exposes the Story 68.14 app-level apiRoutes event types', () => {
     expect(OperationalEvent.EXTENSION_API_ROUTE_APP_OVERRIDE).toBe(
       'extension.api_route.app_override'

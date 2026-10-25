@@ -255,6 +255,28 @@ function warnSharedRateLimitKeys(
   }
 }
 
+/**
+ * Story 69.18: an extension's own write under `:projectId` that runs without the project-role
+ * gate is recorded, never refused (like `replaceSecurity`): a declared `'viewer'`, a manifest
+ * older than the default, or an anonymous route.
+ */
+function warnUngatedProjectWrites(
+  table: ApiRouteTable,
+  registry: Map<string, SecureRouteRegistration>,
+  logger: BootLogger
+): void {
+  for (const route of registry.values()) {
+    if (route.origin === 'pv' || route.projectRoleUngated === null) continue
+    operationalLog(
+      logger,
+      'warn',
+      OperationalEvent.EXTENSION_API_ROUTE_PROJECT_ROLE_UNGATED,
+      'Extension route writes under :projectId without the project-role gate (recorded, not refused)',
+      { extensionName: table.extensionName, route: route.key, reason: route.projectRoleUngated }
+    )
+  }
+}
+
 export async function registerApiRouteAdds(
   fastify: ApiRoutesHost,
   runtime: ApiRoutesRuntime,
@@ -266,4 +288,5 @@ export async function registerApiRouteAdds(
   assertAllOverridesConsumed(runtime, options.docsEnabled)
   logApplied(table, options.logger)
   warnSharedRateLimitKeys(table, runtime.registry, options.logger)
+  warnUngatedProjectWrites(table, runtime.registry, options.logger)
 }

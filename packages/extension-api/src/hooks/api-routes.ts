@@ -39,7 +39,8 @@ export type ApiRouteOrgRole = 'owner' | 'admin' | 'member' | 'viewer'
 
 /**
  * The same semantics as PV's own `secureRoute` security options. Omitted fields take PV's
- * defaults (authenticated, org-scoped, viewer or above, 60 requests per minute per user).
+ * defaults (authenticated, org-scoped, viewer or above, 60 requests per minute per user, and
+ * since 3.37.0 project role `member` on a write under `:projectId`).
  * `capability` is passed to the registered capability gate unchanged; it is not limited to PV's
  * own capability ids.
  */
@@ -48,6 +49,24 @@ export type ApiRouteSecurity = {
   requireOrgScope?: boolean
   minimumRole?: ApiRouteOrgRole
   allowedRoles?: ApiRouteOrgRole[]
+  /**
+   * Since 3.37.0 — the minimum EFFECTIVE project role for the project named by the route's
+   * `:projectId` path parameter, checked after the org-role floor and before the handler. The
+   * effective role is the caller's org role when it is `owner` or `admin`, else their own project
+   * membership role, else their org role. A caller below it gets 403
+   * `{ code: 'insufficient_project_role' }` and the handler never runs.
+   *
+   * Default: `'member'` on every POST, PUT, PATCH or DELETE route whose URL has a `:projectId`
+   * segment, for an `add` and for an override with `replaceSecurity: true` (a replacement cannot
+   * drop it by omission), when the manifest declares `apiVersion` 3.37.0 or later. Reads are never
+   * gated by default. Declare `'viewer'` to opt out for an action a project viewer must keep (a
+   * narrowing operation such as revoking their own share); the host logs every such route at boot.
+   * Declare `'admin'` or `'owner'` to raise it. An override without `replaceSecurity` keeps PV's
+   * own gate. Registration fails when it is declared on a URL without `:projectId`, or above
+   * `'viewer'` together with `requireAuth: false`. A manifest declaring an older `apiVersion`
+   * keeps the pre-3.37.0 behaviour (no default) and the host logs each ungated project write.
+   */
+  minimumProjectRole?: ApiRouteOrgRole
   requireMfa?: boolean
   requirePlatformOperator?: boolean
   writeAuditEvent?:
@@ -116,6 +135,8 @@ export type ApiRouteAddDeclaration = {
  *
  * `security` is honoured only together with `replaceSecurity: true`; it then replaces PV's
  * route-level security for that route. `replaceSecurity` is recorded by the host, never refused.
+ * Since 3.37.0 a replaced security on a write under `:projectId` still gets the default
+ * `minimumProjectRole: 'member'` unless it declares another role (see `ApiRouteSecurity`).
  */
 export type ApiRouteOverrideDeclaration = {
   method: ApiRouteMethod
