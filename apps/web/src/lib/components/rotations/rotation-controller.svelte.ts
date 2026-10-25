@@ -17,12 +17,15 @@ import {
   type OrgRole,
 } from '$lib/components/rotations/rotation-permissions.js'
 import type { RotationChecklistItem, RotationDetail } from '@project-vault/shared'
+import type { ProjectWithRole } from '$lib/projects/project-write-access.js'
 
 export interface RotationSource {
   projectId: string
   credentialId: string
   rotationId: string
   orgRole: OrgRole
+  /** Story 69.17: the project layout's payload, for the effective project role. */
+  project?: ProjectWithRole
   rotation: RotationDetail | null
 }
 
@@ -125,7 +128,7 @@ export class RotationController {
     return canManageRotations(this.source().orgRole)
   }
   get canAct(): boolean {
-    return canActOnChecklist(this.source().orgRole)
+    return canActOnChecklist(this.source().orgRole, this.source().project)
   }
   get confirmedCount(): number {
     return this.rotation

@@ -88,6 +88,7 @@ const pageData = (overrides: Record<string, unknown> = {}) => ({
   credentialId: 'c1',
   rotationId: 'r1',
   orgRole: 'owner',
+  project: { role: 'member' },
   rotation: rotation('in_progress'),
   notFound: false,
   ...overrides,
@@ -171,6 +172,12 @@ describe('RotationDetailContent sub-regions (probe order)', () => {
     expect(probeNames()).toEqual(['summary', 'staged-value', 'checklist'])
     cleanup()
     mount({ orgRole: 'viewer', rotation: rotation('staged') })
+    expect(probeNames()).toEqual(['summary', 'checklist'])
+    expect(screen.getByText(/You have read access to this rotation/)).toBeTruthy()
+  })
+
+  it('Story 69.17: a project viewer with org role member gets the read-only view', () => {
+    mount({ orgRole: 'member', project: { role: 'viewer' }, rotation: rotation('staged') })
     expect(probeNames()).toEqual(['summary', 'checklist'])
     expect(screen.getByText(/You have read access to this rotation/)).toBeTruthy()
   })

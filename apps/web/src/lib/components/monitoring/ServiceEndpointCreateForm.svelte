@@ -33,7 +33,7 @@
 
   const form = new ServiceEndpointFormState()
 
-  const canCreate = $derived(canManageMonitoredAssets(orgRole))
+  const canCreate = $derived(canManageMonitoredAssets({ orgRole, project }))
 
   function validate(): { name?: string; url?: string } {
     const errors: { name?: string; url?: string } = {}

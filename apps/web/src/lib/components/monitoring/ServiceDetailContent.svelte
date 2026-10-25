@@ -26,7 +26,7 @@
 
   let { data, children }: { data: PageData; children?: Snippet } = $props()
 
-  const canManage = $derived(canManageMonitoredAssets(data.orgRole))
+  const canManage = $derived(canManageMonitoredAssets(data))
   let url = $state('')
   let renewalDate = $state('')
   let alertLeadDays = $state('')

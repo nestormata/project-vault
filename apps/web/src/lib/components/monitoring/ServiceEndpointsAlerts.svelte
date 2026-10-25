@@ -30,7 +30,13 @@
 
 <!-- @region project.service-endpoints.alerts -->
 <RegionFragment>
-  <ActiveAlertsPanel {alerts} endpoints={endpointNames} {orgRole} {projectId} /><InjectionPoint
+  <ActiveAlertsPanel
+    {alerts}
+    endpoints={endpointNames}
+    {orgRole}
+    {project}
+    {projectId}
+  /><InjectionPoint
     name="project.service-endpoints.alerts"
     props={{ project, orgRole, endpoints }}
     {data}

@@ -38,6 +38,8 @@ function makeAlert(overrides: Record<string, unknown> = {}) {
 
 const endpointNames = [{ id: endpointId, name: 'API health' }]
 
+const MEMBER_ROW = { role: 'member' }
+
 describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
   beforeEach(() => {
     snoozeAlertMock.mockReset()
@@ -47,14 +49,26 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
 
   it('AC-F1 edge: renders a "No active alerts" note when the list is empty', () => {
     render(ActiveAlertsPanel, {
-      props: { alerts: [], endpoints: endpointNames, orgRole: 'member', projectId },
+      props: {
+        alerts: [],
+        endpoints: endpointNames,
+        orgRole: 'member',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
     expect(screen.getByText('No active alerts')).toBeTruthy()
   })
 
   it('AC-F1: shows alertType/severity/endpoint name/createdAt for an active alert', () => {
     render(ActiveAlertsPanel, {
-      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'member', projectId },
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'member',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
     expect(screen.getByText('API health')).toBeTruthy()
     expect(screen.getByText(/service\.down/i)).toBeTruthy()
@@ -67,6 +81,7 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
         alerts: [makeAlert({ serviceEndpointId: null })],
         endpoints: endpointNames,
         orgRole: 'member',
+        project: MEMBER_ROW,
         projectId,
       },
     })
@@ -75,14 +90,26 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
 
   it('AC-I1: member sees Snooze but not Dismiss; admin sees both', () => {
     const { unmount } = render(ActiveAlertsPanel, {
-      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'member', projectId },
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'member',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
     expect(screen.getByRole('button', { name: /Snooze 1 hour/i })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull()
     unmount()
 
     render(ActiveAlertsPanel, {
-      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'admin', projectId },
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'admin',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
     expect(screen.getByRole('button', { name: /Snooze 1 hour/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeTruthy()
@@ -95,7 +122,13 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
       snoozedUntil: '2026-07-01T01:00:00.000Z',
     })
     render(ActiveAlertsPanel, {
-      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'member', projectId },
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'member',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /Snooze 1 hour/i }))
@@ -114,6 +147,7 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
         alerts: [makeAlert({ status: 'snoozed', snoozedUntil: '2026-07-01T01:00:00.000Z' })],
         endpoints: endpointNames,
         orgRole: 'member',
+        project: MEMBER_ROW,
         projectId,
       },
     })
@@ -124,7 +158,13 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
   it('AC-F3 happy path (admin): dismiss requires two-step confirm, then removes the alert', async () => {
     dismissAlertMock.mockResolvedValue({ ...makeAlert(), status: 'dismissed' })
     render(ActiveAlertsPanel, {
-      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'admin', projectId },
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'admin',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
@@ -141,7 +181,13 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
       new ApiClientError(409, { code: 'alert_dismissed' }, 'Alert is dismissed')
     )
     render(ActiveAlertsPanel, {
-      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'member', projectId },
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'member',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /Snooze 1 hour/i }))
@@ -151,7 +197,13 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
 
   it('a viewer sees neither Snooze nor Dismiss controls', () => {
     render(ActiveAlertsPanel, {
-      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'viewer', projectId },
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'viewer',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
     expect(screen.queryByRole('button', { name: /Snooze/i })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull()
@@ -163,6 +215,7 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
         alerts: [makeAlert({ status: 'snoozed', snoozedUntil: '2026-07-01T01:00:00.000Z' })],
         endpoints: endpointNames,
         orgRole: 'member',
+        project: MEMBER_ROW,
         projectId,
       },
     })
@@ -175,6 +228,7 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
         alerts: [makeAlert({ serviceEndpointId: 'unknown-endpoint-id' })],
         endpoints: endpointNames,
         orgRole: 'member',
+        project: MEMBER_ROW,
         projectId,
       },
     })
@@ -184,7 +238,13 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
   it('a non-ApiClientError dismiss failure shows the generic dismiss-error message', async () => {
     dismissAlertMock.mockRejectedValueOnce(new Error('network down'))
     render(ActiveAlertsPanel, {
-      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'admin', projectId },
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'admin',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
@@ -196,11 +256,30 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
   it('a non-ApiClientError snooze failure (not 409) shows the raw Error message', async () => {
     snoozeAlertMock.mockRejectedValueOnce(new Error('network down'))
     render(ActiveAlertsPanel, {
-      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'member', projectId },
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'member',
+        project: MEMBER_ROW,
+        projectId,
+      },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /Snooze 1 hour/i }))
 
     expect(await screen.findByText('network down')).toBeTruthy()
+  })
+  it('Story 69.17: a project viewer with org role member sees neither Snooze nor Dismiss', () => {
+    render(ActiveAlertsPanel, {
+      props: {
+        alerts: [makeAlert()],
+        endpoints: endpointNames,
+        orgRole: 'member',
+        project: { role: 'viewer' },
+        projectId,
+      },
+    })
+    expect(screen.queryByRole('button', { name: /snooze/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull()
   })
 })

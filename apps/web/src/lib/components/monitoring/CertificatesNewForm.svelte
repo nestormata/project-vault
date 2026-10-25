@@ -23,7 +23,7 @@
   let { data, children }: { data: PageData; children?: Snippet } = $props()
 
   const form = new CertificateFormState()
-  const canCreate = $derived(canManageMonitoredAssets(data.orgRole))
+  const canCreate = $derived(canManageMonitoredAssets(data))
   async function submitForm() {
     if (form.submitting || !canCreate) return
     form.fieldErrors = validateCertificateFields(form.domain, form.expiresAt, {

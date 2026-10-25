@@ -52,6 +52,9 @@ describe('role derivations', () => {
     expect(canRevealCredential('viewer', project('member'))).toBe(false)
     expect(canRevealCredential('member', null)).toBe(false)
   })
+  it('canRevealCredential keeps the org admin bypass over a viewer row (Story 69.17)', () => {
+    expect(canRevealCredential('admin', project('viewer'))).toBe(true)
+  })
   it('canArchiveCredential is project-owner-or-org-owner and needs a project', () => {
     expect(canArchiveCredential('member', project('owner'))).toBe(true)
     expect(canArchiveCredential('owner', project('member'))).toBe(true)

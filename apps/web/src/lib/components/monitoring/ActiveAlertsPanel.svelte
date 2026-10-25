@@ -7,16 +7,19 @@
     canManageMonitoredAssets,
     type OrgRole,
   } from '$lib/monitoring/permissions.js'
+  import type { ProjectWithRole } from '$lib/projects/project-write-access.js'
 
   let {
     alerts,
     endpoints,
     orgRole,
+    project,
     projectId,
   }: {
     alerts: MonitoringAlert[]
     endpoints: { id: string; name: string }[]
     orgRole: OrgRole
+    project: ProjectWithRole
     projectId: string
   } = $props()
 
@@ -25,7 +28,7 @@
   let localAlerts = $derived<MonitoringAlert[]>(alerts)
   let errorMessage = $state<string | null>(null)
 
-  const canSnooze = $derived(canManageMonitoredAssets(orgRole))
+  const canSnooze = $derived(canManageMonitoredAssets({ orgRole, project }))
   const canDismiss = $derived(canDismissAlert(orgRole))
 
   // AC-F2: preset durations, each mapped to durationMinutes, capped server-side at 10080 (7 days).

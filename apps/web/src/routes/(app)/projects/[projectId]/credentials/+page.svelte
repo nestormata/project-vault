@@ -3,12 +3,14 @@
   import CredentialsListContent from '$lib/components/credentials/CredentialsListContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
-  import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
-  import { canImportCredentials } from '$lib/credentials/permissions.js'
+  import {
+    canCreateCredentialInProject,
+    canImportCredentials,
+  } from '$lib/credentials/permissions.js'
 
   let { data } = $props()
 
-  const canCreate = $derived(canCreateCredential(data.orgRole))
+  const canCreate = $derived(canCreateCredentialInProject(data.orgRole, data.project))
   const canImport = $derived(canImportCredentials(data.orgRole))
 </script>
 
