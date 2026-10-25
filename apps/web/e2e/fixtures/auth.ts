@@ -52,6 +52,24 @@ export async function registerViaInvitation(
   await expect(page).not.toHaveURL(/\/register/)
 }
 
+/** J39/J40: accepts a project invitation as a new account, signs in through the login form and
+ * skips onboarding. Returns the signed-in page. */
+export async function signInInvitee(
+  context: BrowserContext,
+  email: string,
+  token: string,
+  password: string
+): Promise<Page> {
+  const page = await context.newPage()
+  await registerViaInvitation(page, token, password)
+  const loginPage = new LoginPage(page)
+  await loginPage.goto()
+  await loginPage.fillAndSubmit({ email, password })
+  await expect(page).toHaveURL(/\/dashboard/)
+  await context.request.post('/api/v1/users/me/onboarding', { data: { completed: true } })
+  return page
+}
+
 // AC-I4: registerAndLoginViaApi is the "UI is for validation only, not setup" primitive used by
 // J2/J3/J4 to reach an already-authenticated starting state quickly, mirroring apps/api's own
 // integration-test helper of the same name/shape (auth-test-helpers.ts).

@@ -5,6 +5,8 @@ import { z } from 'zod/v4'
 import {
   ActiveMachineUserKeysErrorSchema,
   ActiveSharesErrorSchema,
+  archiveAuthority,
+  type ArchiveAuthority,
   AuditEvent,
   OperationalEvent,
   type ProjectRole,
@@ -65,7 +67,6 @@ import {
   findBlockingShareIds,
   PROJECT_ARCHIVED_ERROR,
   rejectIfProjectArchived,
-  resolveArchiveAuthorization,
 } from './archive-guards.js'
 import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 import { getExtensionStatus } from '../../extensions/loader.js'
@@ -146,16 +147,15 @@ export async function requireCallerCanManageProject(
   return false
 }
 
-// 4.4 AC-2/AC-6/ADR-4.4-05: archive/unarchive is restricted to the project owner OR an org owner
-// (org owners retain authority over every project in their org even without a membership row).
-// Returns which path authorized the caller (or null if neither) so the audit row can record
-// "acted as project owner" vs. "acted via org-owner override" (ADR-4.4-05 consequences).
-async function callerArchiveAuthorization(
+// 4.4 AC-2/AC-6/ADR-4.4-05: who may archive/unarchive a project or one of its secrets (shared
+// with the web controls, Story 69.20). Returns which path authorized the caller so the audit row
+// can record "acted as project owner" vs. "acted via org-owner override".
+export async function callerArchiveAuthorization(
   secureCtx: SecureRouteContext,
   projectId: string
-): Promise<'project_owner' | 'org_owner' | null> {
+): Promise<ArchiveAuthority | null> {
   const callerRole = await callerProjectRole(secureCtx, projectId)
-  return resolveArchiveAuthorization(callerRole, orgRoleOrDeny(secureCtx.auth))
+  return archiveAuthority(orgRoleOrDeny(secureCtx.auth), callerRole)
 }
 
 // 4.4 AC-12 "Audit gap (denied/blocked attempts)": SecureRoute's same-tx audit writer only fires
@@ -178,7 +178,7 @@ type ArchiveTogglePreflight =
       params: { projectId: string }
       secureCtx: SecureRouteContext
       project: { id: string; archivedAt: Date | null }
-      authorizedVia: 'project_owner' | 'org_owner'
+      authorizedVia: ArchiveAuthority
     }
   | { ok: false }
 
@@ -199,6 +199,13 @@ async function loadOwnedProjectForArchiveToggle(
   const params = parseParams(ProjectParamsSchema, req, reply)
   if (!params) return { ok: false }
   const secureCtx = ctx as SecureRouteContext
+
+  // Story 69.20: an org member without a row cannot see the project, so it answers 404 like a
+  // missing id (no existence oracle now that the org floor is `member`).
+  if (!(await requireProjectVisible(secureCtx, req, params.projectId))) {
+    reply.status(404).send(PROJECT_NOT_FOUND)
+    return { ok: false }
+  }
 
   const [project] = await secureCtx.tx
     .select({ id: projects.id, archivedAt: projects.archivedAt })
@@ -1216,7 +1223,7 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'admin', // org-level floor; in-handler project-owner check is stricter.
+      minimumRole: 'member', // broad floor; the in-handler archiveAuthority() rule decides.
       requireMfa: true,
       rateLimit: {
         max: 10,
@@ -1350,7 +1357,7 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'admin',
+      minimumRole: 'member', // broad floor; the in-handler archiveAuthority() rule decides.
       requireMfa: true,
       rateLimit: {
         max: 10,

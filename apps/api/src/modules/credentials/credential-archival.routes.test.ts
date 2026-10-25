@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditLogEntries, credentials, projects } from '@project-vault/db/schema'
+import { AuditEvent } from '@project-vault/shared'
+import { archiveAuditRowsFor } from '../../__tests__/helpers/archive-audit-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import {
@@ -135,7 +137,7 @@ describe('credential archival routes (28.5)', () => {
       expect(auditRows[0]?.payload).toMatchObject({ authorizedVia: 'org_owner' })
     })
 
-    it('403 for a member-role caller (below the admin floor)', async () => {
+    it('403 for an org member with a project member row (not the owner)', async () => {
       const owner = await registerOwner(app, 'archive-member')
       const projectId = await createCredentialTestProject(app, owner.cookies, 'archive-member')
       const credential = await createCredentialViaApi(app, owner.cookies, projectId)
@@ -267,6 +269,79 @@ describe('credential archival routes (28.5)', () => {
       const res = await unarchiveCredential(app, owner.cookies, projectId, credential.id)
       expect(res.statusCode).toBe(410)
       expect(res.json<{ code: string }>().code).toBe('project_archived')
+    })
+  })
+
+  // Story 69.20 (DW-618): org floor `member`, then archiveAuthority() (project owner row OR org
+  // owner), the rule the secret header's Archive control also calls.
+  describe('archive authority by role (69.20)', () => {
+    async function secretInOwnersProject(label: string) {
+      const owner = await registerOwner(app, label)
+      const projectId = await createCredentialTestProject(app, owner.cookies, label)
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      return { owner, projectId, credentialId: credential.id }
+    }
+
+    it('an org member who owns the project archives and unarchives its secret, audited as project_owner', async () => {
+      const owner = await registerOwner(app, 'member-owner')
+      const member = await addUserToOrg(app, owner.orgId, 'member-owner-caller', {
+        orgRole: 'member',
+      })
+      const projectId = await createCredentialTestProject(app, member.cookies, 'member-owner')
+      const { id: credentialId } = await createCredentialViaApi(app, member.cookies, projectId)
+
+      const archived = await archiveCredential(app, member.cookies, projectId, credentialId)
+      expect(archived.statusCode).toBe(200)
+      expect(await currentArchivedAt(owner.orgId, credentialId)).not.toBeNull()
+      const restored = await unarchiveCredential(app, member.cookies, projectId, credentialId)
+      expect(restored.statusCode).toBe(200)
+      expect(await currentArchivedAt(owner.orgId, credentialId)).toBeNull()
+
+      const expected = [{ actorUserId: member.userId, payload: { authorizedVia: 'project_owner' } }]
+      expect(
+        await archiveAuditRowsFor(owner.orgId, AuditEvent.CREDENTIAL_ARCHIVED, credentialId)
+      ).toEqual(expected)
+      expect(
+        await archiveAuditRowsFor(owner.orgId, AuditEvent.CREDENTIAL_UNARCHIVED, credentialId)
+      ).toEqual(expected)
+    })
+
+    it.each([
+      ['project admin row', 'admin', 403],
+      ['project viewer row', 'viewer', 403],
+      ['no project row', null, 404],
+    ])(
+      'an org member with a %s is refused (%i) and the secret stays active',
+      async (_label, projectRole, status) => {
+        const { owner, projectId, credentialId } = await secretInOwnersProject(
+          `refused-${projectRole ?? 'none'}`
+        )
+        const member = await addUserToOrg(app, owner.orgId, 'refused-caller', { orgRole: 'member' })
+        if (projectRole) await addProjectMember(owner.orgId, projectId, member.userId, projectRole)
+
+        const res = await archiveCredential(app, member.cookies, projectId, credentialId)
+        expect(res.statusCode).toBe(status)
+        expect(await currentArchivedAt(owner.orgId, credentialId)).toBeNull()
+        expect(
+          await archiveAuditRowsFor(owner.orgId, AuditEvent.CREDENTIAL_ARCHIVED, credentialId)
+        ).toEqual([])
+      }
+    )
+
+    it("404 for an org member who owns a project in their own org, on another org's secret", async () => {
+      const mine = await registerOwner(app, 'cross-mine')
+      const member = await addUserToOrg(app, mine.orgId, 'cross-member', { orgRole: 'member' })
+      await createCredentialTestProject(app, member.cookies, 'cross-own')
+      const foreign = await secretInOwnersProject('cross-foreign')
+
+      const res = await archiveCredential(
+        app,
+        member.cookies,
+        foreign.projectId,
+        foreign.credentialId
+      )
+      expect(res.statusCode).toBe(404)
+      expect(await currentArchivedAt(foreign.owner.orgId, foreign.credentialId)).toBeNull()
     })
   })
 

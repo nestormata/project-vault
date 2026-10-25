@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { canWriteInProject, effectiveProjectRole } from './project-write-access.js'
+import {
+  canArchiveInProject,
+  canWriteInProject,
+  effectiveProjectRole,
+} from './project-write-access.js'
 
 describe('effectiveProjectRole (Story 69.17)', () => {
   it.each([
@@ -65,5 +69,28 @@ describe('canWriteInProject matrix (mirrors apps/api effectiveProjectRoleForCall
     ['org member, project not loaded', 'member', null, false],
   ] as const)('%s', (_label, orgRole, project, expected) => {
     expect(canWriteInProject(orgRole, project)).toBe(expected)
+  })
+})
+
+describe('canArchiveInProject (Story 69.20, DW-618)', () => {
+  it.each([
+    ['member', 'owner', true],
+    ['admin', 'owner', true],
+    ['owner', 'member', true],
+    ['owner', 'viewer', true],
+    ['admin', 'admin', false],
+    ['admin', 'member', false],
+    ['member', 'admin', false],
+    ['member', 'member', false],
+    ['member', 'viewer', false],
+    ['viewer', 'owner', false],
+  ] as const)('org %s with project role %s -> %s', (orgRole, projectRole, expected) => {
+    expect(canArchiveInProject(orgRole, { role: projectRole })).toBe(expected)
+  })
+
+  it('hides the control without a project or an org role', () => {
+    expect(canArchiveInProject('owner', null)).toBe(false)
+    expect(canArchiveInProject('owner', undefined)).toBe(false)
+    expect(canArchiveInProject(undefined, { role: 'owner' })).toBe(false)
   })
 })

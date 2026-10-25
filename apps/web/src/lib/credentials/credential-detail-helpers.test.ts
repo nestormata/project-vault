@@ -6,7 +6,6 @@ import {
   ARCHIVED_PROJECT_BANNER,
   CREDENTIAL_ARCHIVED_BANNER,
   archivedBannerFor,
-  canArchiveCredential,
   canRevealCredential,
   credentialKeyOf,
   credentialPointExtras,
@@ -61,12 +60,6 @@ describe('role derivations', () => {
     // a member with a viewer row is a viewer; a member with a member row reveals
     expect(canRevealCredential('member', project('viewer'))).toBe(false)
     expect(canRevealCredential('member', project('member'))).toBe(true)
-  })
-  it('canArchiveCredential is project-owner-or-org-owner and needs a project', () => {
-    expect(canArchiveCredential('member', project('owner'))).toBe(true)
-    expect(canArchiveCredential('owner', project('member'))).toBe(true)
-    expect(canArchiveCredential('admin', project('member'))).toBe(false)
-    expect(canArchiveCredential('owner', null)).toBe(false)
   })
 })
 

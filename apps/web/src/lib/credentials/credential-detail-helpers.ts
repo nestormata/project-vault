@@ -38,11 +38,6 @@ export function canRevealCredential(orgRole: OrgRole, project: Project): boolean
   return canCreateCredential(orgRole) && canWriteInProject(orgRole, project)
 }
 
-/** Story 28.5 AC6: project-owner-or-org-owner, decided from data the page already has. */
-export function canArchiveCredential(orgRole: OrgRole, project: Project): boolean {
-  return project != null && (project.role === 'owner' || orgRole === 'owner')
-}
-
 /** Story 28.5 AC4/AC6: gates every mutating control once the secret itself is archived. */
 export function isCredentialArchived(
   credential: { archivedAt?: string | null } | null | undefined

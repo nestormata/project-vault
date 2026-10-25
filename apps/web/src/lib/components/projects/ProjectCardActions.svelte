@@ -1,13 +1,18 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import { page } from '$app/state'
+  import { canArchiveInProject } from '$lib/projects/project-write-access.js'
   import type { ProjectListPage } from '$lib/api/projects.js'
   import type { ProjectsListActions } from './projects-list-actions.svelte.js'
 
-  // Story 69.11: the links and the owner-only archive/unarchive button of one project card.
+  // Story 69.11: the links and the archive/unarchive button of one project card.
   let {
     project,
     actions,
   }: { project: ProjectListPage['items'][number]; actions: ProjectsListActions } = $props()
+
+  // DW-618: the API's archive rule, with the org role from the layout data.
+  const canArchive = $derived(canArchiveInProject(page.data.user?.orgRole, project))
 </script>
 
 <div class="mt-4 flex flex-wrap items-center gap-3">
@@ -25,7 +30,7 @@
       View secrets
     </a>
   {/if}
-  {#if project.role === 'owner'}
+  {#if canArchive}
     {#if project.isArchived}
       <button
         type="button"

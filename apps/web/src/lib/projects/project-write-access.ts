@@ -1,3 +1,5 @@
+import { archiveAuthority } from '@project-vault/shared'
+
 export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
 
 /** The caller's role as the project payload reports it (`membership role ?? org role`). */
@@ -26,4 +28,14 @@ export function effectiveProjectRole(orgRole: OrgRole, project: ProjectWithRole)
  * `minimumProjectRole`). Only gates the controls; the API is the boundary. */
 export function canWriteInProject(orgRole: OrgRole, project: ProjectWithRole): boolean {
   return ROLE_RANK[effectiveProjectRole(orgRole, project)] >= ROLE_RANK.member
+}
+
+/** Story 69.20 (DW-618): Archive and Unarchive of a project or one of its secrets show exactly when
+ * the API allows them (the shared `archiveAuthority` rule: project owner row or org owner, org
+ * member+). A missing project hides them. */
+export function canArchiveInProject(
+  orgRole: OrgRole | undefined,
+  project: ProjectWithRole
+): boolean {
+  return project != null && archiveAuthority(orgRole, project.role) !== null
 }
