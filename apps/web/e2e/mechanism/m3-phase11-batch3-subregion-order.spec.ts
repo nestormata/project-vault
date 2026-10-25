@@ -54,6 +54,10 @@ test.describe('M3 sub-region points on the new project form, the new machine use
     const fill = page.getByTestId(ID.auditExportForm)
     await expect(fill).toContainText(`${SENTINEL}-settings.audit.export-form`)
     expect(await precedes(page.getByRole('button', { name: 'Export CSV' }), fill)).toBe(true)
+    // After the export card's heading too (DW-610 item 5), not just after the button.
+    expect(await precedes(page.getByRole('heading', { name: 'Export', exact: true }), fill)).toBe(
+      true
+    )
     expect(await precedes(fill, page.locator('#verify-from'))).toBe(true)
     expect(mismatches()).toEqual([])
   })
@@ -66,6 +70,12 @@ test.describe('M3 sub-region points on the new project form, the new machine use
     const fill = page.getByTestId(ID.exportKey)
     await expect(fill).toContainText(`${SENTINEL}-project.detail.export-key`)
     expect(await precedes(page.getByRole('button', { name: 'Export project' }), fill)).toBe(true)
+    // Inside the export section (DW-610 item 5), after its description, not at the page's end.
+    const section = page.locator('section', {
+      has: page.getByRole('heading', { name: 'Export project' }),
+    })
+    await expect(section.getByTestId(ID.exportKey)).toBeVisible()
+    expect(await precedes(page.getByText(/shown to you exactly once/), fill)).toBe(true)
     expect(mismatches()).toEqual([])
   })
 })

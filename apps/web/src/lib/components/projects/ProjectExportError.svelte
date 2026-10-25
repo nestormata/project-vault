@@ -3,8 +3,13 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
 
-  // Story 69.12: the failure message of the export section. The panel owns the message text (it is
-  // an API error message, never the export key).
+  // Story 69.12: the failure message of the export section. Contract (DW-610 item 1, amending the
+  // Story 62-2 D3 text): a replacement of this region component receives exactly
+  // `{ project, exportError: string | null, data? }`. `exportError` is the raw API error message
+  // (an `ApiClientError` message from the export endpoint, or a client `Error` message), already
+  // shown to the user, fixed server strings that never contain the export key (the key is created
+  // after authorization and only ever leaves in the success `X-Export-Key` header). The point
+  // inside still receives `{ project }` ONLY.
   let {
     project,
     exportError,

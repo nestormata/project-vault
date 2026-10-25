@@ -211,7 +211,16 @@ and ask for the point in PV (a repeated need is a PV story).
   times, inside the row's Monitoring cell (never between `<tr>` siblings); its `data` is the page's
   `__inject` entry, not per row, so a fill that needs per-row data reads `props.endpoint.id`.
   `project.detail.export` receives `{ project }` only:
-  the one-time export key never reaches a contribution. The regions are `project.detail.{summary,export,tiles,
+  the one-time export key never reaches a contribution. **Export failure text (Story 62-2 D3, amended by
+  DW-610):** since the Story 69-12 split the failure message is a prop of the `project.detail.export-error`
+  region component, so a REPLACEMENT of that component (M4) receives `{ project, exportError: string | null,
+data? }`, where `exportError` is the raw API error message of the export call (for example "No access",
+  "Project not found", "An unexpected error occurred", or a client network error message). It is already
+  shown to the user and holds no secret material: the export endpoint's failures are fixed strings, a 500
+  is the generic "An unexpected error occurred", and the export key is created only after authorization and
+  leaves in the success `X-Export-Key` header, never in an error. The points keep receiving `{ project }`
+  only, and the key, `exporting` and the copy status still never leave `ProjectExportKeyFlow`.
+  `ProjectExportPanel.regions.test.ts` pins this shape. The regions are `project.detail.{summary,export,tiles,
 not-found}`, `project.layout.nav` and `dashboard.home.{vault-sealed,org-summary,project-summary,rotations,
 activity,monitoring,suggested-actions,summary-unavailable,empty}`, each a component you can replace (M4).
   Story 69-3 adds the monitoring regions: `project.service-endpoints.{header,alerts,table,row,empty,not-found}`,
@@ -317,8 +326,8 @@ file together with its region cannot keep the figure at 100 %. A `<InjectionPoin
 never renders, or behind a literal-false `{#if}`, does not count as rendering its point (it is reported as dead).
 `pnpm check-route-regions --print` also lists every top-level use (`covered` or `UNCOVERED`) and reports every region
 component of more than 60 non-blank template lines (`OVERSIZE`): a section a CM author cannot inject between. The
-report is advisory while `OVERSIZE_ENFORCEMENT` (one constant in `scripts/lib/route-regions.ts`, no component list) is
-`false`; the batch stories 69-10..69-12 split the 38 components and the last one turns it on.
+finding is a problem with no off switch and no component list (the batch stories 69-10..69-12 split the 38
+components; DW-610 removed the flag).
 
 **Shape.** The route file keeps the marker, the point and the data; the component keeps the markup and the logic only
 that region uses:
@@ -482,7 +491,7 @@ region component may hold more than 60 template lines from now on:
 | `/settings/themes`                        | `settings.themes.reload`, `.org-default`                                                                                                                                                                                                                                                    |
 | `/settings/notifications`                 | `settings.notifications.channels-header`, `.channels-head`, `.channels-row` (once per row, viewer flags only, no `preferences`)                                                                                                                                                             |
 | `/projects/new`                           | `project.new.name`, `.slug`, `.description`, `.error`, `.submit`                                                                                                                                                                                                                            |
-| `/projects/[projectId]`                   | `project.detail.export-intro`, `.export-error`, `.export-key` (`{ project }` only; the export key never reaches a point)                                                                                                                                                                    |
+| `/projects/[projectId]`                   | `project.detail.export-intro`, `.export-error`, `.export-key` (`{ project }` only; the export key never reaches a point; a replacement of `export-error` also gets the non-secret `exportError` text)                                                                                       |
 | `/projects/[projectId]/machine-users/new` | `project.machine-users-new.name`, `.role`, `.description`, `.error`, `.submit`                                                                                                                                                                                                              |
 | `/projects/[projectId]/service-endpoints` | `project.service-endpoints.row-status`, `.row-actions` (once per row, inside a cell)                                                                                                                                                                                                        |
 | `/projects/[projectId]/status-page`       | `project.status-page.link-header`, `.link-display` (flags only, never the link)                                                                                                                                                                                                             |
@@ -490,8 +499,7 @@ region component may hold more than 60 template lines from now on:
 | `/platform/upgrade`                       | `platform.upgrade.version`, `.cli-policy`, `.procedure`, `.api-docs`                                                                                                                                                                                                                        |
 | `/extensions/panels/[slot]/[...subpath]`  | `extensions.panels-detail.panel`                                                                                                                                                                                                                                                            |
 
-`pnpm check-route-regions` now fails an `OVERSIZE` region component (one constant, `OVERSIZE_ENFORCEMENT`, no component
-list). A new section of a big component therefore needs its own sub-region component.
+`pnpm check-route-regions` fails an `OVERSIZE` region component (no flag, no component list). A new section of a big component therefore needs its own sub-region component.
 
 ## Hooks, header policy and protected paths
 

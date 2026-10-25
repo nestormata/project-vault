@@ -25,13 +25,9 @@ const STABLE_MARKER = '@pv-stable'
 /** Story 69.6 Q1/AC-4: a region component longer than this holds more than one section, and a CM
  * author cannot inject between its sections until each becomes a sub-region component. */
 export const MAX_REGION_COMPONENT_LINES = 60
-/**
- * The OVERSIZE finding is enforced (Story 69.12 turned it on, after stories 69-10, 69-11, 69-14 and
- * 69-12 split every region component over the limit): a region component over
- * `MAX_REGION_COMPONENT_LINES` is a problem. It is a switch for the whole rule, never a list of
- * component names: no component is exempt by name.
- */
-export const OVERSIZE_ENFORCEMENT = true
+// The OVERSIZE finding is always a problem (Story 69.12 turned it on after stories 69-10, 69-11,
+// 69-14 and 69-12 split every region component over the limit; DW-610 item 4 removed the off
+// switch): there is no flag and no component list, so no component is exempt.
 
 export type AuditStatus = 'done' | 'MISSING' | 'UNPARSEABLE' | 'OVERSIZE'
 
@@ -56,14 +52,9 @@ export interface UseRow extends TopLevelUse {
   file: string
 }
 
-export interface AuditOptions {
-  /** Defaults to `OVERSIZE_ENFORCEMENT`; tests set it to prove both modes. */
-  enforceOversize?: boolean
-}
-
 export interface AuditResult {
   rows: AuditRow[]
-  /** One message per OVERSIZE region (a problem only when enforcement is on). */
+  /** One message per OVERSIZE region (each is also a problem). */
   oversize: string[]
   /** Every top-level use of every route file; the listing AC-1 asks for. */
   uses: UseRow[]
@@ -215,7 +206,7 @@ function auditRoute(
   }
 }
 
-export function auditRouteRegions(webRoot: string, options: AuditOptions = {}): AuditResult {
+export function auditRouteRegions(webRoot: string): AuditResult {
   const { routes } = listRouteFiles(webRoot)
   const registry = readRegistry(webRoot)
   const result: AuditResult = {
@@ -237,7 +228,7 @@ export function auditRouteRegions(webRoot: string, options: AuditOptions = {}): 
   if (registry === null) result.problems.push('the injection-point registry file is missing')
   for (const route of routes) auditRoute(webRoot, route, registry, ctx, result)
   result.oversize = oversizeMessages(result.rows)
-  if (options.enforceOversize ?? OVERSIZE_ENFORCEMENT) result.problems.push(...result.oversize)
+  result.problems.push(...result.oversize)
   const census = censusProblem(webRoot, routes.length)
   if (census !== null) result.problems.push(census)
   return result

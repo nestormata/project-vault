@@ -7,12 +7,7 @@ import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { run } from './check-route-regions.js'
-import {
-  auditRouteRegions,
-  formatTable,
-  formatUsesTable,
-  OVERSIZE_ENFORCEMENT,
-} from './lib/route-regions.js'
+import { auditRouteRegions, formatTable, formatUsesTable } from './lib/route-regions.js'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
 
 // The audit's own source, loaded as raw text at transform time (the lint-clean loading pattern).
@@ -198,27 +193,24 @@ describe('route-regions audit: top-level uses and oversize components (69.6 AC-1
     expect(result.problems.join('\n')).toContain('render-only')
   })
 
-  it('reports a region component over 60 template lines as OVERSIZE, a problem unless the rule is switched off per call', () => {
+  it('reports a region component over 60 template lines as OVERSIZE, always a problem (the rule has no off switch)', () => {
     const long = `<div>\n${'  <p>line</p>\n'.repeat(60)}</div>\n`
     const root = webTree({ 'src/lib/components/things/ThingsTable.svelte': long })
-    const reported = auditRouteRegions(root, { enforceOversize: false })
+    const reported = auditRouteRegions(root)
     expect(reported.rows[0]).toMatchObject({ componentLines: 62, status: 'OVERSIZE' })
     expect(reported.oversize).toHaveLength(1)
-    expect(reported.problems).toEqual([])
-    expect(auditRouteRegions(root).problems.join('\n')).toContain('OVERSIZE')
+    expect(reported.problems).toEqual(reported.oversize)
+    expect(reported.problems.join('\n')).toContain('OVERSIZE')
     const exactly = `<div>\n${'  <p>line</p>\n'.repeat(58)}</div>\n`
     const ok = auditRouteRegions(
-      webTree({ 'src/lib/components/things/ThingsTable.svelte': exactly }),
-      {
-        enforceOversize: true,
-      }
+      webTree({ 'src/lib/components/things/ThingsTable.svelte': exactly })
     )
     expect(ok.rows[0]).toMatchObject({ componentLines: 60, status: 'done' })
     expect(ok.oversize).toEqual([])
   })
 
-  it('the oversize switch is on, names no component and the tree has no OVERSIZE region', () => {
-    expect(OVERSIZE_ENFORCEMENT).toBe(true)
+  it('the oversize rule has no switch, names no component and the tree has no OVERSIZE region', () => {
+    expect(ROUTE_REGIONS_SOURCE).not.toMatch(/enforceOversize|OVERSIZE_ENFORCEMENT/)
     expect(ROUTE_REGIONS_SOURCE).not.toMatch(
       /allowlist|allow-list|baseline|ignoreList|\.svelte'\s*,\s*'/i
     )

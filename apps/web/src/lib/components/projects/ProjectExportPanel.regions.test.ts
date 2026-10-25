@@ -4,6 +4,15 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { ApiClientError } from '$lib/api/client.js'
 import { sampleProject } from '$lib/test/fixtures.js'
 
+// The component's own source, loaded as raw text at transform time (the lint-clean loading pattern).
+const ERROR_REGION_SOURCE: string = Object.values(
+  import.meta.glob('./ProjectExportErro[r].svelte', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  })
+).join('')
+
 // Story 69.12: the export section is one sub-region per concern (description, failure message, the
 // export with its one-time reveal). A probe contribution lands after its own section, every point
 // receives `{ project }` ONLY, and the export key text exists in the key sub-region alone (Story
@@ -27,6 +36,7 @@ const project = sampleProject({ id: 'p1', name: 'Payments API' })
 const exported = { blob: new Blob(['x']), filename: 'p.pvexport', exportKey: KEY }
 
 let Panel: Component<Record<string, unknown>>
+let ProjectExportError: Component<Record<string, unknown>>
 beforeAll(async () => {
   const probe = (await import('$lib/test/injection/Probe.svelte')).default
   for (const point of POINTS) {
@@ -35,6 +45,8 @@ beforeAll(async () => {
     }))
   }
   Panel = (await import('./ProjectExportPanel.svelte')).default as unknown as typeof Panel
+  ProjectExportError = (await import('./ProjectExportError.svelte'))
+    .default as unknown as typeof ProjectExportError
 }, 60_000)
 beforeEach(() => {
   api.exportProject.mockReset()
@@ -164,6 +176,49 @@ describe('ProjectExportPanel export key confinement (Story 62-2 D3)', () => {
     }
     for (const el of screen.getAllByTestId('probe')) {
       expect(el.textContent).not.toMatch(/exportKey|exporting|exportError|revealed|copyStatus/)
+    }
+  })
+})
+
+describe('ProjectExportError prop contract (Story 62-2 D3, amended by DW-610 item 1)', () => {
+  it('a replacement of the export-error region receives exactly { project, exportError, data }', () => {
+    // The component's declared props are the documented replacement contract: no more, no less.
+    const start = ERROR_REGION_SOURCE.indexOf('let {')
+    const end = ERROR_REGION_SOURCE.indexOf('= $props()')
+    const declaration = ERROR_REGION_SOURCE.slice(start, end)
+    const squashed = declaration.split(/\s+/).join(' ')
+    expect(squashed).toBe(
+      'let { project, exportError, data, }: { project: ProjectOverview exportError: string | null data?: Record<string, readonly unknown[]> | undefined } '
+    )
+  })
+
+  it('renders the raw API error text, and the point inside still gets { project } only', () => {
+    render(ProjectExportError, {
+      props: { project, exportError: 'No access', data: fills },
+    })
+    expect(screen.getByText('No access')).toBeTruthy()
+    const point = probe('project.detail.export-error')
+    expect(point.getAttribute('data-keys')).toBe('data,params,project,routeId')
+    expect(point.textContent).not.toContain('No access')
+    expect(point.textContent).not.toContain('exportError')
+  })
+
+  it('renders no message for a null error, the point still renders', () => {
+    render(ProjectExportError, { props: { project, exportError: null, data: fills } })
+    expect(document.querySelector('p.text-red-700')).toBeNull()
+    expect(screen.getAllByTestId('probe')).toHaveLength(1)
+  })
+
+  it('a failed export carries the error text and never the key into the panel points', async () => {
+    api.exportProject.mockRejectedValueOnce(
+      new ApiClientError(500, null, 'An unexpected error occurred')
+    )
+    mount()
+    await fireEvent.click(exportButton())
+    await screen.findByText('An unexpected error occurred')
+    for (const el of screen.getAllByTestId('probe')) {
+      expect(el.textContent).not.toContain('An unexpected error occurred')
+      expect(el.textContent).not.toContain(KEY)
     }
   })
 })
