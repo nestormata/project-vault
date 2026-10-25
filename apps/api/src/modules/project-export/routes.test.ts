@@ -136,6 +136,21 @@ describe('project-export routes (Story 28.9)', () => {
     const response = await callExport(app, viewer.cookies, projectId)
 
     expect(response.statusCode).toBe(403)
+    // Story 69.17: the secureRoute project-role gate refuses a project viewer before the handler.
+    expect(response.json<{ code: string }>().code).toBe('insufficient_project_role')
+    expect(response.headers['x-export-key']).toBeUndefined()
+  })
+
+  it('AC-1 negative: a project member without project or org admin cannot export (403, no key generated)', async () => {
+    const { owner, projectId } = await createFixture('insufficient-member')
+    const member = await addUserToOrg(app, owner.orgId, 'insufficient-member', {
+      orgRole: 'member',
+    })
+    await addProjectMember(owner.orgId, projectId, member.userId, 'member')
+
+    const response = await callExport(app, member.cookies, projectId)
+
+    expect(response.statusCode).toBe(403)
     expect(response.json<{ code: string }>().code).toBe('project_export_requires_admin')
     expect(response.headers['x-export-key']).toBeUndefined()
   })

@@ -52,6 +52,7 @@
     {projectId}
     {credentialId}
     {orgRole}
+    project={pointProps.project}
     {origin}
     {shares}
     {sharesTotal}

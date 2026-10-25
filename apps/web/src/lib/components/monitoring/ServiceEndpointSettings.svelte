@@ -34,7 +34,7 @@
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 
-  const canManage = $derived(canManageMonitoredAssets(orgRole))
+  const canManage = $derived(canManageMonitoredAssets({ orgRole, project }))
 
   // AC-E4: unlike services/certificates/domains, the endpoint edit form diffs against the loaded
   // values and PATCHes only what actually changed. `url` in particular starts blank (a fresh

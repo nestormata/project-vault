@@ -33,6 +33,13 @@ import { env } from '../config/env.js'
 import { requireOrgRole, type OrgRole } from '../plugins/require-org-role.js'
 import { enforceUserRateLimit } from './route-helpers.js'
 import { setRlsOrgContext } from '../middleware/rls.js'
+import { effectiveProjectRoleForCaller } from '../modules/projects/project-access.js'
+import {
+  hasProjectIdParam,
+  resolveProjectRoleGate,
+  type ProjectRolePolicy,
+  type ProjectRoleUngatedReason,
+} from './secure-route-project-role.js'
 import { forEachSequential } from './for-each-sequential.js'
 import {
   installDelegationStages,
@@ -90,6 +97,10 @@ export type SecureRouteRegistration = {
   defaultAuditEventType: string | null
   // Story 71.3 AC-1: true only for a route whose resolved `security` declares `delegation`.
   delegation: boolean
+  // Story 69.17: the resolved project-role gate, or null when none runs.
+  minimumProjectRole: OrgRole | null
+  // Story 69.18: why an extension's own write under `:projectId` runs ungated (boot log), or null.
+  projectRoleUngated: ProjectRoleUngatedReason | null
 }
 
 type RouteFastify = {
@@ -151,6 +162,13 @@ export type SecureRouteRegistrationOptions = {
     requireOrgScope?: boolean
     minimumRole?: OrgRole
     allowedRoles?: OrgRole[]
+    // Story 69.17 (DW-606): the minimum EFFECTIVE project role (org owner/admin bypass, else the
+    // caller's own membership row, else the org role) for the project named by `:projectId`,
+    // checked in addition to the org-role floor. Every PV POST/PUT/PATCH/DELETE route whose URL
+    // has a `:projectId` segment defaults to 'member', so a project viewer is read-only; declare
+    // another role only with a reason. Story 69.18: an extension's own security gets the same
+    // default from extension-api 3.37.0 on (`secure-route-project-role.ts`).
+    minimumProjectRole?: OrgRole
     requireMfa?: boolean
     writeAuditEvent?: boolean | AuditConfig
     rateLimit?: false | { max: number; timeWindowMs?: number; key?: string }
@@ -468,6 +486,10 @@ type ResolvedSecurity = {
   extensionSecurity: boolean
   // Story 71.3: the normalized `security.delegation`, or false for a session route.
   delegation: false | NormalizedDelegation
+  // Story 69.17/69.18: null when no project-role check runs (no `:projectId` write, an explicit
+  // 'viewer', which every caller meets, or an extension route ungated for `projectRoleUngated`).
+  minimumProjectRole: OrgRole | null
+  projectRoleUngated: ProjectRoleUngatedReason | null
 }
 
 type RequestPhase = 'rls' | 'handler' | 'audit'
@@ -492,20 +514,98 @@ function withAuditSendGuard(reply: FastifyReply, enabled: boolean): () => void {
 function resolveSecurity(
   options: SecureRouteRegistrationOptions,
   defaultRateLimitKey: string,
-  extensionSecurity = false
+  projectRolePolicy: ProjectRolePolicy = 'pv'
 ): ResolvedSecurity {
   const security = options.security ?? {}
   const requireAuth = security.requireAuth !== false
   const rateLimit = security.rateLimit ?? { max: 60, timeWindowMs: 60_000 }
+  const projectRoleGate = resolveProjectRoleGate({
+    method: options.method,
+    url: options.url,
+    security,
+    policy: projectRolePolicy,
+  })
   return {
     requireAuth,
     requireOrgScope: security.requireOrgScope !== false && requireAuth,
     rateLimit:
       rateLimit === false ? false : { ...rateLimit, key: rateLimit.key ?? defaultRateLimitKey },
     rateLimitKeyIsDefault: rateLimit !== false && rateLimit.key === undefined,
-    extensionSecurity,
+    extensionSecurity: projectRolePolicy !== 'pv',
     delegation: normalizeDelegation(security.delegation),
+    minimumProjectRole: projectRoleGate.minimumProjectRole,
+    projectRoleUngated: projectRoleGate.ungated,
   }
+}
+
+// Story 69.18: a route without org scope (an extension writing its own store) has no request
+// transaction, so the gate reads the membership row in its own short org-scoped one. Same
+// decision, same 403, still before the handler; a failed RLS setup is the usual 503.
+async function rejectUnscopedBelowProjectRole(input: {
+  options: SecureRouteRegistrationOptions
+  auth: AuthContext
+  minimumProjectRole: OrgRole
+  request: FastifyRequest
+  reply: FastifyReply
+  state: { phase: RequestPhase }
+}): Promise<boolean> {
+  const db = (input.options.db ?? getDb()) as TransactionalDb
+  const rejected = await db.transaction(async (tx) => {
+    input.state.phase = 'rls'
+    await setRlsOrgContext(
+      tx as { execute: (query: unknown) => Promise<unknown> },
+      input.auth.orgId
+    )
+    input.state.phase = 'handler'
+    return rejectIfBelowProjectRole(
+      tx as Tx,
+      input.auth,
+      input.minimumProjectRole,
+      input.request,
+      input.reply
+    )
+  })
+  return rejected === true
+}
+
+const INSUFFICIENT_PROJECT_ROLE = {
+  code: 'insufficient_project_role',
+  message: 'Your role in this project does not permit this action',
+} as const
+
+function projectIdParamOf(request: FastifyRequest): string {
+  return stringValueForKey(normalizeRecord(request.params), 'projectId') ?? ''
+}
+
+// Story 69.17 AC-1: runs inside the request transaction (the membership row is RLS-scoped) and
+// before the handler and the default audit write, so a denied write runs no business code and
+// writes no row. The decision reads only the caller's org role and own membership row: a project
+// in another org, or a missing one, falls back to the org role and reaches the handler's own 404.
+async function rejectIfBelowProjectRole(
+  tx: Tx,
+  auth: AuthContext,
+  minimumProjectRole: OrgRole,
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<boolean> {
+  const projectId = projectIdParamOf(request)
+  const effectiveRole = await effectiveProjectRoleForCaller(tx, auth, projectId)
+  if (roleRank(effectiveRole) >= roleRank(minimumProjectRole)) return false
+  request.log.warn(
+    {
+      eventType: 'project.write_denied',
+      orgId: auth.orgId,
+      projectId,
+      callerId: auth.userId,
+      effectiveRole,
+      minimumProjectRole,
+      method: request.method,
+      route: request.routeOptions?.url,
+    },
+    'Project write denied by project role'
+  )
+  reply.status(403).send(INSUFFICIENT_PROJECT_ROLE)
+  return true
 }
 
 async function handlePublicRequest(
@@ -701,6 +801,7 @@ async function runProtectedHandler({
   auth,
   options,
   requireOrgScope,
+  minimumProjectRole,
   request,
   reply,
   auditWriter,
@@ -709,6 +810,7 @@ async function runProtectedHandler({
   auth: AuthContext
   options: SecureRouteRegistrationOptions
   requireOrgScope: boolean
+  minimumProjectRole: OrgRole | null
   request: FastifyRequest
   reply: FastifyReply
   auditWriter: NonNullable<SecureRouteRegistrationOptions['auditWriter']>
@@ -717,6 +819,19 @@ async function runProtectedHandler({
   const auditConfig = auditConfigFor(options)
   const delegation = delegationContextFor(auth, request)
   if (!requireOrgScope) {
+    if (
+      minimumProjectRole &&
+      (await rejectUnscopedBelowProjectRole({
+        options,
+        auth,
+        minimumProjectRole,
+        request,
+        reply,
+        state,
+      }))
+    ) {
+      return { result: reply, postCommitCallbacks: [] }
+    }
     return {
       result: await options.handler(
         { auth, ...delegation, onPostCommit: () => undefined } as unknown as SecureRouteContext,
@@ -734,6 +849,12 @@ async function runProtectedHandler({
     state.phase = 'rls'
     await setRlsOrgContext(tx as { execute: (query: unknown) => Promise<unknown> }, auth.orgId)
     state.phase = 'handler'
+    if (
+      minimumProjectRole &&
+      (await rejectIfBelowProjectRole(typedTx, auth, minimumProjectRole, request, reply))
+    ) {
+      return reply
+    }
     const restoreReplySend = withAuditSendGuard(reply, Boolean(auditConfig))
     let handlerResult: unknown
     try {
@@ -921,6 +1042,7 @@ async function handleSecureRouteRequest({
       auth,
       options,
       requireOrgScope: resolvedSecurity.requireOrgScope,
+      minimumProjectRole: resolvedSecurity.minimumProjectRole,
       request,
       reply,
       auditWriter: options.auditWriter ?? defaultAuditWriter,
@@ -1026,7 +1148,24 @@ function assertSecureRouteConfig(
   if (!resolvedSecurity.requireOrgScope && auditConfigFor(options)) {
     throw new Error('SecureRoute: writeAuditEvent requires requireOrgScope')
   }
+  assertProjectRoleConfig(options, resolvedSecurity)
   assertCapabilityConfig(options, resolvedSecurity)
+}
+
+// Story 69.17/69.18: the project-role gate reads `:projectId` and ranks the authenticated caller,
+// so a declared role on a URL without that segment, or a gate on an anonymous route, would be
+// silently skipped. Integrity checks, never a policy. (A route without org scope is gated in its
+// own org-scoped read, see `rejectUnscopedBelowProjectRole`.)
+function assertProjectRoleConfig(
+  options: SecureRouteRegistrationOptions,
+  resolvedSecurity: ResolvedSecurity
+): void {
+  if (options.security?.minimumProjectRole !== undefined && !hasProjectIdParam(options.url)) {
+    throw new Error('SecureRoute: minimumProjectRole requires a :projectId route parameter')
+  }
+  if (resolvedSecurity.minimumProjectRole && !resolvedSecurity.requireAuth) {
+    throw new Error('SecureRoute: minimumProjectRole requires requireAuth')
+  }
 }
 
 /** Story 68.8 AC-3: the effective-config assertion names the extension route that failed it. */
@@ -1046,11 +1185,6 @@ function assertEffectiveConfig(
   }
 }
 
-// Story 68.8 Q14: the route's security is the extension's own declaration (not PV's).
-function isExtensionSecurity(marker: RouteMarker): boolean {
-  return marker.added === true || marker.replaceSecurity === true
-}
-
 function isDefaultAuditConfig(options: SecureRouteRegistrationOptions): boolean {
   const configured = options.security?.writeAuditEvent
   return configured === true || (configured === undefined && MUTATING_METHODS.has(options.method))
@@ -1060,6 +1194,9 @@ type RegistrationPlan = {
   key: string
   origin: SecureRouteRegistration['origin']
   marker: RouteMarker
+  // Story 68.8 Q14 / 69.18: 'pv' when the route's security is PV's own; otherwise it is the
+  // extension's declaration (an add, or an override with `replaceSecurity`).
+  projectRolePolicy: ProjectRolePolicy
   hookPlan?: RouteHookPlan
   logBinding?: Record<string, unknown>
   extraRouteOptions?: Record<string, unknown>
@@ -1102,6 +1239,8 @@ function recordRegistration(
     rateLimitKeyIsDefault: resolvedSecurity.rateLimitKeyIsDefault,
     defaultAuditEventType: defaultAudit?.eventType ?? null,
     delegation: resolvedSecurity.delegation !== false,
+    minimumProjectRole: resolvedSecurity.minimumProjectRole,
+    projectRoleUngated: resolvedSecurity.projectRoleUngated,
   })
 }
 
@@ -1146,7 +1285,7 @@ function registerBuiltRoute(
   options: SecureRouteRegistrationOptions,
   plan: RegistrationPlan
 ): void {
-  const resolvedSecurity = resolveSecurity(options, plan.key, isExtensionSecurity(plan.marker))
+  const resolvedSecurity = resolveSecurity(options, plan.key, plan.projectRolePolicy)
   assertEffectiveConfig(fastify, options, resolvedSecurity, plan.origin !== 'pv', plan.key)
   const routeOptions = buildRouteOptions(fastify, options, plan, resolvedSecurity)
   const routeHost = fastify.withTypeProvider ? fastify.withTypeProvider() : fastify
@@ -1202,6 +1341,7 @@ function overridePlan(
       override: mode,
       ...(entry.declaration.replaceSecurity ? { replaceSecurity: true as const } : {}),
     },
+    projectRolePolicy: entry.declaration.replaceSecurity ? entry.projectRolePolicy : 'pv',
     hookPlan: hookPlanForOverride(entry),
     logBinding: { override: mode },
     ...(extraRouteOptions ? { extraRouteOptions } : {}),
@@ -1231,6 +1371,7 @@ export function secureRoute(fastify: RouteFastify, options: SecureRouteRegistrat
       key,
       origin: 'pv',
       marker: { builtBy: 'secureRoute' },
+      projectRolePolicy: 'pv',
       ...(extraRouteOptions ? { extraRouteOptions } : {}),
     })
   }
@@ -1264,6 +1405,7 @@ export function secureAddedApiRoute(fastify: RouteFastify, entry: ApiRouteAddEnt
       key: routeKey(entry.method, fastify.prefix ?? '', entry.url),
       origin: 'added',
       marker: { builtBy: 'secureRoute', added: true },
+      projectRolePolicy: entry.projectRolePolicy,
       hookPlan: hookPlanForAdd(entry),
       logBinding: { added: true },
     }
@@ -1290,7 +1432,7 @@ export function secureRawRouteReplacement(
   }
   const options = { ...overriddenOptions(base, entry, key), schema: undefined }
   const plan: RegistrationPlan = { ...overridePlan(entry, key), hookPlan: undefined }
-  const resolvedSecurity = resolveSecurity(options, key, isExtensionSecurity(plan.marker))
+  const resolvedSecurity = resolveSecurity(options, key, plan.projectRolePolicy)
   assertEffectiveConfig(fastify, options, resolvedSecurity, true, key)
   recordRegistration(fastify, options, plan, resolvedSecurity)
   return buildRouteOptions(fastify, options, plan, resolvedSecurity)

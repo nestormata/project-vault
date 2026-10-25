@@ -492,6 +492,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.31.0
   - type: `boolean | ApiRouteDelegationDeclaration | undefined`
   - union-members: `undefined`, `false`, `true`, `ApiRouteDelegationDeclaration`
+- member: `minimumProjectRole?`
+  - since: 3.37.0
+  - type: `ApiRouteOrgRole | undefined`
+  - union-members: `undefined`, `"owner"`, `"admin"`, `"member"`, `"viewer"`
 - member: `minimumRole?`
   - since: 3.27.0
   - type: `ApiRouteOrgRole | undefined`
@@ -768,6 +772,13 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - kind: value
 - type: `(emitters: Readonly<Record<string, ConformanceEmitter>>) => EmitterConformanceResult`
 - call-signature: `(emitters: Readonly<Record<string, ConformanceEmitter>>): EmitterConformanceResult`
+
+## export `checkProjectWriteRoles`
+
+- since: 3.37.0
+- kind: value
+- type: `(manifest: { apiVersion: string; apiRoutes?: { add?: ReadonlyArray<{ method: string; url: string; options?: { security?: object; }; }>; override?: ReadonlyArray<{ method: string; url: string; replaceSecurity?: boolean; security?: object; }>; }; }) => ProjectWriteRoleConformanceResult`
+- call-signature: `(manifest: { apiVersion: string; apiRoutes?: { add?: ReadonlyArray<{ method: string; url: string; options?: { security?: object; }; }>; override?: ReadonlyArray<{ method: string; url: string; replaceSecurity?: boolean; security?: object; }>; }; }): ProjectWriteRoleConformanceResult`
 
 ## export `ConformanceEmitter`
 
@@ -1371,7 +1382,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.36.0"`
+- type: `"3.37.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -3361,6 +3372,43 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `projectName`
   - since: 2.1.0
   - type: `string`
+
+## export `ProjectWriteRoleConformanceResult`
+
+- since: 3.37.0
+- kind: type
+- type: `ProjectWriteRoleConformanceResult`
+- member: `readonly ok`
+  - since: 3.37.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly routes`
+  - since: 3.37.0
+  - type: `readonly ProjectWriteRoleFinding[]`
+
+## export `ProjectWriteRoleFinding`
+
+- since: 3.37.0
+- kind: type
+- type: `ProjectWriteRoleFinding`
+- member: `readonly minimumProjectRole`
+  - since: 3.37.0
+  - type: `"owner" | "admin" | "member" | null`
+  - union-members: `null`, `"owner"`, `"admin"`, `"member"`
+- member: `readonly route`
+  - since: 3.37.0
+  - type: `string`
+- member: `readonly ungated`
+  - since: 3.37.0
+  - type: `ProjectWriteUngatedReason | null`
+  - union-members: `null`, `"declared_viewer"`, `"legacy_contract"`, `"unauthenticated"`
+
+## export `ProjectWriteUngatedReason`
+
+- since: 3.37.0
+- kind: type
+- type: `ProjectWriteUngatedReason`
+- union-members: `"declared_viewer"`, `"legacy_contract"`, `"unauthenticated"`
 
 ## export `PublicRouteHooks`
 

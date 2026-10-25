@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { registerExtension } from '@project-vault/extension-api'
+import { checkProjectWriteRoles, registerExtension } from '@project-vault/extension-api'
 import extension, {
   observed,
   resetObserved,
   setApiRoutesScenario,
   type ApiRoutesScenario,
 } from './index.js'
+
+const PROJECT_ROLE = 'project-role'
 
 const VALID_SCENARIOS: ApiRoutesScenario[] = [
   'default',
@@ -21,6 +23,8 @@ const VALID_SCENARIOS: ApiRoutesScenario[] = [
   'app-hooks-prepend',
   'app-hooks-append',
   'app-hooks-throw',
+  PROJECT_ROLE,
+  'project-role-legacy',
 ]
 
 const PROJECT_ROUTE = 'GET /api/v1/projects/:projectId'
@@ -51,6 +55,42 @@ describe('mock-api-routes-extension', () => {
     setApiRoutesScenario('above-host')
     expect(() => registerExtension(extension.manifest, () => extension.hooksFactory())).toThrow()
     expect(observed.hooksFactoryCalls).toBe(0)
+  })
+
+  it('the project-role handlers count and name their route (Story 69.18)', async () => {
+    setApiRoutesScenario(PROJECT_ROLE)
+    const call = routeCaller()
+    const keys = Object.keys(extension.hooksFactory().apiRoutes?.routes ?? {})
+    for (const key of keys) expect(await call(key)).toEqual({ data: { route: key } })
+    expect([...observed.calls.keys()].sort()).toEqual([...keys].sort())
+  })
+
+  it('the project-role scenario owns one ungated project write on purpose (Story 69.18)', () => {
+    setApiRoutesScenario(PROJECT_ROLE)
+    const current = checkProjectWriteRoles(extension.manifest)
+    expect(current.routes.filter((route) => route.ungated !== null)).toEqual([
+      {
+        route: 'POST /api/v1/cm/projects/:projectId/notes/narrow',
+        minimumProjectRole: null,
+        ungated: 'declared_viewer',
+      },
+      {
+        route: 'POST /api/v1/projects/:projectId/unarchive',
+        minimumProjectRole: null,
+        ungated: 'declared_viewer',
+      },
+    ])
+    setApiRoutesScenario('project-role-legacy')
+    expect(checkProjectWriteRoles(extension.manifest).routes.map((route) => route.ungated)).toEqual(
+      [
+        'legacy_contract',
+        'declared_viewer',
+        null,
+        'legacy_contract',
+        'legacy_contract',
+        'declared_viewer',
+      ]
+    )
   })
 
   it('declares only data in the manifest and keeps every function in the hooks', () => {

@@ -11,7 +11,12 @@ const api = vi.hoisted(() => ({
   updateProjectTags: vi.fn(),
   invalidateAll: vi.fn(),
 }))
-vi.mock('$app/state', () => ({ page: { route: { id: '/(app)/projects' }, params: {} } }))
+const pageState = vi.hoisted(() => ({
+  route: { id: '/(app)/projects' },
+  params: {},
+  data: { user: { orgRole: 'member' } } as { user: { orgRole: string } | null },
+}))
+vi.mock('$app/state', () => ({ page: pageState }))
 vi.mock('$app/navigation', () => ({ invalidateAll: api.invalidateAll }))
 vi.mock('$lib/api/projects.js', () => ({
   archiveProject: api.archiveProject,
@@ -45,6 +50,7 @@ beforeAll(async () => {
   List = (await import('./ProjectsListContent.svelte')).default as unknown as typeof List
 }, 60_000)
 beforeEach(() => {
+  pageState.data = { user: { orgRole: 'member' } }
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   for (const fn of Object.values(api)) fn.mockReset()
 })
@@ -128,6 +134,27 @@ describe('ProjectsListContent shared card state (interaction)', () => {
     expect(await screen.findAllByRole('alert')).toHaveLength(1)
     expect(screen.getByText('Failed to save tags.').getAttribute('role')).toBe('alert')
     expect((document.getElementById('project-tags-p3') as HTMLInputElement).value).toBe('api')
+  })
+
+  it('offers the tag editor to an org admin holding a project viewer row (the API bypass, DW-606)', () => {
+    pageState.data = { user: { orgRole: 'admin' } }
+    mount({ projects: [project({ role: 'viewer' })] })
+    expect(document.getElementById('project-tags-p1')).not.toBeNull()
+  })
+
+  it('offers no tag editor to an org member holding a project viewer row, nor without an org role', () => {
+    mount({ projects: [project({ role: 'viewer' })] })
+    expect(document.getElementById('project-tags-p1')).toBeNull()
+    pageState.data = { user: null }
+    cleanup()
+    mount({ projects: [project({ role: 'owner' })] })
+    expect(document.getElementById('project-tags-p1')).toBeNull()
+  })
+
+  it('offers no tag editor to an org viewer even with a project member row (the route needs org member+)', () => {
+    pageState.data = { user: { orgRole: 'viewer' } }
+    mount({ projects: [project({ role: 'member' })] })
+    expect(document.getElementById('project-tags-p1')).toBeNull()
   })
 
   it('offers no tag editor to a viewer or on an archived project', () => {

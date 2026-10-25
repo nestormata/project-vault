@@ -20,7 +20,7 @@
   let pauseSubmittingId = $state<string | null>(null)
   let pauseErrors = $state<Record<string, string>>({})
 
-  const canManage = $derived(canManageMonitoredAssets(data.orgRole))
+  const canManage = $derived(canManageMonitoredAssets(data))
   const endpointNames = $derived(endpoints.map((e) => ({ id: e.id, name: e.name })))
 
   async function handleDelete(serviceEndpointId: string) {

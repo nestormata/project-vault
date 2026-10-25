@@ -7,6 +7,10 @@ import type {
 } from '@project-vault/extension-api'
 import type { ExtensionState } from '../extensions/loader.js'
 import { appSpecOf, type AppBehaviourSpec } from '../extensions/api-routes/app-behaviour.js'
+import {
+  projectRolePolicyFor,
+  type ExtensionProjectRolePolicy,
+} from './secure-route-project-role.js'
 
 /**
  * Story 68.8 (M7) — the per-app apiRoutes override table, its key normalization and the pieces
@@ -46,6 +50,8 @@ export type ApiRouteOverrideEntry = Readonly<{
   url: string
   declaration: ApiRouteOverrideDeclaration
   implementation: ApiRouteImplementation
+  /** Story 69.18: the project-role policy of this entry's own security (`replaceSecurity`). */
+  projectRolePolicy: ExtensionProjectRolePolicy
 }>
 
 export type ApiRouteAddEntry = Readonly<{
@@ -54,6 +60,8 @@ export type ApiRouteAddEntry = Readonly<{
   url: string
   declaration: ApiRouteAddDeclaration
   implementation: ApiRouteImplementation
+  /** Story 69.18: keyed on the manifest's declared `apiVersion`. */
+  projectRolePolicy: ExtensionProjectRolePolicy
 }>
 
 export type ApiRouteTable = Readonly<{
@@ -98,6 +106,7 @@ export function buildApiRouteTable(state: ExtensionState): ApiRouteTable | undef
   const routes = new Map<string, ApiRouteImplementation | undefined>(
     Object.entries(state.hooks.apiRoutes?.routes ?? {})
   )
+  const projectRolePolicy = projectRolePolicyFor(state.manifest.apiVersion)
   const overrides = new Map<string, ApiRouteOverrideEntry>()
   for (const entry of declaration.override ?? []) {
     const key = routeKey(entry.method, '', entry.url)
@@ -109,6 +118,7 @@ export function buildApiRouteTable(state: ExtensionState): ApiRouteTable | undef
         url: normalizeRouteUrl('', entry.url),
         declaration: entry,
         implementation: implementationFor(routes, entry.method, entry.url),
+        projectRolePolicy,
       })
     )
   }
@@ -119,6 +129,7 @@ export function buildApiRouteTable(state: ExtensionState): ApiRouteTable | undef
       url: entry.url,
       declaration: entry,
       implementation: implementationFor(routes, entry.method, entry.url),
+      projectRolePolicy,
     })
   )
   return Object.freeze({

@@ -114,6 +114,17 @@ by first-party API route composition. Removal comes later, after the replacement
 
 **Removal schedule (since `@project-vault/extension-api` 3.30.0).** These surfaces are now formally deprecated: `@deprecated` markers on every exported symbol and manifest field, and a `### Deprecated` entry in the package CHANGELOG. Nothing is removed and nothing changes at runtime. Removal happens no earlier than the next major (4.0.0 at time of writing) and only after the notice window ends on 2027-01-14 (projected: clock not started, the 90 days run from the day 3.30.0 is published). Replacements: composed UI (ADR 0007 build-time composition) for the panel API; the M5 nav delta of the UI pack for `navItems`; M7 `apiRoutes` for `moduleDataRoutes`/`moduleData`; `ExtensionRequestContext` and `ExtensionActionResult` for `ModuleActionContext` and `ActionResult`.
 
+### Project writes and `security.minimumProjectRole` (since 3.37.0)
+
+With `apiVersion` 3.37.0 or later, every `POST`/`PUT`/`PATCH`/`DELETE` `apiRoutes` route under a
+`:projectId` segment that you add, or re-secure with `replaceSecurity: true`, refuses a caller
+whose effective project role is below `member` (403 `insufficient_project_role`, before your
+handler), the same rule Project Vault applies to its own project writes. Declare
+`minimumProjectRole: 'viewer'` to keep an action open to project viewers (logged at boot), or
+`'admin'`/`'owner'` to raise it. Reads are not gated. An older declared `apiVersion` keeps the old
+behaviour. `checkProjectWriteRoles(manifest)` shows what the host will enforce; see
+[docs/extensions/authoring.md](../../docs/extensions/authoring.md) "Project roles".
+
 ### Delegated routes (`apiRoutes` `security.delegation`)
 
 A route can declare `security.delegation` to accept a service-delegated actor assertion

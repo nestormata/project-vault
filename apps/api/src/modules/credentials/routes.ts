@@ -755,6 +755,7 @@ export function credentialRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         201: CredentialDetailResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: ApiErrorSchema,
         410: ApiErrorSchema,

@@ -10,9 +10,15 @@ describe('rotation permissions (UX-only mirror of server-side role gates)', () =
   })
 
   it('canActOnChecklist is true for member and above (confirm/fail/retry)', () => {
-    expect(canActOnChecklist('owner')).toBe(true)
-    expect(canActOnChecklist('admin')).toBe(true)
-    expect(canActOnChecklist('member')).toBe(true)
-    expect(canActOnChecklist('viewer')).toBe(false)
+    const asMember = { role: 'member' }
+    expect(canActOnChecklist('owner', asMember)).toBe(true)
+    expect(canActOnChecklist('admin', asMember)).toBe(true)
+    expect(canActOnChecklist('member', asMember)).toBe(true)
+    expect(canActOnChecklist('viewer', asMember)).toBe(false)
+  })
+
+  it('canActOnChecklist is false for a project viewer (Story 69.17, DW-606)', () => {
+    expect(canActOnChecklist('member', { role: 'viewer' })).toBe(false)
+    expect(canActOnChecklist('admin', { role: 'viewer' })).toBe(true)
   })
 })

@@ -653,7 +653,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // optional `actingUserId` / `viewer` / `actor` arguments on the credential-sharing host methods and
 // three new error classes (policy row 1). A caller that passes none of the new arguments behaves
 // exactly as before.
-export const EXTENSION_API_VERSION = '3.36.0'
+// Story 69.18 — bumped as a minor (3.36.0 -> 3.37.0): the optional
+// `ApiRouteSecurity.minimumProjectRole` (policy row 1) and the project-role gate default for routes
+// whose manifest declares 3.37.0 or later. The default is keyed on the declared version, so a
+// manifest declaring 3.36.0 or older behaves exactly as before.
+export const EXTENSION_API_VERSION = '3.37.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

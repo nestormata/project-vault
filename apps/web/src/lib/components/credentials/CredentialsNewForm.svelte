@@ -3,13 +3,13 @@
   import type { Snippet } from 'svelte'
   import {
     buildTemplateFieldDrafts,
-    canCreateCredential,
     mapCredentialSubmitError,
     parseTagsInput,
     validateCredentialForm,
     validateFieldSet,
     type FieldDraft,
   } from '$lib/components/onboarding/onboarding-logic.js'
+  import { canCreateCredentialInProject } from '$lib/credentials/permissions.js'
   import { resolve } from '$app/paths'
   import { goto } from '$app/navigation'
   import { createCredential } from '$lib/api/credentials.js'
@@ -45,7 +45,7 @@
   let errorMessage = $state<string | null>(null)
   let fieldErrors = $state<{ name?: string; value?: string }>({})
   let fieldSetErrors = $state<Record<number, string>>({})
-  const canCreate = $derived(canCreateCredential(pageData.orgRole))
+  const canCreate = $derived(canCreateCredentialInProject(pageData.orgRole, pageData.project))
   const useFieldSet = $derived(template !== '')
   function hasFieldEdits(): boolean {
     return fields.some((f) => f.value.trim() !== '')

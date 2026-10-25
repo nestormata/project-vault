@@ -23,7 +23,7 @@
   let submitting = $state(false)
   let errorMessage = $state<string | null>(null)
   let fieldErrors = $state<{ name?: string }>({})
-  const canCreate = $derived(canManageMonitoredAssets(data.orgRole))
+  const canCreate = $derived(canManageMonitoredAssets(data))
   async function submitForm() {
     if (submitting || !canCreate) return
     fieldErrors = name.trim() ? {} : { name: 'Name is required' }

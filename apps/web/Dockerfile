@@ -2,7 +2,7 @@
 # is redundant since the digest alone already fixes the exact image).
 FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS builder
 
-RUN npm install -g pnpm@11.28.3 --ignore-scripts
+RUN npm install -g pnpm@11.28.8 --ignore-scripts
 
 WORKDIR /app
 

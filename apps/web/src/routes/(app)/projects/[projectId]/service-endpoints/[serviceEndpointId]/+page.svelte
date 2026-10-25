@@ -16,7 +16,7 @@
 
   let { data } = $props()
 
-  const canManage = $derived(canManageMonitoredAssets(data.orgRole))
+  const canManage = $derived(canManageMonitoredAssets(data))
 
   let deleteError = $state<string | null>(null)
   let pauseSubmitting = $state(false)

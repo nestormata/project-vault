@@ -103,6 +103,35 @@ function publicationDate(changelog: string, version: string): Date | undefined {
   return parseIsoDate(match[1])
 }
 
+const ENTRY_HEADING = /^##\s+(\d+\.\d+\.\d+)\b.*?(\d{4}-\d{2}-\d{2})/
+const DEPRECATED_SECTION = /^### Deprecated[\s\S]*?(?=^### |^## |(?![\s\S]))/m
+
+function namesSymbol(text: string, symbol: string): boolean {
+  return text.split(/[^\w$]+/).includes(symbol)
+}
+
+/**
+ * The policy's clock starts when the deprecation is published, not at each later release: the
+ * oldest CHANGELOG entry whose `### Deprecated` section names the symbol (whole word). A symbol no
+ * entry names yet is being deprecated now, so the current version's entry is its publication.
+ */
+function deprecationPublicationDate(
+  changelog: string,
+  symbol: string,
+  currentVersion: string
+): Date | undefined {
+  const entries = changelog.split(/^(?=## )/m)
+  const deprecating = entries
+    .filter((entry) => ENTRY_HEADING.test(entry))
+    .filter((entry) => namesSymbol(DEPRECATED_SECTION.exec(entry)?.[0] ?? '', symbol))
+    .map((entry) => ENTRY_HEADING.exec(entry)?.[2])
+    .filter((date): date is string => date !== undefined)
+    .map(parseIsoDate)
+    .filter((date): date is Date => date !== undefined)
+    .sort((left, right) => left.valueOf() - right.valueOf())
+  return deprecating[0] ?? publicationDate(changelog, currentVersion)
+}
+
 function parseIsoDate(value: string): Date | undefined {
   const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!parts) return undefined
@@ -124,7 +153,8 @@ function validateNotice(
 ): string[] {
   const notice = noticeText ? parseIsoDate(noticeText) : undefined
   if (!notice) return [`${symbol}: missing or invalid notice-window-ends field`]
-  return published && notice.valueOf() < published.valueOf() + 90 * 24 * 60 * 60 * 1000
+  if (!published) return [`${symbol}: no dated CHANGELOG entry publishes this deprecation`]
+  return notice.valueOf() < published.valueOf() + 90 * 24 * 60 * 60 * 1000
     ? [`${symbol}: notice-window-ends must be at least 90 days after publication`]
     : []
 }
@@ -151,22 +181,24 @@ function validateDeprecationEntry(
 export function checkDeprecationMarkers(input: DeprecationInput): string[] {
   const errors: string[] = []
   const current = semver.parse(input.currentVersion)
-  const published = publicationDate(input.changelogSource, input.currentVersion)
   const deprecatedSymbols: string[] = []
   for (const match of input.indexSource.matchAll(
     /\/\*\*[\s\S]*?@deprecated[\s\S]*?\*\/\s*(export\s+[^\n]+)/g
   )) {
     const symbol = exportedNames(match[1])[0] ?? 'unknown symbol'
     deprecatedSymbols.push(symbol)
+    const published = deprecationPublicationDate(
+      input.changelogSource,
+      symbol,
+      input.currentVersion
+    )
     errors.push(...validateDeprecationEntry(match[0], symbol, current, published))
   }
   if (deprecatedSymbols.length > 0) {
     const latest = latestChangelogEntry(input.changelogSource)
-    const deprecatedEntry = latest
-      ? /^### Deprecated[\s\S]*?(?=^### |^## |(?![\s\S]))/m.exec(latest)?.[0]
-      : undefined
+    const deprecatedEntry = latest ? DEPRECATED_SECTION.exec(latest)?.[0] : undefined
     for (const symbol of deprecatedSymbols)
-      if (!deprecatedEntry?.includes(symbol))
+      if (!namesSymbol(deprecatedEntry ?? '', symbol))
         errors.push(`${symbol}: CHANGELOG's newest entry must announce this deprecated export`)
   }
   return errors

@@ -9,8 +9,12 @@ type TransactionalDb = {
   transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>
 }
 
+export function isUuid(value: string): boolean {
+  return UUID_REGEX.test(value)
+}
+
 function assertUuid(value: string, caller: string): void {
-  if (!UUID_REGEX.test(value)) {
+  if (!isUuid(value)) {
     throw new Error(`${caller}: invalid orgId - expected UUID, received: "${value}"`)
   }
 }

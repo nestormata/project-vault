@@ -13,6 +13,7 @@
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import {
     archivedBannerFor,
+    canRevealCredential,
     credentialKeyOf,
     fieldMetaOf,
     isCredentialArchived,
@@ -31,6 +32,7 @@
     projectId,
     credentialId,
     orgRole,
+    project,
     origin,
     shares,
     sharesTotal,
@@ -42,6 +44,7 @@
     projectId: string
     credentialId: string
     orgRole: CredentialPointExtras['orgRole']
+    project: CredentialPointExtras['project']
     origin: string
     shares?: CredentialShareSummary[]
     sharesTotal?: number
@@ -336,7 +339,8 @@
   </div>
 {/if}
 
-{#if orgRole !== 'viewer'}
+<!-- Story 69.17: share creation needs the reveal gate's effective project role (the API reuses it). -->
+{#if canRevealCredential(orgRole, project)}
   <!-- Story 17.2 AC-21: recipient-type toggle — org member (17.1) or external email. -->
   <div
     class="mt-4 flex gap-2 text-sm font-medium text-slate-700"

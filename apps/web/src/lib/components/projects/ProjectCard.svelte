@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths'
   import type { ProjectListPage } from '$lib/api/projects.js'
   import ProjectCardActions from './ProjectCardActions.svelte'
+  import ProjectCounts from './ProjectCounts.svelte'
   import ProjectCardTags from './ProjectCardTags.svelte'
   import type { ProjectsListActions } from './projects-list-actions.svelte.js'
 
@@ -34,20 +35,7 @@
   {#if project.description}
     <p class="mt-3 text-slate-600">{project.description}</p>
   {/if}
-  <dl class="mt-4 grid grid-cols-3 gap-2 text-sm">
-    <div>
-      <dt class="text-slate-500">Secrets</dt>
-      <dd class="font-semibold">{project.credentialCount}</dd>
-    </div>
-    <div>
-      <dt class="text-slate-500">Expiring</dt>
-      <dd class="font-semibold">{project.expiringCount}</dd>
-    </div>
-    <div>
-      <dt class="text-slate-500">Alerts</dt>
-      <dd class="font-semibold">{project.alertCount}</dd>
-    </div>
-  </dl>
+  <ProjectCounts {project} />
   <ProjectCardTags {project} {actions} />
   <ProjectCardActions {project} {actions} />
 </li>

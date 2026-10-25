@@ -2,6 +2,62 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.37.0 — 2026-10-25
+
+contract-hash: sha256:b179e81a47e9100fe82e39deffbb08af4bbc4f7a42633400bd1214074c568459
+
+Story 69.18. Additive for every existing extension: the new default applies only to a manifest that
+declares `apiVersion` 3.37.0 or later, so a pack that still declares 3.36.0 or older behaves exactly
+as before (the host logs each of its ungated project writes at boot).
+
+### Added
+
+- `ApiRouteSecurity.minimumProjectRole` (optional `'owner' | 'admin' | 'member' | 'viewer'`): the
+  minimum effective project role, for the project named by the route's `:projectId` parameter, that
+  a caller needs before the handler runs. Effective role = the org role for an org owner or admin,
+  else the caller's own project membership role, else the org role. Below it the host answers 403
+  `{ code: 'insufficient_project_role' }`, runs no handler and writes no audit row. The same gate PV
+  applies to its own project writes since Story 69.17.
+- Default for a manifest declaring 3.37.0 or later: `'member'` on every POST, PUT, PATCH or DELETE
+  `apiRoutes.add` whose URL has a `:projectId` segment, and on every override with
+  `replaceSecurity: true` of such a route (omitting the field in the replaced security does not
+  drop the gate). Reads are never gated by default. An override without `replaceSecurity` keeps
+  PV's own gate, as before. A route without org scope (`requireOrgScope: false`) is gated too: the
+  host reads the membership in its own short org-scoped transaction.
+- `registerExtension()` rejects the field with an out-of-enum value, on a URL without a
+  `:projectId` segment, and above `'viewer'` on a `requireAuth: false` route
+  (`invalid-manifest-field`, the message names the route).
+- `checkProjectWriteRoles(manifest)` conformance helper (types `ProjectWriteRoleConformanceResult`,
+  `ProjectWriteRoleFinding`, `ProjectWriteUngatedReason`): lists every project write the manifest
+  owns with the gate the host will apply, and `ok: false` when any runs ungated. Run it in the
+  extension's CI.
+
+### Migration
+
+When you move a pack to 3.37.0, review every POST, PUT, PATCH and DELETE route under `:projectId`
+that you add or re-secure with `replaceSecurity`. A project viewer now gets 403 there. For an action
+a viewer must keep, typically one that narrows exposure such as revoking a share they created,
+declare `minimumProjectRole: 'viewer'`; the host records each such route at boot
+(`extension.api_route.project_role_ungated`, reason `declared_viewer`). Declare `'admin'` or
+`'owner'` where the action needs more. A handler that already calls
+`projectAuthorization.checkProjectMembership({ minimumRole: 'member' })` keeps working and may
+drop the call.
+
+### Deprecated
+
+This release deprecates nothing. The panel-era surface announced in 3.30.0 is still scheduled for
+removal, and the marker lint expects it named in the newest entry. The types `UIPanel`,
+`UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionContext`, `ModuleActionRequest`,
+`ActionResult`, `ModuleDataRequestContext`, `ModuleDataResult`, `ModuleDataRouteHandler`,
+`ModuleDataRouteDeclaration` and `ExtensionNavItem`; the manifest fields `uiPanelSlots`,
+`moduleActions`, `navItems` and `moduleDataRoutes`; and the hooks `uiPanel`, `moduleAction` and
+`moduleData` with the `'ui-panel'` capability member all go. Move to `ExtensionRequestContext`,
+`ExtensionActionResult`, composed UI and M7 `apiRoutes`.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, recipient CentralizeMe maintainer (the 3.30.0 notice stands).
+
 ## 3.36.0 — 2026-10-13
 
 contract-hash: sha256:dbb4924dbeb83b62be7382187be25a4cd73f40c573391479d018e5ec304db479

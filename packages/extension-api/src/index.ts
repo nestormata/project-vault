@@ -315,9 +315,13 @@ export type {
   BackgroundPromiseConformanceResult,
   ConformanceEmitter,
   EmitterConformanceResult,
+  ProjectWriteRoleConformanceResult,
+  ProjectWriteRoleFinding,
+  ProjectWriteUngatedReason,
 } from './conformance.js'
 export {
   assertExtensionEmittersContained,
   checkBackgroundPromisesHandled,
   checkExtensionEmitters,
+  checkProjectWriteRoles,
 } from './conformance.js'

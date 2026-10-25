@@ -28,7 +28,7 @@
 
   let { data, children }: { data: PageData; children?: Snippet } = $props()
 
-  const canManage = $derived(canManageMonitoredAssets(data.orgRole))
+  const canManage = $derived(canManageMonitoredAssets(data))
   const form = new CertificateFormState()
   let deleteError = $state<string | null>(null)
   // Reset the edit form whenever `data` changes (new load/navigation) — see services' detail page

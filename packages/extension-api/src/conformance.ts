@@ -97,3 +97,99 @@ export async function checkBackgroundPromisesHandled(
   }
   return { ok: unhandledCount === 0, unhandledCount }
 }
+
+/** Why an extension write under `:projectId` runs without the host's project-role gate. */
+export type ProjectWriteUngatedReason = 'declared_viewer' | 'legacy_contract' | 'unauthenticated'
+
+export interface ProjectWriteRoleFinding {
+  /** `"<METHOD> <url>"` as declared. */
+  readonly route: string
+  /** The minimum effective project role the host enforces, or `null` when no check runs. */
+  readonly minimumProjectRole: 'owner' | 'admin' | 'member' | null
+  readonly ungated: ProjectWriteUngatedReason | null
+}
+
+export interface ProjectWriteRoleConformanceResult {
+  /** `true` when every project write the manifest owns runs behind the gate. */
+  readonly ok: boolean
+  readonly routes: readonly ProjectWriteRoleFinding[]
+}
+
+/** The first contract version whose project writes get the default gate (Story 69.18). */
+const PROJECT_ROLE_DEFAULT_SINCE = [3, 37, 0]
+const PROJECT_ID_SEGMENT = /(?:^|\/):projectId(?:\/|$)/
+const PROJECT_WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+type ProjectWriteSecurity = { requireAuth?: boolean; minimumProjectRole?: string } | undefined
+
+function declaresDefaultContract(apiVersion: string): boolean {
+  const parts = apiVersion.split('.').map((part) => Number.parseInt(part, 10))
+  if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) return true
+  const index = parts.findIndex((part, position) => part !== PROJECT_ROLE_DEFAULT_SINCE[position])
+  return index === -1 || (parts[index] ?? 0) > (PROJECT_ROLE_DEFAULT_SINCE[index] ?? 0)
+}
+
+function findingFor(
+  route: string,
+  security: ProjectWriteSecurity,
+  currentContract: boolean
+): ProjectWriteRoleFinding {
+  const declared = security?.minimumProjectRole
+  if (declared === 'owner' || declared === 'admin' || declared === 'member') {
+    return { route, minimumProjectRole: declared, ungated: null }
+  }
+  const ungated = ungatedReason(declared, security, currentContract)
+  return { route, minimumProjectRole: ungated === null ? 'member' : null, ungated }
+}
+
+function ungatedReason(
+  declared: string | undefined,
+  security: ProjectWriteSecurity,
+  currentContract: boolean
+): ProjectWriteUngatedReason | null {
+  if (declared === 'viewer') return 'declared_viewer'
+  if (!currentContract) return 'legacy_contract'
+  if (security?.requireAuth === false) return 'unauthenticated'
+  return null
+}
+
+/**
+ * Story 69.18 — lists every POST, PUT, PATCH or DELETE route under `:projectId` whose security this
+ * manifest owns (`apiRoutes.add`, and overrides with `replaceSecurity: true`) with the project-role
+ * gate the host will apply, the same answer the host's boot log gives. Run it in the extension's
+ * CI and fail on an `ungated` route you did not mean (`ok` is `false` when any route is ungated).
+ * Overrides without `replaceSecurity` keep PV's own gate and are not listed.
+ */
+export function checkProjectWriteRoles(manifest: {
+  apiVersion: string
+  apiRoutes?: {
+    add?: ReadonlyArray<{ method: string; url: string; options?: { security?: object } }>
+    override?: ReadonlyArray<{
+      method: string
+      url: string
+      replaceSecurity?: boolean
+      security?: object
+    }>
+  }
+}): ProjectWriteRoleConformanceResult {
+  const currentContract = declaresDefaultContract(manifest.apiVersion)
+  const owned = [
+    ...(manifest.apiRoutes?.add ?? []).map((entry) => ({
+      ...entry,
+      security: entry.options?.security,
+    })),
+    ...(manifest.apiRoutes?.override ?? []).filter((entry) => entry.replaceSecurity === true),
+  ]
+  const routes = owned
+    .filter(
+      (entry) => PROJECT_WRITE_METHODS.has(entry.method) && PROJECT_ID_SEGMENT.test(entry.url)
+    )
+    .map((entry) =>
+      findingFor(
+        `${entry.method} ${entry.url}`,
+        entry.security as ProjectWriteSecurity,
+        currentContract
+      )
+    )
+  return { ok: routes.every((route) => route.ungated === null), routes }
+}
