@@ -7,7 +7,6 @@ import { DEFAULT_FIELD_KEY } from '@project-vault/shared'
 import { ApiClientError } from '$lib/api/client.js'
 import type { CredentialPointProps } from '$lib/components/composition/injection-points.js'
 import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
-import { canWriteInProject } from '$lib/projects/project-write-access.js'
 import type { OrgRole } from '$lib/credentials/permissions.js'
 
 // AC-L4/AC-D5/AC-V4: the UI has no way to know ahead of time that the parent project is archived, so
@@ -31,10 +30,10 @@ export function credentialKeyOf(projectId: string, credentialId: string): string
 
 type Project = CredentialPointProps['project']
 
-/** Revealing, editing and the dependent-system controls need a creator org role AND an effective
- * project role above viewer (PV's API enforces the same; this only gates the controls). */
+/** Revealing, editing and the dependent-system controls need a creator org role AND a project role
+ * above viewer (PV's API enforces the same; this only gates the controls). */
 export function canRevealCredential(orgRole: OrgRole, project: Project): boolean {
-  return canCreateCredential(orgRole) && canWriteInProject(orgRole, project)
+  return canCreateCredential(orgRole) && project != null && project.role !== 'viewer'
 }
 
 /** Story 28.5 AC6: project-owner-or-org-owner, decided from data the page already has. */
