@@ -5,9 +5,9 @@
   "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=24.0.0",
-    "pnpm": ">=11.28.3"
+    "pnpm": ">=11.28.8"
   },
-  "packageManager": "pnpm@11.28.3+sha512.d49760a13b1755948775a5d4cb1bc4ba871ff2dc941adf851630d044ed722f9b5be8be57bef93166098c80c706bd612c282d05526dd1d0ae660188c086820f35",
+  "packageManager": "pnpm@11.28.8+sha512.f6988a32046b9a3f78d7d7ee0747926bbe905ff9dff73bf19abb87bd7d1906a2ac90d93f73be32b5f9e14c2899569bcb0c9c5ec8a19e083f5d71bbab6dd9e0b8",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",

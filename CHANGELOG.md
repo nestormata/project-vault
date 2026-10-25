@@ -39,6 +39,10 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Fixed
 
+- The `migrate` image's pnpm is updated to 11.28.8, whose bundled `undici` (6.29.1) fixes
+  CVE-2026-109869 (HIGH, denial of service via an unhandled stream error). Building from source
+  now needs pnpm 11.28.8 or newer.
+
 - **Sitewide hygiene** (Story 63.2): authenticated pages no longer open a dead `/api/v1/stream`
   connection, `.env.example` single-quotes `AUTH_DUMMY_PASSWORD_HASH` so `docker compose` stops
   printing 16 "variable is not set" warnings, the register, login, project tag and audit search

@@ -13,7 +13,7 @@
 # commit just to keep `.git` current.
 FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f
 
-RUN npm install -g pnpm@11.28.3 --ignore-scripts
+RUN npm install -g pnpm@11.28.8 --ignore-scripts
 # g++/make/python3: argon2 (packages/crypto) native rebuild, same as apps/api/Dockerfile.
 # git: generated-spec/openapi checks shell out to git against the bind-mounted .git.
 # bash: the root Makefile sets `SHELL := /usr/bin/env bash`; Alpine's base image only ships `sh`.
