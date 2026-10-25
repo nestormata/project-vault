@@ -11,6 +11,14 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Extension project writes get the project-role gate** (Story 69-18, `@project-vault/extension-api`
+  3.37.0). An extension route under a `:projectId` segment that writes (`POST`, `PUT`, `PATCH`,
+  `DELETE`), added through `apiRoutes` or re-secured with `replaceSecurity`, now refuses a project
+  `viewer` with `403 insufficient_project_role` like Project Vault's own project writes, when the
+  extension declares `apiVersion` 3.37.0 or later. New `security.minimumProjectRole` to opt out
+  (`'viewer'`) or raise it, and the `checkProjectWriteRoles` conformance helper. Extensions on an
+  older `apiVersion` keep their behaviour; the API logs each of their ungated project writes at boot
+  (`extension.api_route.project_role_ungated`).
 - **Injection points between the sections of eleven more large pages, and the size rule is enforced** (Story 69-12,
   DW-546). The audit log page (export, verify, search, results), themes, notification preferences, new project, new
   machine user, project export, service endpoints, status page link, machine dormancy alerts, platform upgrade and the

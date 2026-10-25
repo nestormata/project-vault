@@ -575,6 +575,35 @@ reason every `security` object (on an `add` or an override) is checked for unkno
 types (`minimumRol`, `requireMfa: 'yes'` or `minimumRole: 'Admin'` fail the manifest), and two
 entries that differ only by a trailing slash are one route (a duplicate).
 
+**Project roles (since 3.37.0).** Project Vault refuses a project `viewer` on its own project
+writes (Story 69.17), and your routes get the same gate. When the manifest declares `apiVersion`
+3.37.0 or later, every `POST`, `PUT`, `PATCH` or `DELETE` route whose URL has a `:projectId`
+segment, added (`add`) or re-secured (`replaceSecurity: true`), requires an **effective project
+role** of at least `member` for the project in `:projectId`: the caller's organization role if it
+is `owner` or `admin`, else their own project membership role, else their organization role. A
+caller below it gets `403 { code: 'insufficient_project_role' }` after the organization-role floor
+and before your handler; no audit row is written. Reads are never gated by default.
+
+- Set `security.minimumProjectRole` to change it: `'admin'` or `'owner'` raises it, `'viewer'`
+  turns it off for an action a viewer must keep (an operation that only narrows exposure, such as
+  revoking a share they created; Project Vault's own share revoke does the same). Every route that
+  runs ungated is logged at boot (`extension.api_route.project_role_ungated`, with `reason`
+  `declared_viewer`, `legacy_contract` or `unauthenticated`).
+- `replaceSecurity` cannot drop the gate by omission: a replaced `security` without
+  `minimumProjectRole` still gets `member`. An override without `replaceSecurity` keeps Project
+  Vault's own gate, whatever your handler does.
+- Routes with `requireOrgScope: false` (you write your own store) are gated too; Project Vault
+  reads the membership in its own short organization-scoped transaction before your handler.
+- The field fails the manifest on a URL without `:projectId`, and above `'viewer'` on a
+  `requireAuth: false` route (there is no caller to rank). An anonymous project write runs ungated
+  and is logged.
+- A manifest that declares an older `apiVersion` keeps the old behaviour (no default); each of its
+  ungated project writes is logged as `legacy_contract`. Moving to 3.37.0 turns the gate on: review
+  your project writes first. A handler that already calls
+  `projectAuthorization.checkProjectMembership({ minimumRole: 'member' })` keeps working.
+- `checkProjectWriteRoles(manifest)` lists your project writes with the gate the host will apply;
+  fail your CI on an `ungated` entry you did not mean.
+
 **Handler context.** An authenticated, organization-scoped route gets
 `ctx = { auth, tx, onPostCommit, audit }`. `ctx.tx` is Project Vault's request transaction (a
 drizzle `PgTransaction` at runtime, with `app.current_org_id` set, so RLS limits every query to
@@ -775,7 +804,7 @@ session. The declaration is plain data and is validated at registration:
 - A write that carries an `idempotencyKey` is limited to a 1 MiB audit entry (the payload as stored); over it the write
   fails with `payload_too_large`, even though the same payload without a key is accepted. Split or trim large payloads.
 
-##### Host version compatibility of the audit-write contract (3.28.0 to 3.36.0)
+##### Host version compatibility of the audit-write contract (3.28.0 to 3.37.0)
 
 What a consumer gets in each release, and what an older host does with it. "Ignores" means the field is accepted
 and has no effect.
@@ -788,6 +817,7 @@ and has no effect.
 | 3.34.0 | `checkExtensionEmitters`, `assertExtensionEmittersContained`, `checkBackgroundPromisesHandled`               | Package-side helpers; the host is unaffected.                                          |
 | 3.35.0 | `ExtensionManifest.anonymousRouteMinResponseMs`                                                              | Not relied on: confirm the host version first.                                         |
 | 3.36.0 | `CredentialSharingShareRecord.sharedBy`, `viewer` / `actor` / `actingUserId` on credential sharing           | Not relied on: confirm the host version first.                                         |
+| 3.37.0 | `security.minimumProjectRole`, the project-role default, `checkProjectWriteRoles`                            | An older host ignores the field and gates no extension route: check the host version.  |
 
 ```ts
 import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'
