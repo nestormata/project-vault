@@ -1,8 +1,8 @@
 import { env as privateEnv } from '$env/dynamic/private'
-// Deliberately the undici MAJOR that Node 24 bundles (7.x) — a dispatcher from another major
-// handed to the built-in fetch is a known source of subtle incompatibility. apps/api declares its
-// own exact undici pin for its SSRF-guarded fetch; do not unify the two blindly (Story 43.16).
-import { Agent } from 'undici'
+// Node 24's built-in fetch is undici 7 and speaks the v1 dispatcher handler API; an undici 8
+// Agent rejects it ("invalid onRequestStart method"), so the Agent is bridged with
+// Dispatcher1Wrapper. Drop the wrapper once the Node runtime bundles undici 8.
+import { Agent, Dispatcher1Wrapper } from 'undici'
 import {
   INTERNAL_TLS_EXPIRY_WARN_DAYS,
   certificateExpiry,
@@ -48,7 +48,7 @@ export type InternalApiFetchDeps = {
 type Resolved = {
   mode: 'off' | 'tls' | 'mtls'
   material: ResolvedTlsMaterial
-  dispatcher?: Agent
+  dispatcher?: Dispatcher1Wrapper
 }
 
 function writeLogLine(line: InternalApiLogLine): void {
@@ -87,7 +87,7 @@ function resolve(env: EnvLike, createAgent: (options: AgentOptions) => Agent): R
   return {
     mode: material.cert ? 'mtls' : 'tls',
     material,
-    dispatcher: createAgent({ connect }),
+    dispatcher: new Dispatcher1Wrapper(createAgent({ connect })),
   }
 }
 
