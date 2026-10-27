@@ -330,3 +330,4 @@ export is unchanged.
 - [`packages/vault-action/README.md`](../packages/vault-action/README.md) — the GitHub Action.
 - [`packages/cli/README.md`](../packages/cli/README.md) — the `pvault` terminal CLI.
 - [`extensions/README.md`](extensions/README.md) — extending the API surface from an extension.
+
