@@ -37,8 +37,14 @@ interface Node {
   start: number
   name?: string
   data?: string
-  attributes?: { type: string; name: string; value: unknown }[]
-  expression?: { type?: string; name?: string; value?: unknown }
+  attributes?: { type: string; name: string; value: unknown; start: number }[]
+  expression?: {
+    type?: string
+    name?: string
+    value?: unknown
+    expressions?: unknown[]
+    quasis?: { value?: { cooked?: string } }[]
+  }
   [key: string]: unknown
 }
 
@@ -81,13 +87,21 @@ function lineAt(code: string, index: number): number {
   return code.slice(0, index).split('\n').length
 }
 
+/** The string an `{...}` attribute value always yields: `{'x'}`, or a template literal with no
+ * placeholders. */
+function expressionText(tag: Node): unknown {
+  const expression = tag.expression
+  if (expression?.type !== 'TemplateLiteral') return expression?.value
+  return expression.expressions?.length === 0 ? expression.quasis?.[0]?.value?.cooked : undefined
+}
+
 function literalValue(value: unknown): string | null {
   const parts = (Array.isArray(value) ? value : [value]) as (Node | true)[]
   if (parts.length === 0 || parts.some((part) => part === true)) return null
   const texts = parts.map((part) => {
     const node = part as Node
     if (node.type === 'Text') return node.data ?? ''
-    const literal = node.type === 'ExpressionTag' ? node.expression?.value : undefined
+    const literal = node.type === 'ExpressionTag' ? expressionText(node) : undefined
     return typeof literal === 'string' ? literal : null
   })
   if (texts.some((text) => text === null)) return null
@@ -132,27 +146,37 @@ function renderedName(tag: Node): string | undefined {
   return (call?.expression ?? call)?.callee?.name
 }
 
-function literalIdAttributes(node: Node): { attribute: string; value: string }[] {
+type LiteralRef = { attribute: string; value: string; line: number }
+
+function literalIdAttributes(node: Node, code: string): LiteralRef[] {
   return (node.attributes ?? [])
     .filter((entry) => entry.type === 'Attribute' && ID_ATTRIBUTES.includes(entry.name))
-    .map((entry) => ({ attribute: entry.name, value: literalValue(entry.value) }))
-    .filter((entry): entry is { attribute: string; value: string } => entry.value !== null)
+    .map((entry) => ({
+      attribute: entry.name,
+      value: literalValue(entry.value),
+      line: lineAt(code, entry.start),
+    }))
+    .filter((entry): entry is LiteralRef => entry.value !== null)
 }
 
 /** Records what one node contributes: a snippet render, a component use, literal id attributes. */
 function recordNode(
   node: Node,
   site: Site,
+  file: string,
   code: string,
   imports: Map<string, string>,
   out: ParsedFile
 ): void {
   const rendered = node.type === 'RenderTag' ? renderedName(node) : undefined
   if (rendered !== undefined) out.renders.push({ ...site, name: rendered })
-  const line = lineAt(code, node.start)
-  const target = node.type === 'Component' ? imports.get(node.name ?? '') : undefined
-  if (target !== undefined) out.uses.push({ ...site, target, line })
-  for (const ref of literalIdAttributes(node)) out.refs.push({ ...site, ...ref, line })
+  const target = node.type === 'SvelteSelf' ? file : componentTarget(node, imports)
+  if (target !== undefined) out.uses.push({ ...site, target, line: lineAt(code, node.start) })
+  for (const ref of literalIdAttributes(node, code)) out.refs.push({ ...site, ...ref })
+}
+
+function componentTarget(node: Node, imports: Map<string, string>): string | undefined {
+  return node.type === 'Component' ? imports.get(node.name ?? '') : undefined
 }
 
 /** The site of `node`'s child under `key`: a snippet body names its snippet, an exclusive branch
@@ -182,7 +206,7 @@ function parseFile(file: string, code: string): ParsedFile {
   const imports = svelteImports(file, [root.instance, root.module])
   const out: ParsedFile = { refs: [], uses: [], renders: [] }
   const visit = (node: Node, site: Site): void => {
-    recordNode(node, site, code, imports, out)
+    recordNode(node, site, file, code, imports, out)
     for (const [key, child] of Object.entries(node)) {
       if (key === 'metadata' || key === 'expression') continue
       const children: unknown[] = Array.isArray(child) ? child : [child]
@@ -208,15 +232,19 @@ function concurrentPair<T extends Site>(sites: readonly T[]): [T, T] | undefined
 }
 
 /** Why markup at `site` in `parsed` renders more than once (lexically, within its own file). */
-function lexicalReason(site: Site, parsed: ParsedFile): string | null {
+function lexicalReason(site: Site, parsed: ParsedFile, seen = new Set<string>()): string | null {
   if (site.each !== null) return site.each
-  if (site.snippet === null) return null
-  const renders = parsed.renders.filter((render) => render.name === site.snippet)
-  const looped = renders.find((render) => render.each !== null)
-  if (looped !== undefined) return `in {#snippet ${site.snippet}}, rendered ${looped.each}`
+  if (site.snippet === null || seen.has(site.snippet)) return null
+  const snippet = site.snippet
+  const renders = parsed.renders.filter((render) => render.name === snippet)
+  const inner = new Set(seen).add(snippet)
+  const looped = renders
+    .map((render) => lexicalReason(render, parsed, inner))
+    .find((reason) => reason !== null)
+  if (looped !== undefined) return `in {#snippet ${snippet}}, rendered ${looped}`
   return concurrentPair(renders) === undefined
     ? null
-    : `in {#snippet ${site.snippet}}, rendered more than once`
+    : `in {#snippet ${snippet}}, rendered more than once`
 }
 
 function usesByTarget(own: ParsedFile): Map<string, Use[]> {
@@ -249,6 +277,7 @@ function componentReason(
   own: ParsedFile,
   repeated: ReadonlyMap<string, string>
 ): string | null {
+  if (uses.some((use) => use.target === file)) return `rendered by itself (${file} is recursive)`
   for (const use of uses) {
     const reason = lexicalReason(use, own)
     if (reason !== null) return `rendered by ${file}:${use.line} ${reason}`

@@ -74,6 +74,22 @@ describe('repeated static ids (Story 63-5)', () => {
       '{#snippet row()}<p id="h">x</p>{/snippet}{@render row()}{@render row?.()}',
       ['src/A.svelte:2 id="h"'],
     ],
+    [
+      'a placeholder-free template literal id',
+      '{#each items as item}<p id={`h`}>x</p>{/each}',
+      ['src/A.svelte:2 id="h"'],
+    ],
+    [
+      'a snippet rendered by a snippet rendered inside a loop',
+      '{#snippet inner()}<p id="h">x</p>{/snippet}{#snippet outer()}{@render inner()}{/snippet}' +
+        '{#each items as item}{@render outer()}{/each}',
+      ['src/A.svelte:2 id="h"'],
+    ],
+    [
+      'a literal id on its own line of a multi-line tag',
+      '{#each items as item}\n<p\n  class="x"\n  id="h">x</p>{/each}',
+      ['src/A.svelte:5 id="h"'],
+    ],
   ])('fails on %s in repeated markup (red fixture)', (_label, markup, expected) => {
     expect(scan({ 'src/A.svelte': ITEMS + markup })).toEqual(expected)
   })
@@ -129,6 +145,21 @@ describe('repeated static ids (Story 63-5)', () => {
       'rendered twice by src/P.svelte (lines 2, 3)',
     ])
   })
+
+  it.each([
+    [
+      'an imported self',
+      '<script>import Self from \'./C.svelte\'</script>{#if more}<Self />{/if}<p id="c">x</p>',
+    ],
+    ['svelte:self', '{#if more}<svelte:self />{/if}<p id="c">x</p>'],
+  ])(
+    'fails on a literal id in a component that renders itself through %s (red fixture)',
+    (_l, code) => {
+      expect(repeatedStaticIds(new Map([['src/C.svelte', code]])).map((f) => f.reason)).toEqual([
+        'rendered by itself (src/C.svelte is recursive)',
+      ])
+    }
+  )
 
   it('ignores imports it cannot resolve and components outside the scanned tree', () => {
     expect(

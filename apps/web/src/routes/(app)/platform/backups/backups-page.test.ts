@@ -17,7 +17,7 @@ vi.mock('$lib/api/platform.js', () => ({
 
 import type { ComponentProps } from 'svelte'
 import { appLayoutData, deniedPageData } from '$lib/test/page-data.js'
-import { nth } from '$lib/test/dom.js'
+import { idProblems, nth } from '$lib/test/dom.js'
 import BackupsPage from './+page.svelte'
 
 afterEach(() => {
@@ -495,5 +495,18 @@ describe('/platform/backups +page.svelte', () => {
 
     expect(screen.queryByText('Failed to load backups')).toBeNull()
     expect(screen.getByText('backup_20260702T030000Z_org-abc.vault')).toBeTruthy()
+  })
+
+  it('Story 63-5 AC-2: the open restore panel ties its help ids to the backup filename', async () => {
+    render(BackupsPage, { props: { data: allowedData() } })
+    await fireEvent.click(screen.getByRole('button', { name: /^restore$/i }))
+    const reason = screen.getByPlaceholderText(/enter reason for restore/i)
+    expect(reason.getAttribute('aria-describedby')).toBe(
+      `backup-restore-reason-help-${SAMPLE_BACKUP.filename}`
+    )
+    expect(document.getElementById('restore-typed-confirm')?.getAttribute('aria-describedby')).toBe(
+      'restore-typed-confirm-help'
+    )
+    expect(idProblems(document.body)).toEqual([])
   })
 })
