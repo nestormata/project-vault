@@ -11,8 +11,8 @@
 
 <!-- @region settings.audit.search-resource -->
 <RegionFragment>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-resourceId">
-    Resource ID
+  <div class="flex flex-col text-sm text-slate-700">
+    <label for="filter-resourceId">Resource ID</label>
     <input
       id="filter-resourceId"
       name="resourceId"
@@ -22,9 +22,9 @@
       aria-describedby="audit-resource-help"
     />
     <FormHelpText id="audit-resource-help" text={m.form_help_audit_resource_id()} />
-  </label>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-projectId">
-    Project ID
+  </div>
+  <div class="flex flex-col text-sm text-slate-700">
+    <label for="filter-projectId">Project ID</label>
     <input
       id="filter-projectId"
       name="projectId"
@@ -34,5 +34,6 @@
       aria-describedby="audit-project-help"
     />
     <FormHelpText id="audit-project-help" text={m.form_help_audit_project_id()} />
-  </label><InjectionPoint name="settings.audit.search-resource" props={pointProps} {data} />
+  </div>
+  <InjectionPoint name="settings.audit.search-resource" props={pointProps} {data} />
 </RegionFragment>

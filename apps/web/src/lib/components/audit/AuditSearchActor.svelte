@@ -12,8 +12,8 @@
 
 <!-- @region settings.audit.search-actor -->
 <RegionFragment>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-actorId">
-    Actor ID
+  <div class="flex flex-col text-sm text-slate-700">
+    <label for="filter-actorId">Actor ID</label>
     <input
       id="filter-actorId"
       name="actorId"
@@ -23,9 +23,9 @@
       aria-describedby="audit-actor-help"
     />
     <FormHelpText id="audit-actor-help" text={m.form_help_audit_actor_id()} />
-  </label>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-actorProvider">
-    {m.audit_filter_actor_provider_label()}
+  </div>
+  <div class="flex flex-col text-sm text-slate-700">
+    <label for="filter-actorProvider">{m.audit_filter_actor_provider_label()}</label>
     <input
       id="filter-actorProvider"
       name="actorProvider"
@@ -35,9 +35,9 @@
       aria-describedby="audit-actor-provider-help"
     />
     <FormHelpText id="audit-actor-provider-help" text={m.audit_filter_actor_provider_help()} />
-  </label>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-actorSubject">
-    {m.audit_filter_actor_subject_label()}
+  </div>
+  <div class="flex flex-col text-sm text-slate-700">
+    <label for="filter-actorSubject">{m.audit_filter_actor_subject_label()}</label>
     <input
       id="filter-actorSubject"
       name="actorSubject"
@@ -47,5 +47,6 @@
       aria-describedby="audit-actor-subject-help"
     />
     <FormHelpText id="audit-actor-subject-help" text={m.audit_filter_actor_subject_help()} />
-  </label><InjectionPoint name="settings.audit.search-actor" props={pointProps} {data} />
+  </div>
+  <InjectionPoint name="settings.audit.search-actor" props={pointProps} {data} />
 </RegionFragment>

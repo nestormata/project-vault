@@ -19,9 +19,9 @@
     required
     placeholder="Reason for dismissing"
     class="rounded border border-gray-300 px-2 py-1 text-xs"
-    aria-describedby="dismiss-dormancy-reason-help"
+    aria-describedby={`dismiss-dormancy-reason-help-${alertId}`}
   />
-  <FormHelpText id="dismiss-dormancy-reason-help" kind="text" />
+  <FormHelpText id={`dismiss-dormancy-reason-help-${alertId}`} kind="text" />
   <button
     type="submit"
     class="cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-800"

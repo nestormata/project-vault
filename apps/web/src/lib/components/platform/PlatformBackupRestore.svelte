@@ -28,8 +28,8 @@
             rows="2"
             bind:value={controller.restoreReason}
             placeholder="Enter reason for restore"
-            aria-describedby="backup-restore-reason-help"></textarea>
-          <FormHelpText id="backup-restore-reason-help" kind="text" />
+            aria-describedby={`backup-restore-reason-help-${filename}`}></textarea>
+          <FormHelpText id={`backup-restore-reason-help-${filename}`} kind="text" />
         </label>
         {#if controller.restoreError}
           <p class="text-sm text-red-700" role="alert">{controller.restoreError}</p>

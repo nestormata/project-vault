@@ -26,13 +26,13 @@
           name="routeTo_{route.alertType}"
           class="rounded border-gray-300 text-sm"
           value={route.routeTo}
-          aria-describedby="notification-route-help"
+          aria-describedby={`notification-route-help-${route.alertType}`}
         >
           <option value="owner">Owner</option>
           <option value="admin">Admin</option>
           <option value="member">All Members</option>
         </select>
-        <FormHelpText id="notification-route-help" kind="select" />
+        <FormHelpText id={`notification-route-help-${route.alertType}`} kind="select" />
       </div>
     {/each}
     <button

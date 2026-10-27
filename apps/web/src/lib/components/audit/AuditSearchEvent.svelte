@@ -11,8 +11,8 @@
 
 <!-- @region settings.audit.search-event -->
 <RegionFragment>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-eventType">
-    Event type
+  <div class="flex flex-col text-sm text-slate-700">
+    <label for="filter-eventType">Event type</label>
     <input
       id="filter-eventType"
       name="eventType"
@@ -22,5 +22,6 @@
       aria-describedby="audit-event-type-help"
     />
     <FormHelpText id="audit-event-type-help" text={m.form_help_audit_event_type()} />
-  </label><InjectionPoint name="settings.audit.search-event" props={pointProps} {data} />
+  </div>
+  <InjectionPoint name="settings.audit.search-event" props={pointProps} {data} />
 </RegionFragment>

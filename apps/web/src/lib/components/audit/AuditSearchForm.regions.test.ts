@@ -86,10 +86,11 @@ describe('AuditSearchForm sub-regions (probe order)', () => {
     expect((container.querySelector('form') as HTMLFormElement).lastElementChild).toBe(dates)
   })
 
-  it('the first three probes sit right after a label, so they never split two fields', () => {
+  it('the first three probes sit right after a whole field, so they never split two fields', () => {
     mount()
     for (const point of POINTS.slice(0, 3)) {
-      expect(probe(point).previousElementSibling?.tagName).toBe('LABEL')
+      const field = probe(point).previousElementSibling
+      expect(field?.querySelector(':scope > label + input + p')).not.toBeNull()
     }
   })
 

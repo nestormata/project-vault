@@ -34,3 +34,26 @@ export function serializeWithoutNoise(root: Element): string {
 export function serializeIgnoringIndent(root: Element): string {
   return serializeWithoutNoise(root).replace(/\n[ \t]+/g, '\n')
 }
+
+/**
+ * Story 63-5: every id under `root` that occurs more than once, and every `aria-describedby` token
+ * that does not name exactly one element with text. Empty when each row's help is its own.
+ */
+export function idProblems(root: ParentNode = document): string[] {
+  const counts = new Map<string, number>()
+  for (const element of root.querySelectorAll('[id]')) {
+    counts.set(element.id, (counts.get(element.id) ?? 0) + 1)
+  }
+  const repeated = [...counts]
+    .filter(([, count]) => count > 1)
+    .map(([id, count]) => `id "${id}" occurs ${count} times`)
+  const describedIds = [...root.querySelectorAll('[aria-describedby]')].flatMap((control) =>
+    (control.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+  )
+  const hasText = (id: string): boolean =>
+    counts.get(id) === 1 && (root.querySelector(`[id="${id}"]`)?.textContent ?? '').trim() !== ''
+  const unresolved = describedIds
+    .filter((id) => !hasText(id))
+    .map((id) => `aria-describedby "${id}" does not name one element with text`)
+  return [...repeated, ...unresolved]
+}
