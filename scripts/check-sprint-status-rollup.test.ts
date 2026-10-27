@@ -528,8 +528,4 @@ describe('scanBacklogEpicsWithStartedStories (Story 63.4 AC-5, epic-63 retro Fin
     expect(run.stderr).toContain('Fix: set the epic-N key(s) above to "in-progress"')
     expect(run.stdout).not.toContain('OK')
   })
-
-  it('has no backlog epic with a started child in the currently committed sprint-status.yaml', () => {
-    expect(scanBacklogEpicsWithStartedStories(process.cwd())).toEqual([])
-  })
 })

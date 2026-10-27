@@ -5,59 +5,74 @@
  * 63-3; epic-59, epic-62 and epic-66 before them). pick-story C4 requires a destination; this is
  * its CI half, because the skill text alone failed four times.
  *
- * For every `done` story key, every line of its story file outside the `## Story` section and
- * fenced code that matches `UNRUN_PHRASE` must carry, on the same line, a destination that
- * resolves:
+ * A story file is read as blocks: a paragraph, a list item or a table row, with its hard-wrapped
+ * continuation lines joined. For every `done` story, each block outside the `## Story` section
+ * and fenced code that matches an `UNRUN_PHRASES` entry must carry, in the same block, a
+ * destination that resolves:
  * - `moved to backlog story <full key>`: a registered sprint-status key other than the story;
- * - `ledgered as DW-<n>`: an entry in deferred-work.md;
- * - `covered by <full key or file path>`: a registered key other than the story, or a file that
- *   exists under the repo root.
+ * - `ledgered as DW-<id>`: an entry in deferred-work.md;
+ * - `covered by <full key or test file>`: a registered key other than the story, or a test file
+ *   (`*.test.*`, `*.spec.*`, or under `e2e/` / `tests/`) inside the repo, outside `_bmad-output/`.
  *
- * History: `unrun-check-baseline.json` holds, per story number, the count of unresolved lines in
- * stories closed before the rule (2026-10-24). The counts must match exactly, so the list can only
- * shrink as stories are backfilled.
+ * History: the private overlay's `unrun-check-baseline.json` maps a story key to the fingerprints
+ * of its unresolved blocks from before the rule (2026-10-24). A fingerprint matches one exact
+ * block, so editing or adding a line fails; a fingerprint with no matching block fails, so the
+ * list only shrinks; and `BASELINE_CEILING` caps its size from this repo.
  *
  * Pure, DB-free: a static scan of the private overlay (sprint-status.yaml, story files,
- * deferred-work.md).
+ * deferred-work.md, unrun-check-baseline.json).
  */
-import { resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { isAbsolute, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   parseDevelopmentStatusComments,
   SPRINT_STATUS_PATH,
   SPRINT_STATUS_SHAPE,
 } from './check-story-status-sync.js'
-import { statPath } from './lib/fs-access.js'
 import { createFenceTracker, normalizeDwId, parseDwEntries } from './lib/deferred-work-ledger.js'
+import { realPath, statPath } from './lib/fs-access.js'
 import { readOverlayFile, runOverlayGuards, toRepoPath } from './lib/scan-utils.js'
-import { parseHeading } from './lib/section-ledger-rules.js'
+import { type Heading, parseHeading } from './lib/section-ledger-rules.js'
 import { resolveStoryFile } from './lib/story-files.js'
 import { citedStoryKeys } from './lib/story-keys.js'
 
 const CHECK_NAME = 'check-unrun-check-destinations'
 const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.md'
-const STORY_NUMBER = /^\d+-\d+[a-z]?(?=-)/
-
-/** The pick-story C4 step 4 phrase set, word-bounded so "cannot run" is not "not run". */
-export const UNRUN_PHRASE =
-  /\b(?:not run|not drivable|not executed|not captured|could not (?:run|drive)|extension cannot)\b/i
-
-const DESTINATION = /\b(moved to backlog story|ledgered as|covered by)\s+(\S+)/gi
-const TOKEN_EDGES = /^[`'"(]+|[`'")\].,;:]+$/g
-
-export const BASELINE_PATH = 'scripts/unrun-check-baseline.json'
+export const BASELINE_PATH = '_bmad-output/implementation-artifacts/unrun-check-baseline.json'
 
 /**
- * The grandfathered counts of the repo being scanned. Read from `rootDir`, like every other input,
- * so a fixture root has none; a real checkout without the file fails closed (no grandfathering).
+ * The most fingerprints the private baseline may hold: the count it shipped with on 2026-10-26.
+ * Lower it as stories are backfilled; raising it is a gate exception (expert + Nestor sign-off).
  */
-export function loadBaseline(rootDir: string): ReadonlyMap<string, number> {
-  const raw = readOverlayFile(resolve(rootDir), BASELINE_PATH)
-  if (raw === undefined) return new Map()
-  return new Map(Object.entries(JSON.parse(raw) as Record<string, number>))
-}
+export const BASELINE_CEILING = 207
 
-export type UnrunViolationKind = 'no-destination' | 'over-baseline' | 'stale-baseline'
+/**
+ * The pick-story C4 step 4 phrase set. "not ..." after a modal or present-tense verb ("do not
+ * run", "is not executed when the flag is off") is product or instruction prose, not a record,
+ * and "extension cannot" counts only for the Chrome extension, not the extension API.
+ */
+export const UNRUN_PHRASES: readonly RegExp[] = [
+  /\bcould not (?:run|drive)\b/i,
+  /(?<!\b(?:do|does|must|should|will|would|may|might|is|are|can|cannot) )\bnot (?:run|drivable|executed|captured)\b/i,
+  /\b(?:the|chrome|claude-in-chrome) extension cannot\b/i,
+]
+
+const DESTINATION =
+  /\b(moved to backlog story|ledgered as|covered by)\s+(\[[^\]]*\]\([^)\s]+\)|\S+)/gi
+const MARKDOWN_LINK = /^\[[^\]]*\]\(([^)\s]+)\)/
+const TOKEN_EDGES = /^[`'"(*~]+|[`'")\].,;:*~]+$/g
+const UNDERSCORE_EMPHASIS = /^_(.+)_$/
+const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)(?:e2e|tests?)\//
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/
+const TABLE_ROW = /^\s*\|/
+const FINGERPRINT = /^[0-9a-f]{16}$/
+const STORY_KEY = /^\d+-\d+[a-z]?-/
+
+export type Baseline = ReadonlyMap<string, readonly string[]>
+
+export type UnrunViolationKind =
+  'no-destination' | 'stale-baseline' | 'malformed-baseline' | 'over-ceiling'
 
 export type UnrunViolation = {
   kind: UnrunViolationKind
@@ -68,21 +83,83 @@ export type UnrunViolation = {
 
 export type UnrunFindings = {
   doneCount: number
-  /** Unrun-check lines whose destination resolved. */
+  /** Unrun-check blocks whose destination resolved. */
   resolvedCount: number
-  /** Baselined stories skipped because their unresolved count matched. */
+  /** Unresolved blocks whose fingerprint is in the baseline. */
   grandfathered: number
   violations: UnrunViolation[]
 }
 
-export function findUnrunPhrase(line: string): string | undefined {
-  return UNRUN_PHRASE.exec(line)?.[0]
+/** A paragraph, list item or table row: its first physical line and its joined text. */
+export type Block = { line: number; text: string }
+
+export function findUnrunPhrase(text: string): string | undefined {
+  for (const phrase of UNRUN_PHRASES) {
+    const match = phrase.exec(text)
+    if (match) return match[0]
+  }
+  return undefined
 }
 
-type Context = { root: string; storyKey: string; sprintKeys: Set<string>; dwIds: Set<string> }
+/** The fingerprint the baseline stores for a block: whitespace-insensitive, 16 hex chars. */
+export function fingerprint(text: string): string {
+  return createHash('sha256').update(text.replaceAll(/\s+/g, ' ').trim()).digest('hex').slice(0, 16)
+}
+
+type ClassifiedLine = { line: number; text: string; heading?: Heading; breaks: boolean }
+
+function classifyLines(content: string): ClassifiedLine[] {
+  const fenced = createFenceTracker()
+  return content.split('\n').map((raw, index) => {
+    const text = raw.replace(/\r$/, '')
+    const isFence = fenced(text)
+    const heading = isFence ? undefined : parseHeading(text)
+    const breaks = isFence || text.trim() === '' || heading !== undefined
+    return { line: index + 1, text, heading, breaks }
+  })
+}
+
+/** Drops the `## Story` section: it runs from that heading to the next level 1 or 2 heading. */
+function outsideStorySection(lines: ClassifiedLine[]): ClassifiedLine[] {
+  let inStory = false
+  return lines.filter(({ heading }) => {
+    if (heading && heading.level <= 2) inStory = heading.level === 2 && heading.title === 'Story'
+    return !inStory
+  })
+}
+
+const startsBlock = (text: string) => LIST_ITEM.test(text) || TABLE_ROW.test(text)
+
+/** Story blocks outside fenced code and outside the `## Story` section. */
+export function storyBlocks(content: string): Block[] {
+  const blocks: Block[] = []
+  let current: Block | undefined
+  for (const { line, text, heading, breaks } of outsideStorySection(classifyLines(content))) {
+    if (breaks) {
+      current = undefined
+      if (heading) blocks.push({ line, text })
+    } else if (current && !startsBlock(text)) {
+      current.text = `${current.text} ${text.trim()}`
+    } else {
+      current = { line, text }
+      blocks.push(current)
+    }
+  }
+  return blocks
+}
+
+type Context = {
+  root: string
+  realRoot: string
+  storyKey: string
+  sprintKeys: Set<string>
+  dwIds: Set<string>
+}
 
 function cleanToken(raw: string): string {
-  return raw.replaceAll(TOKEN_EDGES, '')
+  const link = MARKDOWN_LINK.exec(raw)?.[1]
+  const token = (link ?? raw).replaceAll(TOKEN_EDGES, '')
+  return UNDERSCORE_EMPHASIS.exec(token)?.[1] ?? token
 }
 
 function storyKeyProblem(token: string, context: Context, phrase: string): string | undefined {
@@ -93,9 +170,14 @@ function storyKeyProblem(token: string, context: Context, phrase: string): strin
   return undefined
 }
 
-function isFile(path: string): boolean {
+/** Whether `relPath` is a test file inside the repo root (symlinks resolved) and outside the overlay. */
+function isRepoTestFile(relPath: string, context: Context): boolean {
+  if (isAbsolute(relPath) || !TEST_FILE.test(relPath)) return false
   try {
-    return statPath(path).isFile()
+    const real = realPath(resolve(context.root, relPath))
+    if (!real.startsWith(context.realRoot + sep)) return false
+    const repoPath = toRepoPath(context.realRoot, real)
+    return !repoPath.startsWith('_bmad-output/') && statPath(real).isFile()
   } catch {
     return false
   }
@@ -104,12 +186,18 @@ function isFile(path: string): boolean {
 function coveredByProblem(token: string, context: Context): string | undefined {
   const [key] = citedStoryKeys(token)
   if (key !== undefined && key === token) return storyKeyProblem(token, context, 'covered by')
-  if (isFile(resolve(context.root, token.split(':')[0] as string))) return undefined
-  return `covered by "${token}" is neither a registered story key nor an existing file`
+  if (isRepoTestFile(token.split(':')[0] as string, context)) return undefined
+  return `covered by "${token}" is neither a registered story key nor a test file in the repo`
+}
+
+/** `DW-<n>` with optional `.`/`-` numeric segments (`DW-23.2-1`), as the ledger parser reads them. */
+function isDwId(token: string): boolean {
+  const id = /^DW-(.+)$/i.exec(token)?.[1]
+  return id !== undefined && id.split(/[.-]/).every((segment) => /^\d+$/.test(segment))
 }
 
 function dwProblem(token: string, context: Context): string | undefined {
-  if (!/^DW-\d+$/i.test(token)) return `ledgered as "${token}" is not a DW-<n> id`
+  if (!isDwId(token)) return `ledgered as "${token}" is not a DW id`
   return context.dwIds.has(normalizeDwId(token)) ? undefined : `${token} is not in deferred-work.md`
 }
 
@@ -122,8 +210,8 @@ function destinationProblem(phrase: string, raw: string, context: Context): stri
   return storyKeyProblem(token, context, phrase)
 }
 
-/** `undefined` when a destination on the line resolves; otherwise the reasons none did. */
-function lineProblems(text: string, context: Context): string[] | undefined {
+/** `undefined` when a destination in the block resolves; otherwise the reasons none did. */
+function blockProblems(text: string, context: Context): string[] | undefined {
   const problems: string[] = []
   for (const match of text.matchAll(DESTINATION)) {
     const problem = destinationProblem(match[1] as string, match[2] as string, context)
@@ -133,117 +221,151 @@ function lineProblems(text: string, context: Context): string[] | undefined {
   return problems
 }
 
-type Hit = { line: number; phrase: string; problems: string[] }
+export type Hit = { line: number; phrase: string; problems: string[]; fingerprint: string }
 
-/** Every unrun-check line outside `## Story` and fenced code, with its unresolved reasons. */
-function scanStory(content: string, context: Context): { unresolved: Hit[]; resolved: number } {
-  const fenced = createFenceTracker()
+/** A story's unrun-check blocks with no resolving destination, and the count that resolved. */
+export function scanStory(
+  content: string,
+  context: Context
+): { unresolved: Hit[]; resolved: number } {
   const unresolved: Hit[] = []
   let resolved = 0
-  let inStorySection = false
-  for (const [index, raw] of content.split('\n').entries()) {
-    const text = raw.replace(/\r$/, '')
-    if (fenced(text)) continue
-    const heading = parseHeading(text)
-    if (heading) inStorySection = heading.level === 2 && heading.title === 'Story'
-    const phrase = inStorySection ? undefined : findUnrunPhrase(text)
+  for (const block of storyBlocks(content)) {
+    const phrase = findUnrunPhrase(block.text)
     if (phrase === undefined) continue
-    const problems = lineProblems(text, context)
+    const problems = blockProblems(block.text, context)
     if (problems === undefined) resolved++
-    else unresolved.push({ line: index + 1, phrase, problems })
+    else
+      unresolved.push({ line: block.line, phrase, problems, fingerprint: fingerprint(block.text) })
   }
   return { unresolved, resolved }
 }
 
-function hitMessage(storyKey: string, hit: Hit): string {
-  return `${storyKey}: "${hit.phrase}" names no destination${hit.problems.map((p) => `; ${p}`).join('')}`
+function malformed(reason: string): UnrunViolation {
+  return {
+    kind: 'malformed-baseline',
+    path: BASELINE_PATH,
+    line: 1,
+    message: `${BASELINE_PATH} is malformed (${reason}); nothing in it is grandfathered`,
+  }
 }
 
-function baselineViolations(
-  storyNumber: string,
-  path: string,
-  storyKey: string,
-  hits: Hit[],
-  allowed: number
-): UnrunViolation[] {
-  if (hits.length > allowed) {
-    const suffix = ` (${hits.length} unresolved lines, the 2026-10-24 baseline allows ${allowed})`
-    return hits.map((hit) => ({
-      kind: 'over-baseline' as const,
+function isFingerprintList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((v) => typeof v === 'string' && FINGERPRINT.test(v))
+  )
+}
+
+function parseJson(raw: string): { value?: unknown; error?: string } {
+  try {
+    return { value: JSON.parse(raw) as unknown }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'bad JSON' }
+  }
+}
+
+/** The private overlay's baseline: absent means empty (fail closed), malformed is a violation. */
+export function parseBaseline(raw: string | undefined): {
+  baseline: Baseline
+  problem?: UnrunViolation
+} {
+  if (raw === undefined) return { baseline: new Map() }
+  const { value, error } = parseJson(raw)
+  if (error !== undefined) return { baseline: new Map(), problem: malformed(error) }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { baseline: new Map(), problem: malformed('not an object of story key to fingerprints') }
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+  const bad = entries.find(([, fps]) => !isFingerprintList(fps))
+  if (bad) {
+    return {
+      baseline: new Map(),
+      problem: malformed(`${bad[0]} is not a non-empty list of fingerprints`),
+    }
+  }
+  return { baseline: new Map(entries as [string, string[]][]) }
+}
+
+function storyViolations(storyKey: string, path: string, hits: Hit[], allowed: readonly string[]) {
+  const allowedSet = new Set(allowed)
+  const found = new Set(hits.map((hit) => hit.fingerprint))
+  const violations: UnrunViolation[] = hits
+    .filter((hit) => !allowedSet.has(hit.fingerprint))
+    .map((hit) => ({
+      kind: 'no-destination' as const,
       path,
       line: hit.line,
-      message: `${hitMessage(storyKey, hit)}${suffix}`,
+      message: `${storyKey}: "${hit.phrase}" names no destination${hit.problems.map((p) => `; ${p}`).join('')}`,
     }))
+  for (const stale of allowed.filter((fp) => !found.has(fp))) {
+    violations.push({
+      kind: 'stale-baseline',
+      path: BASELINE_PATH,
+      line: 1,
+      message: `${storyKey}: baseline fingerprint ${stale} matches no unresolved block any more; remove it`,
+    })
   }
-  const fix = hits.length === 0 ? 'remove the entry' : `lower it to ${hits.length}`
-  return [
-    {
-      kind: 'stale-baseline' as const,
-      path,
-      line: hits[0]?.line ?? 1,
-      message: `${storyNumber}: ${hits.length} unresolved lines, but unrun-check-baseline.json allows ${allowed}; ${fix}`,
-    },
-  ]
+  return {
+    violations,
+    grandfathered: hits.length - violations.filter((v) => v.kind === 'no-destination').length,
+  }
 }
 
-function storyViolations(
-  storyNumber: string,
-  path: string,
-  storyKey: string,
-  unresolved: Hit[],
-  allowed: number | undefined
-): UnrunViolation[] {
-  if (allowed !== undefined)
-    return baselineViolations(storyNumber, path, storyKey, unresolved, allowed)
-  return unresolved.map((hit) => ({
-    kind: 'no-destination' as const,
-    path,
-    line: hit.line,
-    message: hitMessage(storyKey, hit),
-  }))
-}
+type ScanInputs = Omit<Context, 'storyKey'> & { baseline: Baseline }
 
-type ScanInputs = Omit<Context, 'storyKey'> & { baseline: ReadonlyMap<string, number> }
-
-/** One done story's contribution, or undefined when it is not a scanned done story. */
-function scanEntry(
-  entry: { key: string; value: string },
-  inputs: ScanInputs
-):
-  | { storyNumber: string; resolved: number; grandfathered: boolean; violations: UnrunViolation[] }
-  | undefined {
-  const storyNumber = STORY_NUMBER.exec(entry.key)?.[0]
-  if (entry.value !== 'done' || storyNumber === undefined) return undefined
-  const storyFile = resolveStoryFile(inputs.root, entry.key)
+function scanEntry(storyKey: string, inputs: ScanInputs) {
+  const storyFile = resolveStoryFile(inputs.root, storyKey)
   if (!storyFile) return undefined
   const path = toRepoPath(inputs.root, storyFile.path)
-  const { unresolved, resolved } = scanStory(storyFile.content, { ...inputs, storyKey: entry.key })
-  const allowed = inputs.baseline.get(storyNumber)
-  if (allowed !== undefined && unresolved.length === allowed) {
-    return { storyNumber, resolved, grandfathered: true, violations: [] }
+  const { unresolved, resolved } = scanStory(storyFile.content, { ...inputs, storyKey })
+  return {
+    resolved,
+    ...storyViolations(storyKey, path, unresolved, inputs.baseline.get(storyKey) ?? []),
   }
-  const violations = storyViolations(storyNumber, path, entry.key, unresolved, allowed)
-  return { storyNumber, resolved, grandfathered: false, violations }
 }
 
-function staleBaselineEntries(
-  baseline: ReadonlyMap<string, number>,
-  seenNumbers: Set<string>
+function baselineShapeViolations(
+  baseline: Baseline,
+  scanned: Set<string>,
+  ceiling: number
 ): UnrunViolation[] {
-  return [...baseline.keys()]
-    .filter((storyNumber) => !seenNumbers.has(storyNumber))
-    .map((storyNumber) => ({
+  const violations: UnrunViolation[] = [...baseline.keys()]
+    .filter((key) => !scanned.has(key))
+    .map((key) => ({
       kind: 'stale-baseline' as const,
       path: BASELINE_PATH,
       line: 1,
-      message: `${storyNumber}: in unrun-check-baseline.json but no done story file has that number; remove the entry`,
+      message: `${key}: in the baseline but not a done story with a story file; remove the entry`,
     }))
+  const total = [...baseline.values()].reduce((sum, fps) => sum + fps.length, 0)
+  if (total > ceiling) {
+    violations.push({
+      kind: 'over-ceiling',
+      path: BASELINE_PATH,
+      line: 1,
+      message: `the baseline holds ${total} fingerprints, above BASELINE_CEILING (${ceiling}); new unrun checks need a destination, not a fingerprint`,
+    })
+  }
+  return violations
+}
+
+function buildInputs(root: string, sprintKeys: Set<string>, baseline: Baseline): ScanInputs {
+  const ledger = readOverlayFile(root, DEFERRED_WORK_PATH) ?? ''
+  return {
+    root,
+    realRoot: realPath(root),
+    baseline,
+    sprintKeys,
+    dwIds: new Set(parseDwEntries(ledger).map((dw) => dw.normalizedId)),
+  }
 }
 
 /** Scans the overlay under `rootDir` (the CLI reports unreadable inputs before calling this). */
 export function scanUnrunCheckDestinations(
   rootDir = process.cwd(),
-  baseline: ReadonlyMap<string, number> = loadBaseline(rootDir)
+  ceiling = BASELINE_CEILING
 ): UnrunFindings {
   const root = resolve(rootDir)
   const findings: UnrunFindings = {
@@ -255,41 +377,40 @@ export function scanUnrunCheckDestinations(
   const sprint = readOverlayFile(root, SPRINT_STATUS_PATH)
   if (sprint === undefined) return findings
 
+  const { baseline, problem } = parseBaseline(readOverlayFile(root, BASELINE_PATH))
+  if (problem) findings.violations.push(problem)
   const entries = parseDevelopmentStatusComments(sprint)
-  const ledger = readOverlayFile(root, DEFERRED_WORK_PATH) ?? ''
-  const inputs: ScanInputs = {
-    root,
-    baseline,
-    sprintKeys: new Set(entries.map((entry) => entry.key)),
-    dwIds: new Set(parseDwEntries(ledger).map((dw) => dw.normalizedId)),
-  }
-  const seenNumbers = new Set<string>()
-  for (const entry of entries) {
-    const result = scanEntry(entry, inputs)
+  const inputs = buildInputs(root, new Set(entries.map((entry) => entry.key)), baseline)
+  const doneKeys = new Set(
+    entries.filter(({ key, value }) => value === 'done' && STORY_KEY.test(key)).map((e) => e.key)
+  )
+  const scanned = new Set<string>()
+  for (const key of doneKeys) {
+    const result = scanEntry(key, inputs)
     if (!result) continue
+    scanned.add(key)
     findings.doneCount++
-    seenNumbers.add(result.storyNumber)
     findings.resolvedCount += result.resolved
-    if (result.grandfathered) findings.grandfathered++
+    findings.grandfathered += result.grandfathered
     findings.violations.push(...result.violations)
   }
-  findings.violations.push(...staleBaselineEntries(baseline, seenNumbers))
+  findings.violations.push(...baselineShapeViolations(baseline, scanned, ceiling))
   findings.violations.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
   return findings
 }
 
 const FIX =
-  'Fix: on the same line, write `moved to backlog story <full key>` (the human manual-testing story ' +
-  'for a leg the Chrome extension cannot drive), `ledgered as DW-<n>` (allocate with ' +
-  '`pnpm -s next-dw-id --fetch`), or `covered by <full key or repo file path>` (a test that proves ' +
-  'the same behaviour). For a baseline finding, edit scripts/unrun-check-baseline.json ' +
-  'as the message says; never raise a count.'
+  'Fix: in the same paragraph or list item, write `moved to backlog story <full key>` (the human ' +
+  'manual-testing story for a leg the Chrome extension cannot drive), `ledgered as DW-<id>` ' +
+  '(allocate with `pnpm -s next-dw-id --fetch`), or `covered by <full key or test file path>` (a ' +
+  'test that proves the same behaviour). For a stale baseline finding, delete the fingerprint the ' +
+  'message names; never add one.'
 
 function report(findings: UnrunFindings): void {
   if (findings.violations.length === 0) {
     process.stdout.write(
       `${CHECK_NAME}: ${findings.doneCount} done stories scanned, ${findings.resolvedCount} ` +
-        `unrun-check lines with destinations, ${findings.grandfathered} grandfathered — OK\n`
+        `unrun-check blocks with destinations, ${findings.grandfathered} grandfathered — OK\n`
     )
     return
   }
