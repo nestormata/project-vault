@@ -31,6 +31,7 @@ vi.mock('$lib/state/notifications.svelte.js', () => ({
 
 import type { ComponentProps } from 'svelte'
 import { appLayoutData } from '$lib/test/page-data.js'
+import { idProblems } from '$lib/test/dom.js'
 import NotificationsPage from './+page.svelte'
 
 afterEach(() => {
@@ -447,5 +448,36 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     await startEnhancedSubmit(buttons[0] as HTMLElement, cancel)
     await startEnhancedSubmit(buttons[1] as HTMLElement, cancel)
     expect(cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('Story 63-5 AC-1: two user and two machine alerts render no repeated id, each field its own help', () => {
+    const machine = (id: string, keyId: string): DormancyAlertView => ({
+      id,
+      projectId: 'project-1',
+      machineUserId: `machine-${id}`,
+      machineUserName: `Bot ${id}`,
+      keyId,
+      keyName: `Key ${id}`,
+      lastUsedAt: null,
+      createdAt: '2026-07-01T00:00:00.000Z',
+    })
+    render(NotificationsPage, {
+      props: {
+        data: baseData({
+          dormancyAlerts: [machine('m1', 'k1'), machine('m2', 'k2')],
+          userDormancyAlerts: [userDormantAlertView, { ...userDormantAlertView, id: 'alert-3' }],
+        }),
+      },
+    })
+    expect(idProblems(document.body)).toEqual([])
+    const days = [...document.querySelectorAll('input[name="days"]')]
+    const reasons = [...document.querySelectorAll('input[name="reason"]')]
+    expect(days).toHaveLength(2)
+    expect(reasons).toHaveLength(4)
+    expect(days.map((input) => input.getAttribute('aria-describedby'))).toEqual([
+      'notification-dormancy-days-help-m1',
+      'notification-dormancy-days-help-m2',
+    ])
+    expect(new Set(reasons.map((input) => input.getAttribute('aria-describedby'))).size).toBe(4)
   })
 })

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import type { ComponentProps } from 'svelte'
 import { appLayoutData } from '$lib/test/page-data.js'
+import { idProblems } from '$lib/test/dom.js'
 import NotificationsPage from './+page.svelte'
 
 afterEach(() => cleanup())
@@ -184,5 +185,49 @@ describe('/settings/notifications +page.svelte', () => {
     })
 
     expect(screen.queryByText(/failed to update/i)).toBeNull()
+  })
+
+  it('Story 63-5 AC-1: two preference rows and two routes render no repeated id, each select its own help', () => {
+    render(NotificationsPage, {
+      props: {
+        data: baseData({
+          isAdmin: true,
+          preferences: [
+            {
+              alertType: 'credential.expiry',
+              channel: 'email',
+              frequency: 'immediate',
+              minSeverity: 'warning',
+            },
+            {
+              alertType: 'credential.expiry',
+              channel: 'inbox',
+              frequency: 'digest_daily',
+              minSeverity: 'info',
+            },
+          ],
+          routing: [
+            { alertType: 'credential.expiry', routeTo: 'owner' },
+            { alertType: 'service.down', routeTo: 'admin' },
+          ],
+        }),
+        form: null,
+      },
+    })
+    expect(idProblems(document.body)).toEqual([])
+    const described = (selector: string) =>
+      [...document.querySelectorAll(selector)].map((el) => el.getAttribute('aria-describedby'))
+    expect(described('select[name="frequency"]')).toEqual([
+      'notification-frequency-help-credential.expiry-email',
+      'notification-frequency-help-credential.expiry-inbox',
+    ])
+    expect(described('select[name="minSeverity"]')).toEqual([
+      'notification-severity-help-credential.expiry-email',
+      'notification-severity-help-credential.expiry-inbox',
+    ])
+    expect(described('select[name^="routeTo_"]')).toEqual([
+      'notification-route-help-credential.expiry',
+      'notification-route-help-service.down',
+    ])
   })
 })

@@ -29,9 +29,9 @@
       min="1"
       max="365"
       class="w-16 rounded border border-gray-300 px-2 py-1 text-xs"
-      aria-describedby="notification-dormancy-days-help"
+      aria-describedby={`notification-dormancy-days-help-${alert.id}`}
     />
-    <FormHelpText id="notification-dormancy-days-help" kind="date" />
+    <FormHelpText id={`notification-dormancy-days-help-${alert.id}`} kind="date" />
     <button
       type="submit"
       class="cursor-pointer text-xs font-medium text-indigo-600 hover:text-indigo-800"

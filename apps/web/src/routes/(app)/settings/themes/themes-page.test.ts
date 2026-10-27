@@ -387,4 +387,16 @@ describe('/settings/themes +page.svelte org default theme section — save (Stor
       (screen.getByLabelText('Default theme for this organization') as HTMLSelectElement).value
     ).toBe('acme-brand')
   })
+
+  it('Story 63-5 (DW-612 item 2): the shared radio help sits outside the list, referenced by every radio', () => {
+    render(ThemesPage, { props: { data: baseData() } })
+    const list = document.querySelector('ul')
+    expect([...(list?.children ?? [])].every((child) => child.tagName === 'LI')).toBe(true)
+    const radios = screen.getAllByRole('radio')
+    expect(radios.map((radio) => radio.getAttribute('aria-describedby'))).toEqual([
+      'theme-selection-help',
+      'theme-selection-help',
+    ])
+    expect(document.getElementById('theme-selection-help')?.textContent?.trim()).not.toBe('')
+  })
 })

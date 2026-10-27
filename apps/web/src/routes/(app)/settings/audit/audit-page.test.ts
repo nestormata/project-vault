@@ -247,4 +247,18 @@ describe('/settings/audit +page.svelte', () => {
 
     expect(screen.getByText(/end date must be after start date/i)).toBeTruthy()
   })
+
+  it('Story 63-5 (DW-612 item 1): each search filter is named by its label only and described by its help', () => {
+    render(AuditPage, { props: { data: allowedData() } })
+    const ids = ['eventType', 'actorId', 'actorProvider', 'actorSubject', 'resourceId', 'projectId']
+    for (const id of ids) {
+      const input = document.getElementById(`filter-${id}`) as HTMLInputElement
+      const label = document.querySelector(`label[for="filter-${id}"]`) as HTMLLabelElement
+      const helpId = input.getAttribute('aria-describedby') as string
+      const helpText = (document.getElementById(helpId) as HTMLElement).textContent.trim()
+      expect(label.contains(input), id).toBe(false)
+      expect(helpText, id).not.toBe('')
+      expect(label.textContent, id).not.toContain(helpText)
+    }
+  })
 })

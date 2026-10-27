@@ -40,7 +40,7 @@
     bind:value
     oninput={handleInput}
     autocomplete="off"
-    aria-describedby="typed-confirm-help"
+    aria-describedby={`${inputId}-help`}
   />
-  <FormHelpText id="typed-confirm-help" kind="text" />
+  <FormHelpText id={`${inputId}-help`} kind="text" />
 </div>

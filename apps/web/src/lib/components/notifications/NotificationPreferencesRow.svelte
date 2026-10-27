@@ -18,6 +18,8 @@
     flagProps: InjectionPointExtras<'settings.notifications.header'>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
+
+  const rowKey = $derived(`${pref.alertType}-${pref.channel}`)
 </script>
 
 <!-- @region settings.notifications.channels-row -->
@@ -39,25 +41,25 @@
           name="frequency"
           class="mr-2 rounded border-gray-300 text-sm"
           aria-label={`Frequency for ${getEventTypeLabel(pref.alertType)} via ${pref.channel}`}
-          aria-describedby="notification-frequency-help"
+          aria-describedby={`notification-frequency-help-${rowKey}`}
         >
           <option value="immediate" selected={pref.frequency === 'immediate'}>Immediate</option>
           <option value="digest_daily" selected={pref.frequency === 'digest_daily'}
             >Daily digest</option
           >
         </select>
-        <FormHelpText id="notification-frequency-help" kind="select" />
+        <FormHelpText id={`notification-frequency-help-${rowKey}`} kind="select" />
         <select
           name="minSeverity"
           class="mr-2 rounded border-gray-300 text-sm"
           aria-label={`Minimum severity for ${getEventTypeLabel(pref.alertType)} via ${pref.channel}`}
-          aria-describedby="notification-severity-help"
+          aria-describedby={`notification-severity-help-${rowKey}`}
         >
           <option value="info" selected={pref.minSeverity === 'info'}>Info+</option>
           <option value="warning" selected={pref.minSeverity === 'warning'}>Warning+</option>
           <option value="critical" selected={pref.minSeverity === 'critical'}>Critical only</option>
         </select>
-        <FormHelpText id="notification-severity-help" kind="select" />
+        <FormHelpText id={`notification-severity-help-${rowKey}`} kind="select" />
         <button type="submit" class="text-sm font-medium text-indigo-600 hover:text-indigo-900"
           >Save</button
         ><InjectionPoint name="settings.notifications.channels-row" props={flagProps} {data} />

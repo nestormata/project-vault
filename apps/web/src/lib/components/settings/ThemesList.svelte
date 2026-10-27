@@ -42,7 +42,6 @@
         </label>
       </li>
     {/each}
-    <FormHelpText id="theme-selection-help" kind="radio" />
     {#if orphanedSelection}
       <li class="flex items-center justify-between px-6 py-4">
         <label class="flex items-center gap-3 text-gray-400">
@@ -58,5 +57,6 @@
       </li>
     {/if}
   </ul>
+  <div class="mt-2"><FormHelpText id="theme-selection-help" kind="radio" /></div>
 {/if}
 {@render children?.()}
