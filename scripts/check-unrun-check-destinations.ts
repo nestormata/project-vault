@@ -61,7 +61,8 @@ export const UNRUN_PHRASES: readonly RegExp[] = [
 const DESTINATION =
   /\b(moved to backlog story|ledgered as|covered by)\s+(\[[^\]]*\]\([^)\s]+\)|\S+)/gi
 const MARKDOWN_LINK = /^\[[^\]]*\]\(([^)\s]+)\)/
-const TOKEN_EDGES = /^[`'"(*~]+|[`'")\].,;:*~]+$/g
+const LEADING_WRAPPERS = new Set(['`', "'", '"', '(', '*', '~'])
+const TRAILING_WRAPPERS = new Set(['`', "'", '"', ')', ']', '.', ',', ';', ':', '*', '~'])
 const UNDERSCORE_EMPHASIS = /^_(.+)_$/
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)(?:e2e|tests?)\//
 const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/
@@ -156,9 +157,18 @@ type Context = {
   dwIds: Set<string>
 }
 
+/** Strips quote, bracket, emphasis and punctuation characters from both ends, in linear time. */
+function trimWrappers(text: string): string {
+  let start = 0
+  let end = text.length
+  while (start < end && LEADING_WRAPPERS.has(text.charAt(start))) start++
+  while (end > start && TRAILING_WRAPPERS.has(text.charAt(end - 1))) end--
+  return text.slice(start, end)
+}
+
 function cleanToken(raw: string): string {
   const link = MARKDOWN_LINK.exec(raw)?.[1]
-  const token = (link ?? raw).replaceAll(TOKEN_EDGES, '')
+  const token = trimWrappers(link ?? raw)
   return UNDERSCORE_EMPHASIS.exec(token)?.[1] ?? token
 }
 
@@ -288,6 +298,10 @@ export function parseBaseline(raw: string | undefined): {
   return { baseline: new Map(entries as [string, string[]][]) }
 }
 
+function reasonSuffix(problems: string[]): string {
+  return problems.map((problem) => `; ${problem}`).join('')
+}
+
 function storyViolations(storyKey: string, path: string, hits: Hit[], allowed: readonly string[]) {
   const allowedSet = new Set(allowed)
   const found = new Set(hits.map((hit) => hit.fingerprint))
@@ -297,7 +311,7 @@ function storyViolations(storyKey: string, path: string, hits: Hit[], allowed: r
       kind: 'no-destination' as const,
       path,
       line: hit.line,
-      message: `${storyKey}: "${hit.phrase}" names no destination${hit.problems.map((p) => `; ${p}`).join('')}`,
+      message: `${storyKey}: "${hit.phrase}" names no destination${reasonSuffix(hit.problems)}`,
     }))
   for (const stale of allowed.filter((fp) => !found.has(fp))) {
     violations.push({
