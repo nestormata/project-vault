@@ -11,6 +11,9 @@
  * `done`), an epic whose children are all done while its retro is not is a WARN (retro due), and a
  * duplicated `development_status` key is FATAL (the parser's last-wins Map silently hides one).
  *
+ * Story 63.4 (epic-63 retro Finding 4) adds the opposite drift: an `epic-N` still `backlog` after one
+ * of its stories started (epic-63 and epic-65 sat at `backlog` while children reached `done`) is FATAL.
+ *
  * Out of scope: verifying a merged PR's target branch reflects each story's real final status
  * post-merge — that needs git/PR context this static scan doesn't have and lives in
  * check-post-merge-status-drift.ts.
@@ -59,6 +62,14 @@ export type RetroKeyFindings = {
   missing: MissingRetrospectiveKey[]
   pending: RetroPendingWarning[]
   duplicates: DuplicateSprintStatusKey[]
+}
+
+/** Story 63.4 AC-5: `epic-N: backlog` while a child story has left `backlog`. */
+export type BacklogEpicDrift = {
+  epicKey: string
+  /** 1-based line of the `epic-N:` key. */
+  line: number
+  started: { key: string; status: string }[]
 }
 
 type EpicInfo = { epicKey: string; epicNum: string; status: string; childKeys: string[] }
@@ -112,6 +123,23 @@ export function scanSprintStatusRollup(rootDir = process.cwd()): RollupDrift[] {
   }
 
   return drifts.sort((a, b) => a.epicKey.localeCompare(b.epicKey))
+}
+
+export function scanBacklogEpicsWithStartedStories(rootDir = process.cwd()): BacklogEpicDrift[] {
+  const entries = loadSprintStatusEntries(resolve(rootDir))
+  if (!entries) return []
+  const statuses = new Map(entries.map(({ key, value }) => [key, value]))
+  return collectEpics(statuses)
+    .filter(({ status }) => status === 'backlog')
+    .map(({ epicKey, childKeys }) => ({
+      epicKey,
+      line: lastLineOf(entries, epicKey),
+      started: childKeys
+        .map((key) => ({ key, status: statuses.get(key) ?? '' }))
+        .filter(({ status }) => status !== 'backlog'),
+    }))
+    .filter(({ started }) => started.length > 0)
+    .sort(byEpicNumber)
 }
 
 function findDuplicates(entries: DevelopmentStatusEntry[]): DuplicateSprintStatusKey[] {
@@ -225,6 +253,23 @@ function reportDuplicates(duplicates: DuplicateSprintStatusKey[]): void {
   )
 }
 
+function reportBacklogEpics(drifts: BacklogEpicDrift[]): void {
+  if (drifts.length === 0) return
+  process.stderr.write(
+    'FATAL: epic-N is still "backlog" while a child story has started (epic-63 retro Finding 4):\n'
+  )
+  for (const d of drifts) {
+    const started = d.started.map(({ key, status }) => `${key} (${status})`).join(', ')
+    process.stderr.write(
+      `  - ${SPRINT_STATUS_PATH}:${d.line}: ${d.epicKey} is "backlog", but ${started} has started\n`
+    )
+  }
+  process.stderr.write(
+    '\nFix: set the epic-N key(s) above to "in-progress" (flip it in the same commit as the first ' +
+      'story leaves backlog).\n'
+  )
+}
+
 function reportPending(pending: RetroPendingWarning[]): void {
   for (const p of pending) {
     process.stderr.write(
@@ -235,10 +280,16 @@ function reportPending(pending: RetroPendingWarning[]): void {
   }
 }
 
-function report(drifts: RollupDrift[], retroKeys: RetroKeyFindings): void {
-  const fatal = drifts.length + retroKeys.missing.length + retroKeys.duplicates.length > 0
+function report(
+  drifts: RollupDrift[],
+  retroKeys: RetroKeyFindings,
+  backlogEpics: BacklogEpicDrift[]
+): void {
+  const fatal =
+    drifts.length + retroKeys.missing.length + retroKeys.duplicates.length + backlogEpics.length > 0
 
   reportDrifts(drifts)
+  reportBacklogEpics(backlogEpics)
   reportMissing(retroKeys.missing)
   reportDuplicates(retroKeys.duplicates)
   if (fatal && retroKeys.pending.length > 0) process.stderr.write('\n')
@@ -259,7 +310,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     process.cwd(),
     SPRINT_STATUS_PATH,
     () => {
-      report(scanSprintStatusRollup(), scanSprintStatusRetroKeys())
+      report(
+        scanSprintStatusRollup(),
+        scanSprintStatusRetroKeys(),
+        scanBacklogEpicsWithStartedStories()
+      )
     },
     SPRINT_STATUS_SHAPE
   )

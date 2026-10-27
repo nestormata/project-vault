@@ -6,7 +6,11 @@ import {
   writeFixtureDir,
   writeFixtureSymlink,
 } from './lib/fixture-test-helpers.js'
-import { scanSprintStatusRetroKeys, scanSprintStatusRollup } from './check-sprint-status-rollup.js'
+import {
+  scanBacklogEpicsWithStartedStories,
+  scanSprintStatusRetroKeys,
+  scanSprintStatusRollup,
+} from './check-sprint-status-rollup.js'
 
 const ARTIFACTS_DIR = '_bmad-output/implementation-artifacts'
 const SPRINT_STATUS_PATH = `${ARTIFACTS_DIR}/sprint-status.yaml`
@@ -457,5 +461,75 @@ describe('check-sprint-status-rollup CLI (Story 43.11 AC-1/AC-2/AC-7)', () => {
     const validRun = runScriptCli(SCRIPT, valid)
     expect(validRun.status).toBe(0)
     expect(validRun.stdout).toContain('— OK')
+  })
+})
+
+describe('scanBacklogEpicsWithStartedStories (Story 63.4 AC-5, epic-63 retro Finding 4)', () => {
+  it('flags epic-N still backlog once a child story is done (the epic-63 drift)', () => {
+    const root = makeFixtureRoot()
+    writeSprint(
+      root,
+      '  epic-63: backlog\n  63-1-neutral-copy: done\n  63-2-hygiene: backlog\n  epic-63-retrospective: optional\n'
+    )
+    expect(scanBacklogEpicsWithStartedStories(root)).toEqual([
+      { epicKey: 'epic-63', line: 2, started: [{ key: '63-1-neutral-copy', status: 'done' }] },
+    ])
+  })
+
+  it('flags a child in review or ready-for-dev too (the epic-65 drift), listing every started child', () => {
+    const root = makeFixtureRoot()
+    writeSprint(
+      root,
+      '  epic-65: backlog\n  65-4-a: done\n  65-5-b: review\n  65-7-c: ready-for-dev\n  65-8-d: backlog\n'
+    )
+    expect(scanBacklogEpicsWithStartedStories(root)[0]?.started).toEqual([
+      { key: '65-4-a', status: 'done' },
+      { key: '65-5-b', status: 'review' },
+      { key: '65-7-c', status: 'ready-for-dev' },
+    ])
+  })
+
+  it('does not flag a backlog epic whose children are all backlog, or a started epic', () => {
+    const root = makeFixtureRoot()
+    writeSprint(
+      root,
+      '  epic-64: backlog\n  64-1-a: backlog\n  epic-63: in-progress\n  63-1-a: done\n' +
+        '  epic-62: done\n  62-1-a: done\n  epic-62-retrospective: done\n'
+    )
+    expect(scanBacklogEpicsWithStartedStories(root)).toEqual([])
+  })
+
+  it('anchors the child match on the full epic number (epic-6 is not the parent of 63-1)', () => {
+    const root = makeFixtureRoot()
+    writeSprint(root, '  epic-6: backlog\n  63-1-a: done\n  epic-63: in-progress\n')
+    expect(scanBacklogEpicsWithStartedStories(root)).toEqual([])
+  })
+
+  it('ignores the retrospective and gate keys, which are not child stories', () => {
+    const root = makeFixtureRoot()
+    writeSprint(
+      root,
+      '  epic-9: backlog\n  epic-9-gate: blocked-on-3-2\n  epic-9-retrospective: done\n  9-1-a: backlog\n'
+    )
+    expect(scanBacklogEpicsWithStartedStories(root)).toEqual([])
+  })
+
+  it('the CLI fails with path:line, the started children and a Fix line', () => {
+    const root = makeFixtureRoot()
+    writeSprint(root, '  epic-63: backlog\n  63-1-a: done\n  epic-63-retrospective: optional\n')
+    const run = runScriptCli('scripts/check-sprint-status-rollup.ts', root)
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain(
+      'FATAL: epic-N is still "backlog" while a child story has started (epic-63 retro Finding 4):'
+    )
+    expect(run.stderr).toContain(
+      `  - ${SPRINT_STATUS_PATH}:2: epic-63 is "backlog", but 63-1-a (done) has started`
+    )
+    expect(run.stderr).toContain('Fix: set the epic-N key(s) above to "in-progress"')
+    expect(run.stdout).not.toContain('OK')
+  })
+
+  it('has no backlog epic with a started child in the currently committed sprint-status.yaml', () => {
+    expect(scanBacklogEpicsWithStartedStories(process.cwd())).toEqual([])
   })
 })

@@ -277,6 +277,33 @@ export function runOverlayGuard(
   run()
 }
 
+/** One overlay input of a guard, with its optional content-shape sentinel. */
+export type OverlayInput = { relPath: string; shape?: OverlayShape }
+
+/**
+ * `runOverlayGuard` over several inputs in order (Story 63.4): the first absent or unreadable one
+ * decides SKIPPED or FATAL, and `run` runs only when every input is readable.
+ */
+export function runOverlayGuards(
+  checkName: string,
+  rootDir: string,
+  inputs: readonly OverlayInput[],
+  run: () => void
+): void {
+  const [first, ...rest] = inputs
+  if (first === undefined) {
+    run()
+    return
+  }
+  runOverlayGuard(
+    checkName,
+    rootDir,
+    first.relPath,
+    () => runOverlayGuards(checkName, rootDir, rest, run),
+    first.shape
+  )
+}
+
 /** Story 43.11 violation-line suffix for a key declared on several lines: `:3`, `:3 and :7`,
  * `:3, :7 and :19`. */
 /**
