@@ -10,5 +10,5 @@
   node="back.settings.notifications"
   class="text-sm text-indigo-600 hover:text-indigo-800"
 />
-<h1 class="mt-2 text-2xl font-bold text-gray-900">Notification Preferences</h1>
+<h1 class="mt-2 text-2xl font-bold text-gray-900">Notification Settings Throwaway</h1>
 <p class="text-gray-500">Configure how and when you receive alerts from Project Vault.</p>
