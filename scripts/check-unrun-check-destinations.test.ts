@@ -189,6 +189,11 @@ describe('scanUnrunCheckDestinations: destinations (AC-2)', () => {
     expect(oneStory(body, { files: { [TEST_FILE]: 'test' } })).toEqual([])
   })
 
+  it('trims a 50k-character run of wrapper characters around a destination (S8786)', () => {
+    const wrapped = '(' + '*'.repeat(50_000) + HUMAN_KEY + '.'.repeat(50_000)
+    expect(oneStory('Not run; moved to backlog story ' + wrapped)).toEqual([])
+  })
+
   it('is case-insensitive on the destination phrase', () => {
     expect(oneStory(`NOT RUN: zoom. Moved to backlog story ${HUMAN_KEY}`)).toEqual([])
   })
