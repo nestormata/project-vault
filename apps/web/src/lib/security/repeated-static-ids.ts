@@ -97,14 +97,14 @@ function expressionText(tag: Node): unknown {
 
 function literalValue(value: unknown): string | null {
   const parts = (Array.isArray(value) ? value : [value]) as (Node | true)[]
-  if (parts.length === 0 || parts.some((part) => part === true)) return null
+  if (parts.length === 0 || parts.includes(true)) return null
   const texts = parts.map((part) => {
     const node = part as Node
     if (node.type === 'Text') return node.data ?? ''
     const literal = node.type === 'ExpressionTag' ? expressionText(node) : undefined
     return typeof literal === 'string' ? literal : null
   })
-  if (texts.some((text) => text === null)) return null
+  if (texts.includes(null)) return null
   const joined = texts.join('').trim()
   return joined === '' ? null : joined
 }
