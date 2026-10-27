@@ -569,12 +569,15 @@ jobs:
       - name: Generate SvelteKit config for SonarCloud
         run: pnpm --filter @project-vault/web-host exec svelte-kit sync
 
-      - name: Test (with coverage) - web, agent, crypto, shared, vault-action, extension-api, composition-kit
+      # The fixtures carry their own coverage thresholds. Without them here only the nightly
+      # flaky-repeat legs ran those tests, and a fixture below threshold kept the nightly red
+      # for three nights (2026-10-24..26) while every PR was green.
+      - name: Test (with coverage) - web, agent, crypto, shared, vault-action, extension-api, composition-kit, fixtures
         run: >-
           pnpm turbo test --filter=@project-vault/web-host --filter=@project-vault/shared
           --filter=@project-vault/agent --filter=@project-vault/crypto
           --filter=@project-vault/vault-action --filter=@project-vault/extension-api
-          --filter=@project-vault/composition-kit
+          --filter=@project-vault/composition-kit --filter=./fixtures/*
 
       - name: Upload coverage for SonarCloud (web, agent, crypto, shared, vault-action, extension-api, composition-kit)
         if: always()
