@@ -436,6 +436,7 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
       'internal-api-choke-point',
       'monolithic-region',
       'raw-fetch',
+      'repeated-static-ids',
       'route-exists',
       'static-hardening',
       'tailwind-boundary',
