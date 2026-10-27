@@ -255,5 +255,138 @@ describe('mock-api-routes-extension', () => {
       fn({}, { getHeader: () => undefined }, () => undefined)
       expect(observed.hookOrder).toEqual([{ phase: 'onRequest', requestIdHeader: false }])
     })
+
+    it('app-wrap answers CM paths itself and delegates every other not-found to PV', async () => {
+      setApiRoutesScenario('app-wrap')
+      const notFound = appHandlers()?.notFoundHandler as (...a: unknown[]) => Promise<unknown>
+      const sent: unknown[] = []
+      const reply = {
+        status: (code: number) => ({ send: (body: unknown) => sent.push([code, body]) }),
+      }
+      await notFound({ url: '/cm/missing' }, reply, async () => 'pv')
+      expect(sent).toEqual([[404, { code: 'cm_not_found' }]])
+      await expect(notFound({ url: '/api/v1/missing' }, reply, async () => 'pv')).resolves.toBe(
+        'pv'
+      )
+    })
+
+    it('app-replace answers every error and not-found with its own body', async () => {
+      setApiRoutesScenario('app-replace')
+      const app = appHandlers()
+      const sent: unknown[] = []
+      const reply = {
+        status: (code: number) => ({ send: (body: unknown) => sent.push([code, body]) }),
+      }
+      await (app?.errorHandler as (...a: unknown[]) => Promise<unknown>)(
+        new RangeError('x'),
+        {},
+        reply
+      )
+      await (app?.notFoundHandler as (...a: unknown[]) => Promise<unknown>)({}, reply)
+      expect(sent).toEqual([
+        [418, { code: 'cm_teapot', errorName: 'RangeError' }],
+        [404, { code: 'cm_nope' }],
+      ])
+      expect(observed.errorHandlerErrors).toEqual(['RangeError'])
+    })
+
+    it('the app error routes throw a CmError, a plain error and a 400 error', async () => {
+      setApiRoutesScenario('app-wrap')
+      const call = routeCaller()
+      await expect(call('GET /cm/boom')).rejects.toMatchObject({ name: 'CmError' })
+      await expect(call('GET /cm/plain-error')).rejects.toThrow('plain failure')
+      await expect(call('GET /cm/status-error')).rejects.toMatchObject({ statusCode: 400 })
+    })
+  })
+
+  describe('Story 65.6 credential-sharing scenario', () => {
+    type Calls = Array<[string, Record<string, unknown>]>
+
+    function fakeHost(calls: Calls, revokeError?: unknown) {
+      const record = (name: string) => async (input: Record<string, unknown>) => {
+        calls.push([name, input])
+        if (name === 'revokeShare' && revokeError !== undefined) throw revokeError
+        return { status: 'ok', name }
+      }
+      return {
+        credentialSharing: {
+          createExternalShare: record('createExternalShare'),
+          listSharesForCredential: record('listSharesForCredential'),
+          revokeShare: record('revokeShare'),
+        },
+      }
+    }
+
+    function sharingCaller(host: unknown) {
+      setApiRoutesScenario('credential-sharing')
+      const routes = new Map(
+        Object.entries(extension.hooksFactory(host as never).apiRoutes?.routes ?? {})
+      )
+      return (key: string, ...args: unknown[]) =>
+        (routes.get(key)?.handler as (...a: unknown[]) => Promise<unknown>)(...args)
+    }
+
+    const REVOKE = 'POST /api/v1/cm/shares/revoke'
+
+    const ctx = { auth: { orgId: 'org-1', userId: 'user-1' } }
+    const ids = { projectId: 'p1', credentialId: 'c1' }
+
+    it('needs the real HostServices to build its routes', () => {
+      setApiRoutesScenario('credential-sharing')
+      expect(() => extension.hooksFactory()).toThrow('needs the real HostServices')
+    })
+
+    it('creates a share without actingUserId and forwards a field key only when given', async () => {
+      const calls: Calls = []
+      const call = sharingCaller(fakeHost(calls))
+      await expect(call('POST /api/v1/cm/shares', ctx, { body: ids })).resolves.toEqual({
+        data: { status: 'ok', name: 'createExternalShare' },
+      })
+      await call('POST /api/v1/cm/shares', ctx, { body: { ...ids, fieldKey: 'password' } })
+      const [plain, withField] = calls.map(([, input]) => input)
+      expect(plain).toMatchObject({ organizationId: 'org-1', ...ids })
+      expect(plain).not.toHaveProperty('fieldKey')
+      expect(plain).not.toHaveProperty('actingUserId')
+      expect(withField).toMatchObject({ fieldKey: 'password' })
+    })
+
+    it('lists shares with the signed-in user as viewer', async () => {
+      const calls: Calls = []
+      const call = sharingCaller(fakeHost(calls))
+      await call('GET /api/v1/cm/shares', ctx, { query: { credentialId: 'c1' } })
+      expect(calls).toEqual([
+        [
+          'listSharesForCredential',
+          { organizationId: 'org-1', credentialId: 'c1', viewer: { userId: 'user-1' } },
+        ],
+      ])
+    })
+
+    it('revokes with the signed-in user as actor and turns a failure into its error code', async () => {
+      const calls: Calls = []
+      const body = { ...ids, shareId: 's1' }
+      await expect(sharingCaller(fakeHost(calls))(REVOKE, ctx, { body })).resolves.toEqual({
+        data: { status: 'ok', name: 'revokeShare' },
+      })
+      expect(calls[0]?.[1]).toMatchObject({ shareId: 's1', actor: { userId: 'user-1' } })
+
+      const coded = sharingCaller(fakeHost([], { code: 'share_not_found' }))
+      await expect(coded(REVOKE, ctx, { body })).resolves.toEqual({
+        data: { status: 'error', code: 'share_not_found' },
+      })
+      const uncoded = sharingCaller(fakeHost([], new Error('no code')))
+      await expect(uncoded(REVOKE, ctx, { body })).resolves.toEqual({
+        data: { status: 'error', code: null },
+      })
+    })
+  })
+
+  it('reads no rows from a non-array result and answers a webhook without a provider', async () => {
+    const call = routeCaller()
+    const ctx = { auth: { orgId: 'org-1' }, tx: { execute: async () => ({ rowCount: 0 }) } }
+    await expect(call('GET /api/v1/cm/documents', ctx)).resolves.toEqual({
+      data: { orgId: 'org-1', visibleProjectIds: [] },
+    })
+    await expect(call('POST /cm/webhooks/:provider', {}, {})).resolves.toEqual({ received: null })
   })
 })
