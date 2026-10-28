@@ -406,7 +406,9 @@ function validateThemeSchema(parsed: unknown): ThemeSchema | { reason: string } 
   return { name: parsed.name, tokens, assets }
 }
 
-const THEME_TOKEN_REGISTRY = THEME_TOKENS as Record<string, ThemeTokenDefinition>
+const THEME_TOKEN_DEFINITIONS: ReadonlyMap<string, ThemeTokenDefinition> = new Map(
+  Object.entries(THEME_TOKENS)
+)
 
 // Story 30.4 AC2/AC3: `colorPrimary600`/`colorPrimary700` are the tokens rendered as a button
 // *background* (Story 29.5 AC3's `--color-brand-600`/`-700` indirection). Story 72.2 (P1b): the
@@ -440,37 +442,66 @@ function colorOf(tokens: ReadonlyMap<string, unknown>, key: string, fallback: st
   return typeof value === 'string' ? value : fallback
 }
 
+const DEFAULT_ACCENT_COLORS: ReadonlyMap<string, string> = new Map([
+  ['colorPrimary600', '#7c3aed'],
+  ['colorPrimary700', '#6d28d9'],
+])
+
 function checkAccentTextPair(
   tokens: ReadonlyMap<string, unknown>,
   key: string,
-  rawValue: string
+  accent: string
 ): { reason: string } | null {
-  const textKey = tokens.get('colorTextOnAccent') === undefined ? null : 'colorTextOnAccent'
+  const hasText = tokens.get('colorTextOnAccent') !== undefined
   const text = colorOf(tokens, 'colorTextOnAccent', DEFAULT_TEXT_ON_ACCENT)
-  if (contrastRatio(rawValue, text) >= MIN_BUTTON_TEXT_CONTRAST_RATIO) return null
-  const against = textKey === null ? 'white button text' : `\`${textKey}\``
-  return { reason: `token \`${key}\`: insufficient contrast against ${against} (needs >= 4.5:1)` }
+  if (contrastRatio(accent, text) >= MIN_BUTTON_TEXT_CONTRAST_RATIO) return null
+  // A text colour that cannot be parsed (5/7-digit hex) is the real culprit, not the accent.
+  const unparseableText = hasText && contrastRatio(text, DEFAULT_TEXT_ON_ACCENT) === 0
+  const culprit = unparseableText ? 'colorTextOnAccent' : key
+  const against = hasText ? '`colorTextOnAccent`' : 'white button text'
+  return {
+    reason: `token \`${culprit}\`: insufficient contrast against ${against} (needs >= 4.5:1)`,
+  }
 }
 
-/** Contrast pairs across tokens, run once every value passed its own grammar check. */
-function checkContrastPairs(tokens: ReadonlyMap<string, unknown>): { reason: string } | null {
+function checkAccentPairs(tokens: ReadonlyMap<string, unknown>): { reason: string } | null {
+  const hasText = tokens.get('colorTextOnAccent') !== undefined
   for (const key of BUTTON_BACKGROUND_CONTRAST_KEYS) {
-    const value = tokens.get(key)
-    if (typeof value !== 'string') continue
-    const failure = checkAccentTextPair(tokens, key, value)
+    const set = tokens.get(key)
+    // An unset accent is measured against its default only when the theme sets the text colour,
+    // so a text colour that cannot work with the default accent is rejected too.
+    const fallback = hasText ? DEFAULT_ACCENT_COLORS.get(key) : undefined
+    const accent = typeof set === 'string' ? set : fallback
+    if (accent === undefined) continue
+    const failure = checkAccentTextPair(tokens, key, accent)
     if (failure) return failure
   }
+  return null
+}
+
+function checkNonTextPairs(tokens: ReadonlyMap<string, unknown>): { reason: string } | null {
+  const setKeys = NON_TEXT_CONTRAST_KEYS.filter((key) => typeof tokens.get(key) === 'string')
+  if (setKeys.length === 0) return null
   const background = colorOf(tokens, 'colorBackground', DEFAULT_PAGE_BACKGROUND)
-  for (const key of NON_TEXT_CONTRAST_KEYS) {
-    const value = tokens.get(key)
-    if (typeof value !== 'string') continue
-    if (contrastRatio(value, background) < MIN_NON_TEXT_CONTRAST_RATIO) {
+  if (!isFullyOpaqueColor(background)) {
+    return { reason: 'token `colorBackground`: must be fully opaque to validate contrast' }
+  }
+  if (contrastRatio(background, DEFAULT_PAGE_BACKGROUND) === 0) {
+    return { reason: 'token `colorBackground`: cannot be used to validate contrast' }
+  }
+  for (const key of setKeys) {
+    if (contrastRatio(colorOf(tokens, key, ''), background) < MIN_NON_TEXT_CONTRAST_RATIO) {
       return {
         reason: `token \`${key}\`: insufficient contrast against the page background (needs >= 3:1)`,
       }
     }
   }
   return null
+}
+
+/** Contrast pairs across tokens, run once every value passed its own grammar check. */
+function checkContrastPairs(tokens: ReadonlyMap<string, unknown>): { reason: string } | null {
+  return checkAccentPairs(tokens) ?? checkNonTextPairs(tokens)
 }
 
 /** Per-key type-grammar + opacity validation, factored out of `validateAndCompileTokens()`'s loop
@@ -498,7 +529,9 @@ function validateAndCompileTokens(
 ): { declarations: string[] } | { reason: string } {
   const declarations: string[] = []
   for (const [key, rawValue] of Object.entries(tokens)) {
-    const def = THEME_TOKEN_REGISTRY[key]
+    // Own-property lookup: `constructor`, `toString` or a JSON `__proto__` key must read as
+    // unregistered, never as an inherited (type-less, therefore unvalidated) definition.
+    const def = THEME_TOKEN_DEFINITIONS.get(key)
     if (!def) return { reason: `unregistered token \`${key}\`` }
     if (typeof rawValue !== 'string') return { reason: `token \`${key}\`: invalid value` }
     const failure = validateTokenValue(key, rawValue, def)

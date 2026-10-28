@@ -126,12 +126,20 @@ describe('72.2 text-on-accent contrast guard', () => {
   })
 
   it('accepts a light accent when dark colorTextOnAccent reaches 4.5:1', async () => {
-    const result = await load({ colorPrimary600: '#fde68a', colorTextOnAccent: '#111827' })
+    const result = await load({
+      colorPrimary600: '#fde68a',
+      colorPrimary700: '#fcd34d',
+      colorTextOnAccent: '#111827',
+    })
     expect(result).toEqual({ loaded: ['acme.json'], failed: [] })
   })
 
   it('rejects a dark accent with a dark colorTextOnAccent, naming the pair', async () => {
-    const result = await load({ colorPrimary700: '#1e3a8a', colorTextOnAccent: '#111827' })
+    const result = await load({
+      colorPrimary600: '#fde68a',
+      colorPrimary700: '#1e3a8a',
+      colorTextOnAccent: '#111827',
+    })
     expect(result.failed[0]?.reason).toBe(
       'token `colorPrimary700`: insufficient contrast against `colorTextOnAccent` (needs >= 4.5:1)'
     )
@@ -187,5 +195,70 @@ describe('72.2 non-text contrast (3:1)', () => {
   it('leaves the other added colours grammar-checked only', async () => {
     const result = await load({ colorSuccess: '#ffffff', colorSurface: '#000000' })
     expect(result.failed).toEqual([])
+  })
+})
+
+describe('72.2 review hardening', () => {
+  it.each(['constructor', 'toString', 'hasOwnProperty', 'valueOf'])(
+    'rejects the inherited object key %s as unregistered (no CSS reaches the output)',
+    async (key) => {
+      const result = await load({ [key]: 'red;} body{background:url(https://evil.example/x)} x{' })
+      expect(result.loaded).toEqual([])
+      expect(result.failed[0]?.reason).toBe(`unregistered token \`${key}\``)
+    }
+  )
+
+  it('rejects a JSON __proto__ token key', async () => {
+    const content = '{"name":"acme","tokens":{"__proto__":"red;}"}}'
+    const result = await reloadThemes(THEMES_DIR, {
+      readdir: async () => ['acme.json'],
+      stat: async () => ({ size: content.length }),
+      readFileBounded: async () => content,
+      logger: silentLogger,
+    })
+    expect(result.loaded).toEqual([])
+  })
+
+  it('checks colorTextOnAccent against the default accents when no primary is set', async () => {
+    const same = await load({ colorTextOnAccent: '#7c3aed' })
+    expect(same.failed[0]?.reason).toBe(
+      'token `colorPrimary600`: insufficient contrast against `colorTextOnAccent` (needs >= 4.5:1)'
+    )
+    expect((await load({ colorTextOnAccent: '#ffffff' })).failed).toEqual([])
+  })
+
+  it.each(['#12345', '#1234567'])(
+    'blames an unparseable colorTextOnAccent %s, not the accent',
+    async (value) => {
+      const result = await load({ colorTextOnAccent: value })
+      expect(result.failed[0]?.reason).toBe(
+        'token `colorTextOnAccent`: insufficient contrast against `colorTextOnAccent` (needs >= 4.5:1)'
+      )
+    }
+  )
+
+  it('accepts all pair keys in either order', async () => {
+    const a = await load({ colorPrimary600: '#1e3a8a', colorTextOnAccent: '#ffffff' })
+    const b = await load({ colorTextOnAccent: '#ffffff', colorPrimary600: '#1e3a8a' })
+    expect(a.failed).toEqual([])
+    expect(b.failed).toEqual([])
+  })
+
+  it('requires an opaque colorBackground when a non-text token is set', async () => {
+    const result = await load({ colorBackground: '#00000000', colorFocusRing: '#ffffff' })
+    expect(result.failed[0]?.reason).toBe(
+      'token `colorBackground`: must be fully opaque to validate contrast'
+    )
+  })
+
+  it('blames an unparseable colorBackground, not the non-text token', async () => {
+    const result = await load({ colorBackground: '#12345', colorBorderStrong: '#000000' })
+    expect(result.failed[0]?.reason).toBe(
+      'token `colorBackground`: cannot be used to validate contrast'
+    )
+  })
+
+  it('still allows a translucent colorBackground when no non-text token is set', async () => {
+    expect((await load({ colorBackground: 'rgba(255, 255, 255, 0.1)' })).failed).toEqual([])
   })
 })

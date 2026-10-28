@@ -883,7 +883,7 @@ into a `[data-theme="<name>"]` block. Keys are only ever **added**; the original
 | `typeFamily`                                                                                                                                       | `--type-family`          | `sans-serif` / `serif` / `monospace`   | `sans-serif`                               |
 
 The defaults live in a base `:root` block in `apps/web/src/app.css`, together with `color-scheme: light`
-and the document (`html, body`) background. That block is static (a theme cannot emit a global `:root`
+and the `html, body` background (it reads `--color-background`, which resolves from the base block, so it does not follow a `[data-theme]` wrapper; `color-scheme` is fixed to `light` and has no token yet). That block is static (a theme cannot emit a global `:root`
 rule, because every compiled theme is concatenated into one stylesheet); the `[data-theme]` wrapper
 blocks, the live switch and the "your theme is gone" fallback are unchanged. A theme that sets none of the
 new keys renders as before.
@@ -893,7 +893,11 @@ Contrast guard (at load time; a failing theme is rejected with the pair named in
 - `colorPrimary600` and `colorPrimary700` need 4.5:1 against `colorTextOnAccent`, or against white when the
   theme does not set it.
 - `colorFocusRing` and `colorBorderStrong` need 3:1 against the theme's `colorBackground` (white when unset).
-- These keys, and `colorTextOnAccent`, must be fully opaque.
+- A theme that sets `colorTextOnAccent` is also measured against the default accents for any primary it
+  leaves unset.
+- These keys, `colorTextOnAccent`, and `colorBackground` (when a 3:1 key is set), must be fully opaque.
+- The defaults of the 3:1 keys are not re-checked against a theme's own `colorBackground`; a theme with a
+  dark background should set `colorFocusRing` and `colorBorderStrong` itself.
 
 New keys are validated exactly like the existing ones: no `url(`, `;`, `}` or expression is accepted in a
 colour, length or enum value.
