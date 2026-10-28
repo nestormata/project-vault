@@ -59,3 +59,34 @@
     0 0 0 2px var(--color-slate-950),
     0 0 0 4px var(--color-brand-400);
 }
+
+/* Story 72.2 (P1a/P1b) base `:root` block. Defaults for the ADDED theme tokens (kebab-case of the
+   `THEME_TOKENS` keys in packages/shared/src/constants/theme-tokens.ts; the registry-completeness
+   test in apps/api/src/modules/theming/base-theme-defaults.test.ts fails when one is missing) plus
+   the document-level `color-scheme` and background. It is static on purpose: every compiled theme
+   is concatenated into one stylesheet, so a global `:root` block coming from a theme would leak
+   into all of them. A theme still overrides the values below through its `[data-theme]` wrapper
+   block, which is unchanged. The defaults reproduce today's render: the document background is
+   white either way and no existing class reads these properties yet. */
+:root {
+  color-scheme: light;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc;
+  --color-text-muted: #475569;
+  --color-text-on-accent: #ffffff;
+  --color-focus-ring: #6d28d9;
+  --color-border-strong: #64748b;
+  --color-success: #15803d;
+  --color-warning: #a16207;
+  --color-danger: #b91c1c;
+  --color-info: #1d4ed8;
+  --focus-ring-width: 2px;
+  --density: comfortable;
+  --motion: full;
+  --type-family: sans-serif;
+}
+
+html,
+body {
+  background-color: var(--color-background, #ffffff);
+}

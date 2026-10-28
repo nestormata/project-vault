@@ -861,6 +861,48 @@ normative sections (`compatibility`, `overrides`, `additions`, `replacements`, `
 `contributions`, `injectionPointsUsed`, `injections`, `navIdsReferenced`, `apiRouteOverrides`, and the removals'
 paths). `notes` and the removed files' hashes never fail it.
 
+## Theme tokens (M6)
+
+The theme-token registry (`THEME_TOKENS`, `packages/shared/src/constants/theme-tokens.ts`) is the whole
+contract: a theme file may set only these keys, each validated against its type's grammar and compiled
+into a `[data-theme="<name>"]` block. Keys are only ever **added**; the original nine are unchanged.
+
+| Key                                                                                                                                                | CSS custom property      | Type                                   | Default                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------- | ------------------------------------------ |
+| `colorPrimary600`, `colorPrimary700`, `colorBackground`, `colorForeground`, `colorBorder`, `radiusMd`, `radiusLg`, `spacingUnit`, `fontWeightBody` | unchanged                | unchanged                              | unchanged                                  |
+| `colorSurface`                                                                                                                                     | `--color-surface`        | color                                  | `#ffffff`                                  |
+| `colorSurfaceMuted`                                                                                                                                | `--color-surface-muted`  | color                                  | `#f8fafc`                                  |
+| `colorTextMuted`                                                                                                                                   | `--color-text-muted`     | color                                  | `#475569`                                  |
+| `colorTextOnAccent`                                                                                                                                | `--color-text-on-accent` | color                                  | `#ffffff`                                  |
+| `colorFocusRing`                                                                                                                                   | `--color-focus-ring`     | color                                  | `#6d28d9`                                  |
+| `colorBorderStrong`                                                                                                                                | `--color-border-strong`  | color                                  | `#64748b`                                  |
+| `colorSuccess`, `colorWarning`, `colorDanger`, `colorInfo`                                                                                         | `--color-success` ...    | color                                  | `#15803d`, `#a16207`, `#b91c1c`, `#1d4ed8` |
+| `focusRingWidth`                                                                                                                                   | `--focus-ring-width`     | length                                 | `2px`                                      |
+| `density`                                                                                                                                          | `--density`              | `compact` / `comfortable` / `spacious` | `comfortable`                              |
+| `motion`                                                                                                                                           | `--motion`               | `full` / `reduced` / `none`            | `full`                                     |
+| `typeFamily`                                                                                                                                       | `--type-family`          | `sans-serif` / `serif` / `monospace`   | `sans-serif`                               |
+
+The defaults live in a base `:root` block in `apps/web/src/app.css`, together with `color-scheme: light`
+and the document (`html, body`) background. That block is static (a theme cannot emit a global `:root`
+rule, because every compiled theme is concatenated into one stylesheet); the `[data-theme]` wrapper
+blocks, the live switch and the "your theme is gone" fallback are unchanged. A theme that sets none of the
+new keys renders as before.
+
+Contrast guard (at load time; a failing theme is rejected with the pair named in the reason):
+
+- `colorPrimary600` and `colorPrimary700` need 4.5:1 against `colorTextOnAccent`, or against white when the
+  theme does not set it.
+- `colorFocusRing` and `colorBorderStrong` need 3:1 against the theme's `colorBackground` (white when unset).
+- These keys, and `colorTextOnAccent`, must be fully opaque.
+
+New keys are validated exactly like the existing ones: no `url(`, `;`, `}` or expression is accepted in a
+colour, length or enum value.
+
+CM compatibility tuple: adding keys is a minor change to the M6 contract. A host that pins the contract
+should note the Project Vault release that first carries these keys (the next release after this change) in
+its compatibility tuple; no extension-api version changes, because theme tokens are not part of the
+extension-api package.
+
 ## The version tuple
 
 `web-host`'s `manifests/compatibility.json` names the PV release, the `extension-api` version, the

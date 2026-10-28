@@ -408,36 +408,73 @@ function validateThemeSchema(parsed: unknown): ThemeSchema | { reason: string } 
 
 const THEME_TOKEN_REGISTRY = THEME_TOKENS as Record<string, ThemeTokenDefinition>
 
-// Story 30.4 AC2/AC3: `colorPrimary600`/`colorPrimary700` are the only two tokens actually
-// rendered as a button *background* behind fixed `text-white` app-wide (Story 29.5 AC3's
-// `--color-brand-600`/`-700` indirection), which is why the check is scoped to them.
-// No other token (`colorBackground`, `colorForeground`, `colorBorder`) is
-// contrast- or opacity-checked by this story.
+// Story 30.4 AC2/AC3: `colorPrimary600`/`colorPrimary700` are the tokens rendered as a button
+// *background* (Story 29.5 AC3's `--color-brand-600`/`-700` indirection). Story 72.2 (P1b): the
+// text painted on them is `colorTextOnAccent` when the same theme sets it, else the historical
+// fixed white, so a theme with dark text on a light accent is accepted when the pair passes.
 const BUTTON_BACKGROUND_CONTRAST_KEYS = new Set(['colorPrimary600', 'colorPrimary700'])
-const FIXED_BUTTON_TEXT_COLOR = '#ffffff'
+const DEFAULT_TEXT_ON_ACCENT = '#ffffff'
+const DEFAULT_PAGE_BACKGROUND = '#ffffff'
 const MIN_BUTTON_TEXT_CONTRAST_RATIO = 4.5
+const MIN_NON_TEXT_CONTRAST_RATIO = 3
+// Non-text pairs (WCAG 1.4.11): the token must reach 3:1 against the page background.
+const NON_TEXT_CONTRAST_KEYS = ['colorFocusRing', 'colorBorderStrong'] as const
+// Tokens whose effective contrast is only defined when fully opaque.
+const OPAQUE_REQUIRED_KEYS = new Set([
+  ...BUTTON_BACKGROUND_CONTRAST_KEYS,
+  ...NON_TEXT_CONTRAST_KEYS,
+  'colorTextOnAccent',
+])
 
-/**
- * Story 30.4 AC2/AC3 gate, scoped to `colorPrimary600`/`colorPrimary700` only: opacity is checked
- * before contrast (a translucent value's contrast against an unknown backdrop isn't well-defined),
- * then the value must reach >= 4.5:1 contrast against the fixed white button text. Returns `null`
- * when the gate doesn't apply to this key, or passes.
- */
-function checkButtonBackgroundContrast(key: string, rawValue: string): { reason: string } | null {
-  if (!BUTTON_BACKGROUND_CONTRAST_KEYS.has(key)) return null
-  if (!isFullyOpaqueColor(rawValue)) {
-    return { reason: `token \`${key}\`: must be fully opaque to validate button-text contrast` }
+/** Opacity gate for the keys whose contrast depends on being fully opaque (checked before any
+ * contrast comparison: a translucent value's contrast against an unknown backdrop is undefined). */
+function checkOpaqueForContrast(key: string, rawValue: string): { reason: string } | null {
+  if (!OPAQUE_REQUIRED_KEYS.has(key)) return null
+  if (isFullyOpaqueColor(rawValue)) return null
+  const subject = BUTTON_BACKGROUND_CONTRAST_KEYS.has(key) ? 'button-text contrast' : 'contrast'
+  return { reason: `token \`${key}\`: must be fully opaque to validate ${subject}` }
+}
+
+function colorOf(tokens: ReadonlyMap<string, unknown>, key: string, fallback: string): string {
+  const value = tokens.get(key)
+  return typeof value === 'string' ? value : fallback
+}
+
+function checkAccentTextPair(
+  tokens: ReadonlyMap<string, unknown>,
+  key: string,
+  rawValue: string
+): { reason: string } | null {
+  const textKey = tokens.get('colorTextOnAccent') === undefined ? null : 'colorTextOnAccent'
+  const text = colorOf(tokens, 'colorTextOnAccent', DEFAULT_TEXT_ON_ACCENT)
+  if (contrastRatio(rawValue, text) >= MIN_BUTTON_TEXT_CONTRAST_RATIO) return null
+  const against = textKey === null ? 'white button text' : `\`${textKey}\``
+  return { reason: `token \`${key}\`: insufficient contrast against ${against} (needs >= 4.5:1)` }
+}
+
+/** Contrast pairs across tokens, run once every value passed its own grammar check. */
+function checkContrastPairs(tokens: ReadonlyMap<string, unknown>): { reason: string } | null {
+  for (const key of BUTTON_BACKGROUND_CONTRAST_KEYS) {
+    const value = tokens.get(key)
+    if (typeof value !== 'string') continue
+    const failure = checkAccentTextPair(tokens, key, value)
+    if (failure) return failure
   }
-  if (contrastRatio(rawValue, FIXED_BUTTON_TEXT_COLOR) < MIN_BUTTON_TEXT_CONTRAST_RATIO) {
-    return {
-      reason: `token \`${key}\`: insufficient contrast against white button text (needs >= 4.5:1)`,
+  const background = colorOf(tokens, 'colorBackground', DEFAULT_PAGE_BACKGROUND)
+  for (const key of NON_TEXT_CONTRAST_KEYS) {
+    const value = tokens.get(key)
+    if (typeof value !== 'string') continue
+    if (contrastRatio(value, background) < MIN_NON_TEXT_CONTRAST_RATIO) {
+      return {
+        reason: `token \`${key}\`: insufficient contrast against the page background (needs >= 3:1)`,
+      }
     }
   }
   return null
 }
 
-/** Per-key type-grammar + (for `colorPrimary600`/`700`) contrast/opacity validation, factored out
- * of `validateAndCompileTokens()`'s loop body to keep its cyclomatic/cognitive complexity down. */
+/** Per-key type-grammar + opacity validation, factored out of `validateAndCompileTokens()`'s loop
+ * body to keep its cyclomatic/cognitive complexity down. */
 function validateTokenValue(
   key: string,
   rawValue: string,
@@ -445,7 +482,7 @@ function validateTokenValue(
 ): { reason: string } | null {
   if (def.type === 'color') {
     if (!isValidColorGrammar(rawValue)) return { reason: `token \`${key}\`: invalid color value` }
-    return checkButtonBackgroundContrast(key, rawValue)
+    return checkOpaqueForContrast(key, rawValue)
   }
   if (def.type === 'length' && !LENGTH_GRAMMAR.test(rawValue)) {
     return { reason: `token \`${key}\`: invalid length value` }
@@ -468,6 +505,8 @@ function validateAndCompileTokens(
     if (failure) return failure
     declarations.push(`  --${kebabCase(key)}: ${rawValue};`)
   }
+  const pairFailure = checkContrastPairs(new Map(Object.entries(tokens)))
+  if (pairFailure) return pairFailure
   return { declarations }
 }
 
