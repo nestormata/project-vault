@@ -3,20 +3,23 @@
   error, required, disabled }) is final (Story 72.3). A labelled native select. `placeholder` adds a
   leading option with an empty value (opt-in).
 -->
-<script lang="ts">
-  import Field from './Field.svelte'
-  import { TEXT_CONTROL_CLASS } from './control-classes.js'
-
+<script module lang="ts">
   export interface SelectOption {
     value: string
     label: string
     disabled?: boolean
   }
+</script>
+
+<script lang="ts">
+  import Field from './Field.svelte'
+  import { TEXT_CONTROL_CLASS } from './control-classes.js'
 
   let {
     id,
     label,
     value = $bindable(''),
+    name,
     options,
     placeholder,
     hint,
@@ -28,6 +31,7 @@
     id: string
     label: string
     value?: string
+    name?: string
     options: readonly SelectOption[]
     placeholder?: string
     hint?: string
@@ -43,6 +47,7 @@
     <select
       class={TEXT_CONTROL_CLASS}
       {id}
+      {name}
       bind:value
       {required}
       {disabled}

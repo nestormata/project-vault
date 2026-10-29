@@ -11,6 +11,7 @@
     id,
     label,
     value = $bindable(''),
+    name,
     type = 'text',
     hint,
     helpId,
@@ -22,7 +23,8 @@
     id: string
     label: string
     value?: string
-    type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'number'
+    name?: string
+    type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url'
     hint?: string
     helpId?: string
     error?: string
@@ -37,6 +39,7 @@
     <input
       class={TEXT_CONTROL_CLASS}
       {id}
+      {name}
       {type}
       {autocomplete}
       bind:value

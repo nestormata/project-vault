@@ -10,6 +10,7 @@
     id,
     label,
     value = $bindable(''),
+    name,
     rows = 4,
     hint,
     helpId,
@@ -20,6 +21,7 @@
     id: string
     label: string
     value?: string
+    name?: string
     rows?: number
     hint?: string
     helpId?: string
@@ -34,6 +36,7 @@
     <textarea
       class={TEXT_CONTROL_CLASS}
       {id}
+      {name}
       {rows}
       bind:value
       {required}

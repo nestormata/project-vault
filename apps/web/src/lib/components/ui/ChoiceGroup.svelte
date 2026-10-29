@@ -4,16 +4,18 @@
   `type="radio"` binds a string, `type="checkbox"` binds a string array. The hint and error describe
   the whole fieldset; `id` prefixes the item ids (`<id>-<index>`), so every id is explicit.
 -->
-<script lang="ts">
-  import FieldMessages from './FieldMessages.svelte'
-  import { describedByOf } from './field-ids.js'
-  import { CHOICE_CONTROL_CLASS } from './control-classes.js'
-
+<script module lang="ts">
   export interface ChoiceOption {
     value: string
     label: string
     disabled?: boolean
   }
+</script>
+
+<script lang="ts">
+  import FieldMessages from './FieldMessages.svelte'
+  import { describedByOf } from './field-ids.js'
+  import { CHOICE_CONTROL_CLASS } from './control-classes.js'
 
   let {
     id,
@@ -57,7 +59,7 @@
   }
 </script>
 
-<fieldset class="space-y-2" aria-describedby={describedBy}>
+<fieldset class="space-y-2">
   <legend class="font-medium text-slate-900">{legend}</legend>
   {#each options as option, index (option.value)}
     <label class="flex items-center gap-2" for={`${id}-${index}`}>
@@ -70,6 +72,7 @@
         checked={selected(option.value)}
         disabled={disabled || option.disabled}
         aria-describedby={describedBy}
+        aria-invalid={error ? true : undefined}
         onchange={(event) => choose(option.value, event.currentTarget.checked)}
       />
       <span>{option.label}</span>

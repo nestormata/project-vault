@@ -356,18 +356,20 @@ resolved path like any other (M4), and each carries `@pv-stable` in its first co
 a change to them is a minor bump of `@project-vault/web-host`. No existing component is retro-stamped. The
 `component-index.json` of the pack lists them with `stability: "stable"` (generated, never typed here).
 
-| Component               | Props                                                                                                                                                          | Events / bindings | Status |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------ |
-| `ui/Button.svelte`      | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`      | `onclick`         | stable |
-| `ui/Field.svelte`       | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                        | none              | stable |
-| `ui/TextField.svelte`   | `id`, `label`, `value`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                              | `bind:value`      | stable |
-| `ui/Textarea.svelte`    | `id`, `label`, `value`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                              | `bind:value`      | stable |
-| `ui/Select.svelte`      | `id`, `label`, `value`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                          | `bind:value`      | stable |
-| `ui/ChoiceGroup.svelte` | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled` | `bind:value`      | stable |
-| `ui/control-classes.ts` | `CONTROL_BORDER`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`                                                                                | none              | stable |
+| Component                 | Props                                                                                                                                                          | Events / bindings | Status |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------ |
+| `ui/Button.svelte`        | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`      | `onclick`         | stable |
+| `ui/Field.svelte`         | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                        | none              | stable |
+| `ui/TextField.svelte`     | `id`, `label`, `value`, `name`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                      | `bind:value`      | stable |
+| `ui/Textarea.svelte`      | `id`, `label`, `value`, `name`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                      | `bind:value`      | stable |
+| `ui/Select.svelte`        | `id`, `label`, `value`, `name`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                  | `bind:value`      | stable |
+| `ui/ChoiceGroup.svelte`   | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled` | `bind:value`      | stable |
+| `ui/FieldMessages.svelte` | `id`, `hint`, `helpId`, `error`                                                                                                                                | none              | stable |
+| `ui/field-ids.ts`         | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                 | none              | stable |
+| `ui/control-classes.ts`   | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                | none              | stable |
 
 Contract rules: `id` is required and explicit (no generated ids, so the server and the browser cannot disagree); the
-control is named by its `<label for>` (or the fieldset `legend`); `aria-describedby` lists the error id first and the
+control is named by its `<label for>` (or the fieldset `legend`); `aria-describedby` (on each input of a group) lists the error id first and the
 hint id second and is absent when neither shows; `aria-invalid="true"` is present only while an error shows; the error
 text is `role="alert"`. A button is `type="button"` and as wide as its content unless told otherwise.
 

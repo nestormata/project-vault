@@ -52,4 +52,32 @@ describe('login family accessibility (72.3)', () => {
     expect(await violations(container)).toEqual([])
     expect(idProblems(container)).toEqual([])
   })
+
+  it('sso step: no axe violation, each control named', async () => {
+    const auth = await import('$lib/api/auth.js')
+    vi.mocked(auth.lookupSsoDomain).mockResolvedValueOnce({
+      ssoRequired: true,
+      providerName: 'corp',
+      theme: null,
+    } as never)
+    const { container } = render(LoginForm, { props: {} })
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Email' }), {
+      target: { value: `${'user'}@${'example.test'}` },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    const credential = await screen.findByRole('textbox', { name: /credential/i })
+    expect(credential.getAttribute('aria-describedby')).toBe('login-sso-help')
+    expect(await violations(container)).toEqual([])
+    expect(idProblems(container)).toEqual([])
+  })
+
+  it('placeholder step (native login off): no axe violation', async () => {
+    const { container } = render(LoginForm, { props: { nativeLoginEnabled: false } })
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Email' }), {
+      target: { value: `${'user'}@${'example.test'}` },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByRole('heading', { level: 2 })
+    expect(await violations(container)).toEqual([])
+  })
 })

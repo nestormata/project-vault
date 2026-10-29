@@ -13,6 +13,8 @@ import {
   TEXT_CONTROL_CLASS,
 } from './control-classes.js'
 import { idProblems } from '$lib/test/dom.js'
+import { readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 
 afterEach(() => cleanup())
 
@@ -183,8 +185,10 @@ describe('ChoiceGroup', () => {
         hint: 'Pick one',
       },
     })
-    const group = screen.getByRole('group', { name: 'Mode' })
-    expect(group.getAttribute('aria-describedby')).toBe('g1-help')
+    expect(screen.getByRole('group', { name: 'Mode' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Alpha' }).getAttribute('aria-describedby')).toBe(
+      'g1-help'
+    )
     const alpha = screen.getByRole('radio', { name: 'Alpha' }) as HTMLInputElement
     const beta = screen.getByRole('radio', { name: 'Beta' }) as HTMLInputElement
     expect(alpha.checked).toBe(true)
@@ -211,7 +215,9 @@ describe('ChoiceGroup', () => {
     const { container } = render(ChoiceGroup, {
       props: { id: 'g3', legend: 'L', type: 'radio', name: 'n', options, hint: 'h', error: 'Bad' },
     })
-    expect(screen.getByRole('group').getAttribute('aria-describedby')).toBe('g3-error g3-help')
+    const first = screen.getAllByRole('radio')[0]
+    expect(first?.getAttribute('aria-describedby')).toBe('g3-error g3-help')
+    expect(first?.getAttribute('aria-invalid')).toBe('true')
     expect(screen.getByRole('alert').textContent).toBe('Bad')
     expect(idProblems(container)).toEqual([])
   })
@@ -220,3 +226,21 @@ describe('ChoiceGroup', () => {
 function textSnippet(text: string) {
   return createRawSnippet(() => ({ render: () => `<span>${text}</span>` }))
 }
+
+describe('M4 index', () => {
+  it('stamps @pv-stable in the first comment of every ui component', () => {
+    const dir = 'src/lib/components/ui/'
+    const files = readdirSync(dir).filter(
+      (name) => /\.(svelte|ts)$/.test(name) && !name.endsWith('.test.ts')
+    )
+    expect(files.length).toBeGreaterThanOrEqual(9)
+    const unstamped = files.filter((name) => {
+      const text = readFileSync(dir + name, 'utf8')
+      const [open, close] = name.endsWith('.svelte') ? ['<!--', '-->'] : ['/**', '*/']
+      const start = text.indexOf(open)
+      const first = start === -1 ? '' : text.slice(start, text.indexOf(close, start))
+      return !first.includes('@pv-stable')
+    })
+    expect(unstamped).toEqual([])
+  })
+})
