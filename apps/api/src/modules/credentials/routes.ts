@@ -258,6 +258,12 @@ function unknownFieldKeyResponse(key: string) {
   return { code: 'unknown_field_key' as const, message: `Unknown field key: '${key}'` }
 }
 
+// Story 72.8 (P6): only a copy is marked; an absent `purpose` is a view reveal, so every row
+// written before this story reads the same way.
+function revealAuditPayload(versionNumber: number, purpose: 'view' | 'copy' | undefined) {
+  return purpose === 'copy' ? { versionNumber, purpose } : { versionNumber }
+}
+
 // Story 13.3 AC-4/AC-5/AC-6 — shapes the /value route's success body from revealCurrentValue's
 // discriminated result; extracted for the same complexity-ceiling reason as the helper above.
 function serializeRevealResult(revealed: {
@@ -1304,7 +1310,7 @@ export function credentialRoutes(fastify: FastifyApp): Promise<void> {
           actorUserId: secureCtx.auth.userId,
           eventType: 'credential.value_revealed',
           resourceId: params.credentialId,
-          payload: { versionNumber: revealed.versionNumber },
+          payload: revealAuditPayload(revealed.versionNumber, query.purpose),
           // Story 13.3 AC-4/AC-5/AC-6 — a first-class column, not nested in `payload`. Unset for
           // an implicit whole-secret legacy/single-default-field reveal (column stays NULL).
           revealedFields: revealed.revealedFields,

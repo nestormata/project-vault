@@ -127,6 +127,9 @@ export const AddVersionBodySchema = z
 export const CredentialValueQuerySchema = z
   .object({
     field: z.string().trim().min(1).max(FIELD_KEY_MAX_LENGTH).regex(FIELD_KEY_PATTERN).optional(),
+    // Story 72.8 (P6): why the value is requested. `copy` = copy without showing it; recorded in
+    // the `credential.value_revealed` payload as `purpose: 'copy'`. Absent means a view reveal.
+    purpose: z.enum(['view', 'copy']).optional(),
   })
   .strict()
   .meta({ id: 'CredentialValueQuery' })

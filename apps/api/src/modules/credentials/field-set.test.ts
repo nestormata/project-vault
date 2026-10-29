@@ -3,6 +3,7 @@ import {
   FieldKeyConflictError,
   assertUniqueFieldKeys,
   buildFieldMeta,
+  computeChangedFields,
   computeFieldDelta,
   fieldMetaForResponse,
   parseFieldsFromPlaintext,
@@ -180,5 +181,20 @@ describe('computeFieldDelta (AC-9)', () => {
       removedFields: ['a', 'b'],
       renamedFields: [],
     })
+  })
+})
+
+describe('computeChangedFields (72-8)', () => {
+  it('names retained keys whose value differs, ignoring added, removed and unchanged keys', () => {
+    expect(
+      computeChangedFields(
+        [f('user', 'a'), f('pass', 'old'), f('gone', 'x')],
+        [f('User', 'a'), f('PASS', 'new'), f('fresh', 'y')]
+      )
+    ).toEqual(['PASS'])
+  })
+
+  it('is empty when nothing changed', () => {
+    expect(computeChangedFields([f('a', '1')], [f('a', '1')])).toEqual([])
   })
 })

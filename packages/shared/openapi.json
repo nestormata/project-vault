@@ -3116,6 +3116,13 @@
             "minLength": 1,
             "maxLength": 64,
             "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "view",
+              "copy"
+            ]
           }
         },
         "additionalProperties": false
@@ -13441,6 +13448,13 @@
             "minLength": 1,
             "maxLength": 64,
             "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "view",
+              "copy"
+            ]
           }
         },
         "additionalProperties": false
