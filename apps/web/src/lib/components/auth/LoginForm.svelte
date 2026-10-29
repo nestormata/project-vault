@@ -5,7 +5,8 @@
   import { m } from '$lib/paraglide/messages.js'
   import { getLocale } from '$lib/paraglide/runtime.js'
   import { setPreAuthTheme, writePreAuthThemeCache } from '$lib/state/theme.svelte.js'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import Button from '$lib/components/ui/Button.svelte'
+  import TextField from '$lib/components/ui/TextField.svelte'
   import PreAuthLanguageSwitcher from './PreAuthLanguageSwitcher.svelte'
   import { consumeRegistrationLocalePending } from './registration-locale.js'
   import {
@@ -231,20 +232,14 @@
   </div>
 
   {#snippet emailField()}
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="login-email"
-        >{m.auth_login_email()}</label
-      >
-      <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
-        id="login-email"
-        type="email"
-        bind:value={email}
-        required
-        aria-describedby="login-email-help"
-      />
-      <FormHelpText id="login-email-help" text={m.form_help_login_email()} />
-    </div>
+    <TextField
+      id="login-email"
+      label={m.auth_login_email()}
+      type="email"
+      bind:value={email}
+      required
+      hint={m.form_help_login_email()}
+    />
   {/snippet}
 
   {#snippet statusAndErrorMessages()}
@@ -290,13 +285,9 @@
           {errorMessage}
         </p>
       {/if}
-      <button
-        class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-        type="submit"
-        disabled={pendingLookupEmail === email}
-      >
+      <Button type="submit" disabled={pendingLookupEmail === email}>
         {pendingLookupEmail === email ? m.auth_login_checking() : m.auth_login_continue()}
-      </button>
+      </Button>
     </form>
   {:else if step === 'sso'}
     <form
@@ -309,28 +300,18 @@
       <p class="text-sm text-slate-600">
         {m.auth_login_sso_description({ email })}
       </p>
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="sso-credential"
-          >{m.auth_login_sso_credential()}</label
-        >
-        <input
-          class="w-full rounded-xl border border-slate-300 px-3 py-2"
-          id="sso-credential"
-          type="text"
-          bind:value={ssoCredential}
-          required
-          aria-describedby="login-sso-help"
-        />
-        <FormHelpText id="login-sso-help" kind="text" />
-      </div>
+      <TextField
+        id="sso-credential"
+        label={m.auth_login_sso_credential()}
+        bind:value={ssoCredential}
+        required
+        hint={m.form_help_text()}
+        helpId="login-sso-help"
+      />
       {@render statusAndErrorMessages()}
-      <button
-        class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-        type="submit"
-        disabled={isSubmitting}
-      >
+      <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? m.auth_login_signing_sso() : m.auth_login_continue_sso()}
-      </button>
+      </Button>
       <button
         class="text-sm font-medium text-slate-700 underline"
         type="button"
@@ -367,29 +348,19 @@
       }}
     >
       {@render emailField()}
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="login-password"
-          >{m.auth_login_password()}</label
-        >
-        <input
-          class="w-full rounded-xl border border-slate-300 px-3 py-2"
-          id="login-password"
-          type="password"
-          autocomplete="current-password"
-          bind:value={password}
-          required
-          aria-describedby="login-password-help"
-        />
-        <FormHelpText id="login-password-help" kind="secret" />
-      </div>
+      <TextField
+        id="login-password"
+        label={m.auth_login_password()}
+        type="password"
+        autocomplete="current-password"
+        bind:value={password}
+        required
+        hint={m.form_help_secret()}
+      />
       {@render statusAndErrorMessages()}
-      <button
-        class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-        type="submit"
-        disabled={isSubmitting}
-      >
+      <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? m.auth_login_signing_in() : m.auth_login_sign_in()}
-      </button>
+      </Button>
     </form>
   {/if}
 {/key}
