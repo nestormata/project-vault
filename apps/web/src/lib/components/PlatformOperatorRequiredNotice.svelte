@@ -10,7 +10,7 @@
   </p>
   <a
     href={resolve('/dashboard')}
-    class="mt-8 inline-block rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+    class="mt-8 inline-block rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
   >
     ← Back to Dashboard
   </a>
