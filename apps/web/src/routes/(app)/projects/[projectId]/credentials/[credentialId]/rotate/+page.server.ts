@@ -73,7 +73,8 @@ const ownLoad = (async ({ params, fetch, locals, setHeaders }) => {
       orgRole,
       canManage: true as const,
       dependencies,
-      fieldMeta: credential.fields,
+      // Story 72.10: a one-time-password seed is replaced from the edit form, not rotated here.
+      fieldMeta: credential.fields.filter((entry) => entry.kind !== 'totp'),
       activeRotationId,
     }
   } catch (error) {

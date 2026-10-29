@@ -5,12 +5,38 @@ import {
   normalizeFieldKey,
   templateFields,
   type CredentialTemplate,
+  type FieldKind,
 } from '@project-vault/shared'
 
 export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
 
 // Story 13.2 — an editable field row in the create/edit field-set forms.
-export type FieldDraft = { key: string; value: string; sensitive: boolean }
+// Story 72.10: `kind` is the field type (text when absent); `storedSeed` marks an existing one-time
+// password field whose seed is write-only: it is never loaded into the form, and an empty value on
+// save keeps the stored seed.
+export type FieldDraft = {
+  key: string
+  value: string
+  sensitive: boolean
+  kind?: FieldKind
+  storedSeed?: boolean
+}
+
+/** The request shape of a draft: the kind is sent only when it is not the default. */
+export function fieldDraftToRequest(draft: FieldDraft): {
+  key: string
+  value: string
+  sensitive: boolean
+  kind?: FieldKind
+} {
+  const kind = draft.kind === 'multiline' || draft.kind === 'totp' ? draft.kind : undefined
+  return {
+    key: draft.key.trim(),
+    value: draft.value,
+    sensitive: kind === 'totp' ? true : draft.sensitive,
+    ...(kind ? { kind } : {}),
+  }
+}
 
 /** Builds the editable draft rows for a template selection (empty for `custom`). Switching
  *  templates is a destructive re-population on the client (AC-1) — the caller decides whether to
