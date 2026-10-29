@@ -22,6 +22,23 @@ export const THEME_TOKENS = {
   radiusLg: { type: 'length' },
   spacingUnit: { type: 'length' },
   fontWeightBody: { type: 'enum', values: ['normal', 'medium', 'bold'] },
+  // Story 72.2 (P1a): keys are ADDED, never replaced or renamed. Semantic colours, the colour
+  // painted on an accent background (`colorTextOnAccent`, honoured by the contrast guard), focus
+  // ring, a stronger control border, density, motion and font family.
+  colorSurface: { type: 'color' },
+  colorSurfaceMuted: { type: 'color' },
+  colorTextMuted: { type: 'color' },
+  colorTextOnAccent: { type: 'color' },
+  colorFocusRing: { type: 'color' },
+  colorBorderStrong: { type: 'color' },
+  colorSuccess: { type: 'color' },
+  colorWarning: { type: 'color' },
+  colorDanger: { type: 'color' },
+  colorInfo: { type: 'color' },
+  focusRingWidth: { type: 'length' },
+  density: { type: 'enum', values: ['compact', 'comfortable', 'spacious'] },
+  motion: { type: 'enum', values: ['full', 'reduced', 'none'] },
+  typeFamily: { type: 'enum', values: ['sans-serif', 'serif', 'monospace'] },
 } as const satisfies Record<string, ThemeTokenDefinition>
 
 export type ThemeTokenKey = keyof typeof THEME_TOKENS
