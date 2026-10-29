@@ -7,7 +7,8 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import FieldMessages from './FieldMessages.svelte'
+  import { describedByOf } from './field-ids.js'
 
   export interface FieldWiring {
     /** The control's `aria-describedby`: error first, then hint; undefined when neither shows. */
@@ -32,10 +33,8 @@
     children: Snippet<[FieldWiring]>
   } = $props()
 
-  const hintId = $derived(helpId ?? `${id}-help`)
-  const errorId = $derived(`${id}-error`)
   const wiring = $derived<FieldWiring>({
-    describedBy: [error ? errorId : '', hint ? hintId : ''].filter(Boolean).join(' ') || undefined,
+    describedBy: describedByOf(id, helpId, hint, error),
     invalid: error ? true : undefined,
   })
 </script>
@@ -43,9 +42,5 @@
 <div class="space-y-2">
   <label class="block font-medium text-slate-900" for={id}>{label}</label>
   {@render children(wiring)}
-  {#if hint}
-    <FormHelpText id={hintId} text={hint} />
-  {/if}{#if error}
-    <p id={errorId} class="text-sm text-red-700" role="alert">{error}</p>
-  {/if}
+  <FieldMessages {id} {hint} {helpId} {error} />
 </div>

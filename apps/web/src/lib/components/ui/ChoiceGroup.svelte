@@ -5,7 +5,8 @@
   the whole fieldset; `id` prefixes the item ids (`<id>-<index>`), so every id is explicit.
 -->
 <script lang="ts">
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import FieldMessages from './FieldMessages.svelte'
+  import { describedByOf } from './field-ids.js'
   import { CHOICE_CONTROL_CLASS } from './control-classes.js'
 
   export interface ChoiceOption {
@@ -38,11 +39,7 @@
     disabled?: boolean
   } = $props()
 
-  const hintId = $derived(helpId ?? `${id}-help`)
-  const errorId = $derived(`${id}-error`)
-  const describedBy = $derived(
-    [error ? errorId : '', hint ? hintId : ''].filter(Boolean).join(' ') || undefined
-  )
+  const describedBy = $derived(describedByOf(id, helpId, hint, error))
 
   function selected(optionValue: string): boolean {
     return Array.isArray(value) ? value.includes(optionValue) : value === optionValue
@@ -77,10 +74,5 @@
       <span>{option.label}</span>
     </label>
   {/each}
-  {#if hint}
-    <FormHelpText id={hintId} text={hint} />
-  {/if}
-  {#if error}
-    <p id={errorId} class="text-sm text-red-700" role="alert">{error}</p>
-  {/if}
+  <FieldMessages {id} {hint} {helpId} {error} />
 </fieldset>
