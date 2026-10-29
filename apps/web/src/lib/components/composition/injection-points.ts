@@ -714,6 +714,7 @@ export interface InjectionPointProps {
   'vault.home.before': StandardPointProps
   'vault.home.header.actions': StandardPointProps
   'app.layout.search': StandardPointProps
+  'app.layout.dialogs': StandardPointProps
   'project.layout.content': ProjectPointProps
   'root.layout.progress': StandardPointProps
   'auth.layout.brand': StandardPointProps
@@ -1548,7 +1549,11 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     ['/external-shares/[token]#page'],
     ['external-shares.detail.heading', 'external-shares.detail.body']
   ),
-  ...regionPoints('StandardPointProps', ['/(app)#layout'], ['app.layout.search']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)#layout'],
+    ['app.layout.search', 'app.layout.dialogs']
+  ),
   ...regionPoints(
     'ProjectPointProps',
     ['/(app)/projects/[projectId]#layout'],

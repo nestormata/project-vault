@@ -19,6 +19,9 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   dialog), Help and Sign out. New native nav ids `account.account`, `account.language`, `account.shortcuts` and
   `account.help` are inherited by composed apps (CM's own Language item now duplicates the native one). A pack that used
   a top-level `group` as a disclosure gives it an `href`. See `docs/composition-kit.md`.
+- **`app.layout.dialogs` injection point** (Epic 72 fix). The app-wide confirm and keyboard-shortcuts dialog hosts added
+  by Stories 72.5 and 72.6 sit in an `@region app.layout.dialogs` component, so the `monolithic-region` guard (R3)
+  passes on a composed tree. One new additive point (`StandardPointProps`) on the `(app)` layout.
 - **Extension project writes get the project-role gate** (Story 69-18, `@project-vault/extension-api`
   3.37.0). An extension route under a `:projectId` segment that writes (`POST`, `PUT`, `PATCH`,
   `DELETE`), added through `apiRoutes` or re-secured with `replaceSecurity`, now refuses a project
