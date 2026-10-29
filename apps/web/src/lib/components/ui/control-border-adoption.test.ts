@@ -57,6 +57,6 @@ describe('control border adoption (Story 72.4)', () => {
   })
 
   it('the not-migrated list only names files that still exist', () => {
-    for (const path of NOT_MIGRATED) expect(sources[path]).toBeDefined()
+    for (const path of NOT_MIGRATED) expect(Object.keys(sources)).toContain(path)
   })
 })
