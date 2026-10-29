@@ -32,13 +32,13 @@
   {:else}
     {@const project = data.project}
     <!-- @region project.settings.header -->
-    <ProjectSettingsHeader projectId={project.id} name={project.name}>
+    <ProjectSettingsHeader projectId={project.id} name={project.name} {canManage}>
       <InjectionPoint name="project.settings.header" data={data.__inject} />
     </ProjectSettingsHeader>
 
     {#if canManage}
       <!-- @region project.settings.form -->
-      <ProjectSettingsForm {project}>
+      <ProjectSettingsForm {project} data={data.__inject}>
         <InjectionPoint name="project.settings.form" data={data.__inject} />
       </ProjectSettingsForm>
 
@@ -46,10 +46,6 @@
       <ProjectDeleteZone {project} graceDays={PROJECT_DELETE_GRACE_DAYS}>
         <InjectionPoint name="project.settings.delete" data={data.__inject} />
       </ProjectDeleteZone>
-    {:else}
-      <p class="rounded-3xl border border-slate-200 bg-white p-6 text-slate-700 shadow-sm">
-        Only the project owner or an organization owner can edit or delete this project.
-      </p>
     {/if}
   {/if}
 </section>

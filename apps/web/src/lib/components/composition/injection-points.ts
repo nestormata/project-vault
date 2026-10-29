@@ -629,6 +629,8 @@ export interface InjectionPointProps {
   'project.deleted.list': StandardPointProps
   'project.settings.header': StandardPointProps
   'project.settings.form': StandardPointProps
+  'project.settings.description': StandardPointProps
+  'project.settings.urls': StandardPointProps
   'project.settings.delete': StandardPointProps
   'project.settings.not-found': StandardPointProps
   'project.new.header': StandardPointProps
@@ -1396,6 +1398,8 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [
       'project.settings.header',
       'project.settings.form',
+      'project.settings.description',
+      'project.settings.urls',
       'project.settings.delete',
       'project.settings.not-found',
     ]

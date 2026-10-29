@@ -3,8 +3,12 @@
   import { resolve } from '$app/paths'
 
   // Story 72-9: the heading of the project settings page.
-  let { projectId, name, children }: { projectId: string; name: string; children?: Snippet } =
-    $props()
+  let {
+    projectId,
+    name,
+    canManage,
+    children,
+  }: { projectId: string; name: string; canManage: boolean; children?: Snippet } = $props()
 </script>
 
 <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -16,5 +20,10 @@
       Back to the project
     </a>
   </p>
+  {#if !canManage}
+    <p class="mt-3 text-slate-700">
+      Only the project owner or an organization owner can edit or delete this project.
+    </p>
+  {/if}
   {@render children?.()}
 </div>

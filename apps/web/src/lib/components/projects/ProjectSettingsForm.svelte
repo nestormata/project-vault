@@ -4,8 +4,9 @@
   import { resolve } from '$app/paths'
   import { updateProject } from '$lib/api/projects.js'
   import Button from '$lib/components/ui/Button.svelte'
-  import Textarea from '$lib/components/ui/Textarea.svelte'
   import TextField from '$lib/components/ui/TextField.svelte'
+  import ProjectSettingsDescription from './ProjectSettingsDescription.svelte'
+  import ProjectSettingsLinks from './ProjectSettingsLinks.svelte'
   import {
     formatUrlLines,
     parseUrlLines,
@@ -16,9 +17,11 @@
   // Story 72-9: edit name, description and links. The form owns the typed values and the save.
   let {
     project,
+    data,
     children,
   }: {
     project: { id: string; name: string; description: string | null; urls: string[] }
+    data?: Record<string, readonly unknown[]> | undefined
     children?: Snippet
   } = $props()
 
@@ -74,22 +77,8 @@
     error={fieldErrors.name}
     hint="Up to 128 characters."
   />
-  <Textarea
-    id="project-settings-description"
-    label="Description"
-    bind:value={description}
-    rows={3}
-    error={fieldErrors.description}
-    hint="Up to 512 characters. Optional."
-  />
-  <Textarea
-    id="project-settings-urls"
-    label="Links"
-    bind:value={urlText}
-    rows={4}
-    error={fieldErrors.urls}
-    hint="One http or https address per line, up to 10. Optional."
-  />
+  <ProjectSettingsDescription bind:description error={fieldErrors.description} {data} />
+  <ProjectSettingsLinks bind:urlText error={fieldErrors.urls} {data} />
   {#if message}
     <p class={failed ? 'text-sm text-red-700' : 'text-sm text-green-800'} role="status">
       {message}
