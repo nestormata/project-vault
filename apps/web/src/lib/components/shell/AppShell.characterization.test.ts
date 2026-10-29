@@ -111,7 +111,7 @@ describe('AppShell characterization (AC-10)', () => {
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
       </a>
       </nav> <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex" aria-label="Search">
+      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex">
       <span aria-hidden="true">⌕</span> <span class="flex-1">Search projects and secrets</span> <kbd aria-hidden="true" class="rounded border border-[color:var(--color-border-strong,#64748b)] px-1 text-xs">Ctrl K</kbd>
       </button> <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -185,7 +185,7 @@ describe('AppShell characterization (AC-10)', () => {
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
       </a>
       </nav> <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex" aria-label="Search">
+      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex">
       <span aria-hidden="true">⌕</span> <span class="flex-1">Search projects and secrets</span> <kbd aria-hidden="true" class="rounded border border-[color:var(--color-border-strong,#64748b)] px-1 text-xs">Ctrl K</kbd>
       </button> <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -234,7 +234,7 @@ describe('AppShell characterization (AC-10)', () => {
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
       </a>
       </nav> <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex" aria-label="Search">
+      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex">
       <span aria-hidden="true">⌕</span> <span class="flex-1">Search projects and secrets</span> <kbd aria-hidden="true" class="rounded border border-[color:var(--color-border-strong,#64748b)] px-1 text-xs">Ctrl K</kbd>
       </button> <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -283,7 +283,7 @@ describe('AppShell characterization (AC-10)', () => {
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
       </a>
       </nav> <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex" aria-label="Search">
+      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex">
       <span aria-hidden="true">⌕</span> <span class="flex-1">Search projects and secrets</span> <kbd aria-hidden="true" class="rounded border border-[color:var(--color-border-strong,#64748b)] px-1 text-xs">Ctrl K</kbd>
       </button> <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
