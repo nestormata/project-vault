@@ -5,6 +5,7 @@
   import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import Footer from './Footer.svelte'
+  import HeaderSearchField from './HeaderSearchField.svelte'
   import NotificationsLink from './NotificationsLink.svelte'
   import PrimaryNav from './PrimaryNav.svelte'
   import ShellAccount from './ShellAccount.svelte'
@@ -59,6 +60,7 @@
       {/if}
       <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
         {#if !hidePrimaryNav}
+          <HeaderSearchField {onsearch} />
           <NotificationsLink {unreadCount} />
         {/if}
         <ShellAccount {user} /><InjectionPoint name="shell.header.end" data={injected} />
@@ -80,7 +82,11 @@
       <p class="px-4 py-2 text-sm text-red-700" role="alert">{logoutError}</p>
     {/if}
   </header>
-  <main class={hidePrimaryNav ? 'p-0' : 'mx-auto max-w-7xl px-4 py-6'}>
+  <main
+    id="main-content"
+    tabindex="-1"
+    class={hidePrimaryNav ? 'p-0' : 'mx-auto max-w-7xl px-4 py-6 focus:outline-none'}
+  >
     {@render children()}
   </main>
   <div class="border-t border-slate-200">

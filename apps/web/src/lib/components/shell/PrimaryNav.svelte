@@ -3,6 +3,7 @@
   import { page } from '$app/state'
   import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
   import { renderSurface } from '$lib/navigation/build-surface.js'
+  import NavBadge from '$lib/navigation/NavBadge.svelte'
   import type { NavNode, NavUser } from '$lib/navigation/types.js'
   import { buildExtensionNavTopLevelItems, isActiveNavItem } from './nav-model.js'
 
@@ -61,7 +62,30 @@
   {#snippet nodeLabel(node: NavNode)}
     {#if node.icon}<node.icon />{/if}
     <span class="hidden sm:inline">{node.label}</span>
-    <span class="sm:hidden">{node.mobileLabel}</span>
+    <span class="sm:hidden">{node.mobileLabel}</span
+    >{#if node.badge !== undefined || node.status !== undefined}<NavBadge {node} />{/if}
+  {/snippet}
+  <!--
+    Story 72.6 (P3a): a top-level `group` (an item with children and no link of its own) is a
+    section label, not a disclosure. Its label is heading-like text that names the `role="group"`
+    around it, and its children render right after it at the same level through the same renderer
+    (links, actions and disclosures; a group inside a section stays a disclosure). A group renders
+    no link of its own: give the item an `href` for a disclosure whose panel starts with a link.
+  -->
+  {#snippet navSection(node: NavNode)}
+    <div
+      role="group"
+      aria-labelledby={`nav-section-${node.id}`}
+      class="flex flex-col gap-1 md:flex-row md:items-center md:gap-2"
+    >
+      <span
+        id={`nav-section-${node.id}`}
+        class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-600">{node.label}</span
+      >{#if node.badge !== undefined || node.status !== undefined}<NavBadge {node} />{/if}
+      {#each node.children as child (child.id)}
+        {@render navNode(child, false, false)}
+      {/each}
+    </div>
   {/snippet}
   <!--
     Story 68.7 AC-3: one renderer for every depth. A node with children is a native
@@ -69,8 +93,10 @@
     marked active while any descendant is. A node with both an href and children lists its own link
     first inside the disclosure. Nested entries render like the legacy children below.
   -->
-  {#snippet navNode(node: NavNode, nested: boolean)}
-    {#if node.children.length > 0}
+  {#snippet navNode(node: NavNode, nested: boolean, sectioned: boolean = true)}
+    {#if sectioned && !nested && node.kind === 'group' && node.children.length > 0}
+      {@render navSection(node)}
+    {:else if node.children.length > 0}
       <details class="relative">
         <summary
           class={`flex cursor-pointer list-none items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${node.current ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
@@ -118,7 +144,7 @@
         </button>
       {:else}
         <button
-          class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800"
+          class={`flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800${node.id === 'primary.search' ? ' md:hidden' : ''}`}
           type="button"
           aria-label={node.title || undefined}
           title={node.title || undefined}
@@ -145,7 +171,9 @@
         href={node.href}
       >
         {#if node.icon}<node.icon />{/if}
-        {node.label}
+        {node.label}{#if node.badge !== undefined || node.status !== undefined}<NavBadge
+            {node}
+          />{/if}
       </a>
     {:else}
       <a

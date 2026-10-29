@@ -664,7 +664,9 @@ compose_full_override_checks() {
 # prove layout-, page- and shell-scoped points together.
 compose_offset() { # needle -> byte offset of the first match in $WORK/body.txt, or empty
   local needle=$1
-  grep -ob -- "$needle" "$WORK/body.txt" | head -n 1 | cut -d: -f1
+  # A missing needle must reach compose_before's message, not abort the variant silently under
+  # `set -e -o pipefail` (grep exits 1 on no match).
+  { grep -ob -- "$needle" "$WORK/body.txt" || true; } | head -n 1 | cut -d: -f1
   return 0
 }
 
@@ -751,8 +753,11 @@ compose_nav_checks() {
   compose_absent '>Project Vault</a>' 'replace shell.brand.home'
   compose_absent 'SSO Domains' 'hide settings.index.sso-domains'
   compose_absent 'CM Hidden Billing' 'hide a CM item'
-  # Moved under the CM group: no longer a top-level item (top-level items carry the label spans).
-  compose_absent 'sm:inline">Notifications' 'move a PV item under a CM group'
+  # Moved under the CM group (Story 72.6: a top-level group is a section whose children render at
+  # the same level with the label spans, so the item still carries them). It left its own slot
+  # (between Secrets and Health) and now follows the CM Ops section label, after Settings.
+  compose_before 'sm:inline">Settings' 'sm:inline">Notifications' 'move a PV item out of its own slot'
+  compose_before 'nav-section-cm.ops' 'sm:inline">Notifications' 'move a PV item under a CM group'
   compose_expect_ok "$port" GET "$project" "$member" 'CM Project Billing'
   # Server rendering writes resolve()'s relative form (./p-nav/members); match the tail.
   compose_expect_ok "$port" GET "$project" "$member" 'p-nav/members"'

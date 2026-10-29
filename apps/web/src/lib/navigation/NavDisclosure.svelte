@@ -5,6 +5,7 @@
   node's own link first, then its children, at any depth.
 -->
 <script lang="ts">
+  import NavBadge from './NavBadge.svelte'
   import NavEntry from './NavEntry.svelte'
   import NavNodeEntry from './NavNodeEntry.svelte'
   import type { NavNode } from './types.js'
@@ -13,7 +14,11 @@
 </script>
 
 <details class="relative inline-block">
-  <summary class={`cursor-pointer list-none ${className}`}>{node.label}</summary>
+  <summary class={`cursor-pointer list-none ${className}`}
+    >{node.label}{#if node.badge !== undefined || node.status !== undefined}<NavBadge
+        {node}
+      />{/if}</summary
+  >
   <div
     class="flex flex-col gap-1 py-1 md:absolute md:z-10 md:min-w-40 md:rounded-xl md:border md:border-slate-200 md:bg-white md:p-1 md:shadow-lg"
   >

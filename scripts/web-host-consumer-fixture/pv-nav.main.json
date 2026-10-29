@@ -3,6 +3,30 @@
   "ids": [
     {
       "conditional": false,
+      "id": "account.account",
+      "parent": null,
+      "surface": "account"
+    },
+    {
+      "conditional": false,
+      "id": "account.help",
+      "parent": null,
+      "surface": "account"
+    },
+    {
+      "conditional": false,
+      "id": "account.language",
+      "parent": null,
+      "surface": "account"
+    },
+    {
+      "conditional": false,
+      "id": "account.shortcuts",
+      "parent": null,
+      "surface": "account"
+    },
+    {
+      "conditional": false,
       "id": "account.sign-out",
       "parent": null,
       "surface": "account"

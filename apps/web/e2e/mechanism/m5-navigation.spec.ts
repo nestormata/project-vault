@@ -30,14 +30,7 @@ const TOP_LEVEL = ':scope > a, :scope > details > summary'
 const MOCK_BILLING = 'Mock Billing'
 
 /** The primary nav after the delta, for an owner who is not the platform operator. */
-const PRIMARY_ORDER = [
-  'Notifications',
-  'Projects',
-  MOCK_BILLING,
-  MOCK_SETTINGS,
-  'Dashboard',
-  'Mock Tools',
-]
+const PRIMARY_ORDER = ['Notifications', 'Projects', MOCK_BILLING, MOCK_SETTINGS, 'Dashboard']
 
 /** The project nav after the delta (labels from PV's messages). */
 const PROJECT_ORDER = [
@@ -60,7 +53,8 @@ test.describe('M5 navigation customization', () => {
     await page.goto(SETTINGS)
     await expect(page.getByTestId(PRIMARY_NAV)).toBeVisible()
     // reorder put Notifications first, the insert landed after Projects, the move sent Dashboard
-    // after Settings, the rename shows, and the pack's group is appended last
+    // after Settings, the rename shows, and the pack's group is appended last (a section label, Story
+    // 72.6, so it is not a top-level link or disclosure)
     expect(await visibleTexts(primaryTopLevel(page))).toEqual(PRIMARY_ORDER)
     const nav = page.getByTestId(PRIMARY_NAV)
     // remove and hide: absent from the DOM
@@ -76,11 +70,12 @@ test.describe('M5 navigation customization', () => {
     await seedOrgOwner(context, 'm5-nest')
     await page.goto(SETTINGS)
     const nav = page.getByTestId(PRIMARY_NAV)
-    // the pack's own two-level group: a native disclosure, keyboard operable
-    const tools = nav.locator('summary', { hasText: 'Mock Tools' })
-    await tools.focus()
-    await page.keyboard.press('Enter')
-    await expect(nav.getByRole('link', { name: 'Mock Late' })).toBeVisible()
+    // the pack's own group (Story 72.6): a section label naming a role=group, its children follow it
+    // (the late insert is inherited), and the group inside it stays a keyboard-operable disclosure
+    const tools = nav.getByRole('group', { name: 'Mock Tools' })
+    await expect(tools).toBeVisible()
+    await expect(tools.locator('details, summary', { hasText: 'Mock Tools' })).toHaveCount(0)
+    await expect(tools.getByRole('link', { name: 'Mock Late' })).toBeVisible()
     const reports = nav.locator('summary', { hasText: 'Mock Reports' })
     await reports.click()
     await expect(nav.getByRole('link', { name: 'Mock Daily' })).toBeVisible()
@@ -274,6 +269,8 @@ test.describe('M5 navigation customization', () => {
     // shell: the brand link is replaced, the bell is renamed, the account menu has the pack's items
     await expect(page.getByRole('link', { name: 'Mock Brand' })).toHaveAttribute('href', /billing$/)
     await expect(page.getByRole('link', { name: 'Mock Bell' })).toBeVisible()
+    // the account menu is a dropdown (Story 72.6): open it first
+    await page.getByTestId('account-menu').locator('summary').first().click()
     await expect(page.getByRole('link', { name: 'Mock Account Billing' })).toBeVisible()
     await page.locator('summary', { hasText: 'Mock More' }).click()
     await expect(page.getByRole('link', { name: 'Mock One' })).toBeVisible()

@@ -96,7 +96,7 @@ describe('AppShell characterization (AC-10)', () => {
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <a class="text-xl font-bold text-brand-600" href="/dashboard">Project Vault</a>
       </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div> <nav aria-label="Primary navigation" data-testid="primary-nav" class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
-      <button class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800" type="button" aria-label="Search (⌘K)" title="Search (⌘K)">
+      <button type="button" class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 md:hidden" aria-label="Search (⌘K)" title="Search (⌘K)">
       <span aria-hidden="true">⌕</span> <span class="sr-only">Search</span> <kbd class="hidden rounded border border-slate-300 px-1 text-xs sm:inline" aria-hidden="true">⌘K</kbd>
       </button>  <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium bg-brand-600 text-white" aria-current="page" href="/dashboard"> <span class="hidden sm:inline">Dashboard</span> <span class="sm:hidden">Dashboard</span>
       </a>
@@ -111,13 +111,24 @@ describe('AppShell characterization (AC-10)', () => {
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
       </a>
       </nav> <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-      <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
+      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex">
+      <span aria-hidden="true">⌕</span> <span class="flex-1">Search projects and secrets</span> <kbd aria-hidden="true" class="rounded border border-[color:var(--color-border-strong,#64748b)] px-1 text-xs">Ctrl K</kbd>
+      </button> <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9">
       </path>
-      </svg> </a> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <button class="rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800" type="button">Sign out</button>
+      </svg> </a> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <details class="relative" data-testid="account-menu">
+      <summary class="cursor-pointer list-none rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800">Account menu <span aria-hidden="true">▾</span>
+      </summary> <div class="mt-1 flex min-w-48 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg md:absolute md:right-0 md:z-10">
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings">Account</a>
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings/language">Language</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Keyboard shortcuts</button>
+      <a href="https://github.com/nestormata/project-vault/tree/main/docs" target="_blank" rel="noopener noreferrer" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Help</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Sign out</button>
       </div>
-      </div> <div class="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">Enroll in MFA at <a class="font-medium underline" href="/settings/security">/settings/security</a> before Friday.</div> </header> <main class="mx-auto max-w-7xl px-4 py-6">
+      </details>
+      </div>
+      </div> <div class="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">Enroll in MFA at <a class="font-medium underline" href="/settings/security">/settings/security</a> before Friday.</div> </header> <main id="main-content" tabindex="-1" class="mx-auto max-w-7xl px-4 py-6 focus:outline-none">
       <p>page body</p>
       </main> <div class="border-t border-slate-200">
       <footer class="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:gap-4">
@@ -132,9 +143,18 @@ describe('AppShell characterization (AC-10)', () => {
       <div class="flex items-center gap-2">
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <p class="text-xl font-bold text-brand-600">Project Vault</p>
       </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
-      </div>  <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600"> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <button class="rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800" type="button">Sign out</button>
+      </div>  <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600"> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <details class="relative" data-testid="account-menu">
+      <summary class="cursor-pointer list-none rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800">Account menu <span aria-hidden="true">▾</span>
+      </summary> <div class="mt-1 flex min-w-48 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg md:absolute md:right-0 md:z-10">
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings">Account</a>
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings/language">Language</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Keyboard shortcuts</button>
+      <a href="https://github.com/nestormata/project-vault/tree/main/docs" target="_blank" rel="noopener noreferrer" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Help</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Sign out</button>
       </div>
-      </div> <div class="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">Enroll soon.</div> </header> <main class="p-0">
+      </details>
+      </div>
+      </div> <div class="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">Enroll soon.</div> </header> <main id="main-content" tabindex="-1" class="p-0">
       <p>page body</p>
       </main> <div class="border-t border-slate-200">
       <footer class="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:gap-4">
@@ -150,7 +170,7 @@ describe('AppShell characterization (AC-10)', () => {
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <a class="text-xl font-bold text-brand-600" href="/dashboard">Project Vault</a>
       </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div> <nav aria-label="Primary navigation" data-testid="primary-nav" class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
-      <button class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800" type="button" aria-label="Search (⌘K)" title="Search (⌘K)">
+      <button type="button" class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 md:hidden" aria-label="Search (⌘K)" title="Search (⌘K)">
       <span aria-hidden="true">⌕</span> <span class="sr-only">Search</span> <kbd class="hidden rounded border border-slate-300 px-1 text-xs sm:inline" aria-hidden="true">⌘K</kbd>
       </button>  <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium bg-brand-600 text-white" aria-current="page" href="/dashboard"> <span class="hidden sm:inline">Dashboard</span> <span class="sm:hidden">Dashboard</span>
       </a>
@@ -165,14 +185,25 @@ describe('AppShell characterization (AC-10)', () => {
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
       </a>
       </nav> <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-      <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
+      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex">
+      <span aria-hidden="true">⌕</span> <span class="flex-1">Search projects and secrets</span> <kbd aria-hidden="true" class="rounded border border-[color:var(--color-border-strong,#64748b)] px-1 text-xs">Ctrl K</kbd>
+      </button> <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9">
       </path>
       </svg> <span class="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-xs font-medium text-white">99+</span>
-      </a> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <button class="rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800" type="button">Sign out</button>
+      </a> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <details class="relative" data-testid="account-menu">
+      <summary class="cursor-pointer list-none rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800">Account menu <span aria-hidden="true">▾</span>
+      </summary> <div class="mt-1 flex min-w-48 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg md:absolute md:right-0 md:z-10">
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings">Account</a>
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings/language">Language</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Keyboard shortcuts</button>
+      <a href="https://github.com/nestormata/project-vault/tree/main/docs" target="_blank" rel="noopener noreferrer" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Help</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Sign out</button>
       </div>
-      </div>  </header> <main class="mx-auto max-w-7xl px-4 py-6">
+      </details>
+      </div>
+      </div>  </header> <main id="main-content" tabindex="-1" class="mx-auto max-w-7xl px-4 py-6 focus:outline-none">
       <p>page body</p>
       </main> <div class="border-t border-slate-200">
       <footer class="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:gap-4">
@@ -188,7 +219,7 @@ describe('AppShell characterization (AC-10)', () => {
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <a class="text-xl font-bold text-brand-600" href="/dashboard">Project Vault</a>
       </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div> <nav aria-label="Primary navigation" data-testid="primary-nav" class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
-      <button class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800" type="button" aria-label="Search (⌘K)" title="Search (⌘K)">
+      <button type="button" class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 md:hidden" aria-label="Search (⌘K)" title="Search (⌘K)">
       <span aria-hidden="true">⌕</span> <span class="sr-only">Search</span> <kbd class="hidden rounded border border-slate-300 px-1 text-xs sm:inline" aria-hidden="true">⌘K</kbd>
       </button>  <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium bg-brand-600 text-white" aria-current="page" href="/dashboard"> <span class="hidden sm:inline">Dashboard</span> <span class="sm:hidden">Dashboard</span>
       </a>
@@ -203,14 +234,25 @@ describe('AppShell characterization (AC-10)', () => {
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
       </a>
       </nav> <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-      <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
+      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex">
+      <span aria-hidden="true">⌕</span> <span class="flex-1">Search projects and secrets</span> <kbd aria-hidden="true" class="rounded border border-[color:var(--color-border-strong,#64748b)] px-1 text-xs">Ctrl K</kbd>
+      </button> <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9">
       </path>
       </svg> <span class="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-xs font-medium text-white">5</span>
-      </a> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <button class="rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800" type="button">Sign out</button>
+      </a> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <details class="relative" data-testid="account-menu">
+      <summary class="cursor-pointer list-none rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800">Account menu <span aria-hidden="true">▾</span>
+      </summary> <div class="mt-1 flex min-w-48 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg md:absolute md:right-0 md:z-10">
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings">Account</a>
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings/language">Language</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Keyboard shortcuts</button>
+      <a href="https://github.com/nestormata/project-vault/tree/main/docs" target="_blank" rel="noopener noreferrer" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Help</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Sign out</button>
       </div>
-      </div>  </header> <main class="mx-auto max-w-7xl px-4 py-6">
+      </details>
+      </div>
+      </div>  </header> <main id="main-content" tabindex="-1" class="mx-auto max-w-7xl px-4 py-6 focus:outline-none">
       <p>page body</p>
       </main> <div class="border-t border-slate-200">
       <footer class="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:gap-4">
@@ -226,7 +268,7 @@ describe('AppShell characterization (AC-10)', () => {
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <a class="text-xl font-bold text-brand-600" href="/dashboard">Project Vault</a>
       </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div> <nav aria-label="Primary navigation" data-testid="primary-nav" class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
-      <button class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800" type="button" aria-label="Search (⌘K)" title="Search (⌘K)">
+      <button type="button" class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 md:hidden" aria-label="Search (⌘K)" title="Search (⌘K)">
       <span aria-hidden="true">⌕</span> <span class="sr-only">Search</span> <kbd class="hidden rounded border border-slate-300 px-1 text-xs sm:inline" aria-hidden="true">⌘K</kbd>
       </button>  <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium bg-brand-600 text-white" aria-current="page" href="/dashboard"> <span class="hidden sm:inline">Dashboard</span> <span class="sm:hidden">Dashboard</span>
       </a>
@@ -241,13 +283,24 @@ describe('AppShell characterization (AC-10)', () => {
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
       </a>
       </nav> <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-      <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
+      <button type="button" aria-keyshortcuts="Control+K Meta+K" data-testid="header-search-field" class="hidden min-w-64 items-center gap-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex">
+      <span aria-hidden="true">⌕</span> <span class="flex-1">Search projects and secrets</span> <kbd aria-hidden="true" class="rounded border border-[color:var(--color-border-strong,#64748b)] px-1 text-xs">Ctrl K</kbd>
+      </button> <a class="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Notifications" href="/notifications">
       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9">
       </path>
-      </svg> </a> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <button class="rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800" type="button">Sign out</button>
+      </svg> </a> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <details class="relative" data-testid="account-menu">
+      <summary class="cursor-pointer list-none rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800">Account menu <span aria-hidden="true">▾</span>
+      </summary> <div class="mt-1 flex min-w-48 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg md:absolute md:right-0 md:z-10">
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings">Account</a>
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings/language">Language</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Keyboard shortcuts</button>
+      <a href="https://github.com/nestormata/project-vault/tree/main/docs" target="_blank" rel="noopener noreferrer" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Help</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Sign out</button>
       </div>
-      </div>  </header> <main class="mx-auto max-w-7xl px-4 py-6">
+      </details>
+      </div>
+      </div>  </header> <main id="main-content" tabindex="-1" class="mx-auto max-w-7xl px-4 py-6 focus:outline-none">
       <p>page body</p>
       </main> <div class="border-t border-slate-200">
       <footer class="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:gap-4">
@@ -262,9 +315,18 @@ describe('AppShell characterization (AC-10)', () => {
       <div class="flex items-center gap-2">
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <p class="text-xl font-bold text-brand-600">Project Vault</p>
       </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
-      </div>  <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600"> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <button class="rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800" type="button">Sign out</button>
+      </div>  <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600"> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <details class="relative" data-testid="account-menu">
+      <summary class="cursor-pointer list-none rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800">Account menu <span aria-hidden="true">▾</span>
+      </summary> <div class="mt-1 flex min-w-48 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg md:absolute md:right-0 md:z-10">
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings">Account</a>
+      <a class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100" href="/settings/language">Language</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Keyboard shortcuts</button>
+      <a href="https://github.com/nestormata/project-vault/tree/main/docs" target="_blank" rel="noopener noreferrer" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Help</a>
+      <button type="button" class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">Sign out</button>
       </div>
-      </div>  </header> <main class="p-0">
+      </details>
+      </div>
+      </div>  </header> <main id="main-content" tabindex="-1" class="p-0">
       <p>page body</p>
       </main> <div class="border-t border-slate-200">
       <footer class="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:gap-4">
