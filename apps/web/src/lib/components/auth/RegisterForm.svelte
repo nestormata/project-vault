@@ -142,7 +142,7 @@
         >{m.auth_register_email()}</label
       >
       <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
         id="register-email"
         type="email"
         bind:value={email}
@@ -160,7 +160,7 @@
           >{m.auth_register_organization()}</label
         >
         <input
-          class="w-full rounded-xl border border-slate-300 px-3 py-2"
+          class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
           id="register-org"
           type="text"
           bind:value={orgName}
@@ -176,7 +176,7 @@
         >{m.auth_register_password()}</label
       >
       <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
         id="register-password"
         type="password"
         autocomplete="new-password"

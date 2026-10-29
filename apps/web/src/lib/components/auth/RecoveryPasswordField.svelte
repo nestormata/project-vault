@@ -16,7 +16,7 @@
   <div class="space-y-2">
     <label class="block font-medium text-slate-900" for="recovery-new-password">New password</label>
     <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
+      class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
       id="recovery-new-password"
       type="password"
       autocomplete="new-password"

@@ -66,7 +66,7 @@
       >Bootstrap token</label
     >
     <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
+      class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
       id="vault-bootstrap-token"
       type="password"
       autocomplete="off"
@@ -121,7 +121,7 @@
         >Vault passphrase</label
       >
       <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
         id="vault-init-passphrase"
         type="password"
         autocomplete="new-password"
@@ -141,7 +141,7 @@
         >Envelope key path</label
       >
       <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
         id="vault-envelope-key-path"
         name="envelopeKeyPath"
         type="text"
@@ -172,7 +172,7 @@
         >Master key path</label
       >
       <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
         id="vault-master-key-path"
         name="masterKeyPath"
         type="text"

@@ -92,7 +92,7 @@
         >Vault passphrase</label
       >
       <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
         id="vault-unseal-passphrase"
         type="password"
         autocomplete="current-password"
@@ -108,7 +108,7 @@
         >Envelope key file path</label
       >
       <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
         id="vault-unseal-envelope-path"
         name="envelopeKeyPath"
         type="text"
@@ -125,7 +125,7 @@
         >Master key file path</label
       >
       <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
         id="vault-unseal-master-path"
         name="masterKeyPath"
         type="text"

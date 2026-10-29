@@ -73,7 +73,7 @@
     </label>
     <input
       id="onboarding-project-name"
-      class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3"
+      class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
       type="text"
       autocomplete="off"
       bind:value={projectName}
