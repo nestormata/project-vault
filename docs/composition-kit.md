@@ -367,6 +367,9 @@ a change to them is a minor bump of `@project-vault/web-host`. No existing compo
 | `ui/FieldMessages.svelte` | `id`, `hint`, `helpId`, `error`                                                                                                                                | none              | stable |
 | `ui/field-ids.ts`         | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                 | none              | stable |
 | `ui/control-classes.ts`   | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                | none              | stable |
+| `ui/Dialog.svelte`        | `open` (bindable), `id` (required), `title`, `description`, `dismissible` (default true), `onclose`, `children`, `footer`                                      | `bind:open`, `onclose` | stable |
+| `ui/ConfirmDialog.svelte` | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
+| `ui/ConfirmDialogHost.svelte` | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                   | none              | stable |
 
 Contract rules: `id` is required and explicit (no generated ids, so the server and the browser cannot disagree); the
 control is named by its `<label for>` (or the fieldset `legend`); `aria-describedby` (on each input of a group) lists the error id first and the
@@ -382,6 +385,32 @@ label and input by `TextField`, `Select` or `Textarea` adds the `Field` wrapper 
 part of that swap. Not touched, so no override or replacement hash lock changes: `shell/GlobalSearch.svelte`,
 `shell/ShellBrand.svelte` (both CM replacements), the CM-overridden dashboard route, and the other `shell/` controls
 (owned by the navigation stories).
+
+### Dialog, confirmations and the palette (Epic 72, Story 72-5)
+
+`ui/Dialog.svelte` is a modal on the native `<dialog>` element. `showModal()` supplies the focus trap (the page behind
+is inert), Escape (the `cancel` event) and the top layer; the component adds the accessible name (`aria-labelledby`
+`<id>-title`), the optional description (`<id>-description`, no `aria-describedby` without one), the backdrop click, a
+`data-autofocus` hook for the first focus, and the return of focus to the opener (also when the dialog is torn down
+while open). `dismissible={false}` ignores Escape and the backdrop. `ui/ConfirmDialog.svelte` builds on it: Cancel holds
+the initial focus, and `typedValue` adds the existing `TypedConfirmInput` so Confirm enables only on an exact (trimmed,
+case-insensitive) match.
+
+Destructive actions call `requestConfirm({ title, message, confirmLabel, variant, typedValue })` from
+`$lib/state/confirm.svelte.ts` and await a boolean. `ConfirmDialogHost` (in `routes/(app)/+layout.svelte`) shows one
+request at a time, queueing the rest. Without a mounted host the request falls back to `window.confirm(message)`, so an
+action is never run unconfirmed. The archive, unlink, remove, deactivate, revoke, erasure and recovery-link
+confirmations use it; the messages are unchanged.
+
+`shell/GlobalSearch.svelte` (still `@pv-stable`, still only `open`) gains action groups and recents from the layout
+data (`page.data.user`). Actions are built only when allowed: "Create project" (org member+), "Go to Audit log"
+(owner), "New secret in X" (org creator role and an effective member+ project role read from `GET /projects/:id`; not
+for an archived project). Recents (the last 5 opened results, ids and names, in memory only, keyed by user) are
+re-checked on the server when the palette opens and again on selection; a 403 or 404 drops the item, any other failure
+hides it and does not open it. **CM impact:** `GlobalSearch.svelte` is a CM replacement, so its `hostSha256` drifts
+with the web-host release carrying this story; CM can drop its replacement to get the actions and recents, or keep it
+and reconcile with `pv-compose --accept-host`. The new `GlobalSearch.palette.test.ts` is about `GlobalSearch.svelte`
+(a direct import), so it is excluded from a composed tree that replaces it.
 
 ### Region points of the remaining top-level uses (Epic 69, Story 69-6)
 

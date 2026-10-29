@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation'
+  import { requestConfirm } from '$lib/state/confirm.svelte.js'
   import {
     deleteOrgSsoDomain,
     updateOrgSsoDomain,
@@ -55,7 +56,12 @@
   let removeError = $state<string | null>(null)
   async function onRemove(row: OrgSsoDomain) {
     if (busyKey) return
-    const confirmed = confirm(`Remove the mapping for ${row.domain}? This cannot be undone.`)
+    const confirmed = await requestConfirm({
+      title: 'Remove domain mapping?',
+      message: `Remove the mapping for ${row.domain}? This cannot be undone.`,
+      confirmLabel: 'Remove',
+      variant: 'danger',
+    })
     if (!confirmed) return
     busyKey = row.id
     removeError = null

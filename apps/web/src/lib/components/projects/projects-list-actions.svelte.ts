@@ -1,6 +1,7 @@
 import { invalidateAll } from '$app/navigation'
 import { ApiClientError } from '$lib/api/client.js'
 import { archiveProject, unarchiveProject, updateProjectTags } from '$lib/api/projects.js'
+import { requestConfirm } from '$lib/state/confirm.svelte.js'
 import { parseTagsInput } from '$lib/components/onboarding/onboarding-logic.js'
 
 type NamedProject = { id: string; name: string }
@@ -68,10 +69,13 @@ export class ProjectsListActions {
 
   async onArchive(project: NamedProject): Promise<void> {
     if (this.busyProjectId) return
-    const confirmed = confirm(
-      `Archive "${project.name}"? Secrets and history are preserved; the project is hidden ` +
-        'from active views. You can unarchive it later.'
-    )
+    const confirmed = await requestConfirm({
+      title: 'Archive project?',
+      message:
+        `Archive "${project.name}"? Secrets and history are preserved; the project is hidden ` +
+        'from active views. You can unarchive it later.',
+      confirmLabel: 'Archive',
+    })
     if (!confirmed) return
     this.busyProjectId = project.id
     this.#setError(null)

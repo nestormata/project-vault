@@ -19,9 +19,8 @@ const sources = import.meta.glob('/src/**/*.svelte', {
 const CONTROL_TAGS = new Set(['input', 'select', 'textarea', 'button', 'a'])
 const OLD_BORDER = /(?<![\w:-])border-slate-300(?![\w-])/g
 
-/** Not migrated by 72.4: CM replaces two of them (GlobalSearch, ShellBrand) and the nav stories own the rest. */
+/** Not migrated: the nav stories (72-6/72-7) own these. GlobalSearch moved to the token in 72.5. */
 const NOT_MIGRATED = new Set([
-  '/src/lib/components/shell/GlobalSearch.svelte',
   '/src/lib/components/shell/PrimaryNav.svelte',
   '/src/lib/components/shell/ShellAccount.svelte',
 ])

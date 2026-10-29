@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requestConfirm } from '$lib/state/confirm.svelte.js'
   import type { DormancyAlertView } from '$lib/notifications/dormancy-alerts.js'
   import { resolve } from '$app/paths'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
@@ -43,18 +44,18 @@
   <form
     method="POST"
     action="?/revokeDormantKey"
-    use:enhance={({ cancel }) => {
+    use:enhance={async ({ cancel }) => {
       // AC-2's confirmation-before-destructive-action requirement applies to this DELETE
       // .../api-keys/:keyId call wherever it's triggered from — this inbox surface reuses
       // the same irreversible revoke endpoint the machine-user detail view gates behind
       // ConfirmDeleteButton, so it needs the same protection against an accidental click.
-      if (
-        !confirm(
-          `Revoke the key "${alert.keyName}" for ${alert.machineUserName}? This cannot be undone.`
-        )
-      ) {
-        cancel()
-      }
+      const confirmed = await requestConfirm({
+        title: 'Revoke key?',
+        message: `Revoke the key "${alert.keyName}" for ${alert.machineUserName}? This cannot be undone.`,
+        confirmLabel: 'Revoke',
+        variant: 'danger',
+      })
+      if (!confirmed) cancel()
     }}
   >
     <input type="hidden" name="machineUserId" value={alert.machineUserId} />

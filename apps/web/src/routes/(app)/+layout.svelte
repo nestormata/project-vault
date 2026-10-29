@@ -4,6 +4,7 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
   import AppLayoutSearch from '$lib/components/shell/AppLayoutSearch.svelte'
+  import AppLayoutDialogs from '$lib/components/shell/AppLayoutDialogs.svelte'
 
   import { invalidateAll } from '$app/navigation'
   import { setInitialUnreadCount, getUnreadCount } from '$lib/state/notifications.svelte.js'
@@ -110,4 +111,8 @@
 >
   <InjectionPoint name="app.layout.shell" data={data?.__inject} />
 </AppLayoutShell>
+<!-- @region app.layout.dialogs -->
+<AppLayoutDialogs>
+  <InjectionPoint name="app.layout.dialogs" data={data?.__inject} />
+</AppLayoutDialogs>
 <InjectionPoint name="app.layout.after" data={data?.__inject} />

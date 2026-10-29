@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte'
   import { resolve } from '$app/paths'
   import { enhance } from '$app/forms'
+  import { requestConfirm } from '$lib/state/confirm.svelte.js'
   import DismissDormancyAlertForm from '$lib/components/notifications/DismissDormancyAlertForm.svelte'
 
   let {
@@ -39,10 +40,14 @@
             <form
               method="POST"
               action="?/deactivateDormantUser"
-              use:enhance={({ cancel }) => {
-                if (!confirm(`Deactivate ${alert.displayName}? This cannot be undone.`)) {
-                  cancel()
-                }
+              use:enhance={async ({ cancel }) => {
+                const confirmed = await requestConfirm({
+                  title: 'Deactivate account?',
+                  message: `Deactivate ${alert.displayName}? This cannot be undone.`,
+                  confirmLabel: 'Deactivate',
+                  variant: 'danger',
+                })
+                if (!confirmed) cancel()
               }}
             >
               <input type="hidden" name="userId" value={alert.userId} />

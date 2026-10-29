@@ -5,11 +5,29 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
-  import { onDestroy, onMount } from 'svelte'
+  import { page } from '$app/state'
+  import { onDestroy, onMount, untrack } from 'svelte'
+  import { getProject } from '$lib/api/projects.js'
   import { globalSearch, type SearchResultItem } from '$lib/api/search.js'
   import { trapFocus } from '$lib/components/onboarding/focus-trap.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { daysUntil, expiresWithinDays, highlightParts } from './search-ui.js'
+  import {
+    asOrgRole,
+    filterActions,
+    projectActions,
+    staticActions,
+    type KnownProject,
+    type PaletteAction,
+    type PaletteTarget,
+  } from './palette-actions.js'
+  import {
+    addRecent,
+    checkRecent,
+    readRecents,
+    removeRecent,
+    type RecentItem,
+  } from './palette-recents.js'
 
   let {
     open = $bindable(false),
@@ -28,7 +46,45 @@
   let abortController: AbortController | null = null
   let cleanupFocusTrap: (() => void) | undefined
 
-  const flatResults = $derived(results)
+  // Story 72.5 (P12): action groups and recents. The role and user come from the layout data, so
+  // the component keeps its single `open` prop (the @pv-stable contract).
+  type PaletteRow =
+    | { group: 'actions'; id: string; action: PaletteAction }
+    | { group: 'recent'; id: string; recent: RecentItem }
+    | { group: 'results'; id: string; item: SearchResultItem }
+
+  const GROUP_LABEL = { actions: 'Actions', recent: 'Recent', results: 'Results' } as const
+
+  let recentItems = $state<RecentItem[]>([])
+  let notice = $state<string | null>(null)
+  let projectInfo = $state<Record<string, KnownProject>>({})
+  let generation = 0
+
+  const orgRole = $derived(asOrgRole(page.data?.user?.orgRole))
+  const userId = $derived(page.data?.user?.userId ?? null)
+
+  const knownProjects = $derived.by(() => {
+    const ids = [
+      ...results.flatMap((item) => (item.type === 'project' ? [item.id] : [])),
+      ...recentItems.flatMap((recent) => (recent.type === 'project' ? [recent.id] : [])),
+    ]
+    return ids
+      .filter((id, index) => ids.indexOf(id) === index)
+      .flatMap((id) => (projectInfo[id] ? [projectInfo[id]] : []))
+  })
+
+  const rows = $derived.by((): PaletteRow[] => {
+    // The query filters the static actions by label; "New secret in X" is already tied to a project
+    // the query (or the recents) brought in, so it is not filtered again by its own label.
+    const actions = [
+      ...filterActions(staticActions(orgRole), query),
+      ...projectActions(orgRole, knownProjects),
+    ].map((action): PaletteRow => ({ group: 'actions', id: action.id, action }))
+    const rest: PaletteRow[] = query.trim()
+      ? results.map((item) => ({ group: 'results', id: item.type + item.id, item }))
+      : recentItems.map((recent) => ({ group: 'recent', id: recent.type + recent.id, recent }))
+    return [...actions, ...rest]
+  })
 
   function closeSearch() {
     open = false
@@ -37,6 +93,10 @@
     selectedIndex = 0
     loading = false
     if (abortController) abortController.abort()
+    generation += 1
+    recentItems = []
+    notice = null
+    projectInfo = {}
     previousFocus?.focus()
   }
 
@@ -46,7 +106,61 @@
     query = ''
     results = []
     selectedIndex = 0
+    notice = null
     queueMicrotask(() => inputRef?.focus())
+  }
+
+  /** Shows only recents the server still lets this user open (checked now, not remembered). */
+  async function loadRecents() {
+    if (!userId) return
+    const mine = userId
+    const current = ++generation
+    const stored = readRecents(mine)
+    const checks = await Promise.all(stored.map((recent) => checkRecent(fetch, recent)))
+    if (current !== generation) return
+    const visible: RecentItem[] = []
+    const found: Record<string, KnownProject> = {}
+    stored.forEach((recent, index) => {
+      const check = checks[index]
+      if (check?.status === 'gone') removeRecent(mine, recent)
+      if (check?.status !== 'ok') return
+      visible.push(recent)
+      if (recent.type === 'project') {
+        found[recent.id] = {
+          id: recent.id,
+          name: recent.name,
+          role: check.projectRole,
+          isArchived: check.isArchived,
+        }
+      }
+    })
+    recentItems = visible
+    projectInfo = { ...projectInfo, ...found }
+  }
+
+  /** The caller's role per project, for "New secret in X"; a failed lookup offers no action. */
+  async function ensureProjectInfo(ids: string[]) {
+    const current = generation
+    const missing = ids.filter((id) => !(id in projectInfo))
+    const loaded = await Promise.all(
+      missing.map(async (id): Promise<KnownProject | null> => {
+        try {
+          const project = await getProject(fetch, id)
+          return {
+            id,
+            name: project.name,
+            role: project.role,
+            isArchived: project.archivedAt !== null,
+          }
+        } catch {
+          return null
+        }
+      })
+    )
+    if (current !== generation) return
+    const found: Record<string, KnownProject> = {}
+    for (const entry of loaded) if (entry) found[entry.id] = entry
+    projectInfo = { ...projectInfo, ...found }
   }
 
   function handleGlobalKeydown(event: KeyboardEvent) {
@@ -76,6 +190,9 @@
       })
       results = data.results
       selectedIndex = 0
+      void ensureProjectInfo(
+        data.results.flatMap((item) => (item.type === 'project' ? [item.id] : [])).slice(0, 3)
+      )
     } catch (error) {
       if ((error as Error).name !== 'AbortError') results = []
     } finally {
@@ -88,18 +205,85 @@
     debounceTimer = setTimeout(() => runSearch(query), 200)
   }
 
-  async function navigate(item: SearchResultItem) {
+  function toRecent(item: SearchResultItem): RecentItem {
+    return item.type === 'credential'
+      ? {
+          type: 'credential',
+          id: item.id,
+          projectId: item.projectId,
+          name: item.name,
+          projectName: item.projectName,
+        }
+      : { type: 'project', id: item.id, name: item.name }
+  }
+
+  async function openRecord(
+    record: { type: 'credential'; id: string; projectId: string } | { type: 'project'; id: string }
+  ) {
     closeSearch()
-    if (item.type === 'credential') {
-      await goto(resolve(`/projects/${item.projectId}/credentials/${item.id}`))
+    if (record.type === 'credential') {
+      await goto(resolve(`/projects/${record.projectId}/credentials/${record.id}`))
     } else {
-      await goto(resolve(`/projects/${item.id}`))
+      await goto(resolve(`/projects/${record.id}`))
     }
   }
 
+  async function navigate(item: SearchResultItem) {
+    if (userId) addRecent(userId, toRecent(item))
+    await openRecord(item)
+  }
+
+  async function goToTarget(target: PaletteTarget) {
+    closeSearch()
+    if (target.to === 'create-project') await goto(resolve('/projects/new'))
+    else if (target.to === 'audit-log') await goto(resolve('/settings/audit'))
+    else await goto(resolve(`/projects/${target.projectId}/credentials/new`))
+  }
+
+  /** A recent is re-checked server-side on selection: one that can no longer be opened is dropped
+   * and never navigated to, and the palette says so. */
+  let openingRecent = false
+  async function openRecent(recent: RecentItem) {
+    if (openingRecent) return
+    openingRecent = true
+    try {
+      await openCheckedRecent(recent)
+    } finally {
+      openingRecent = false
+    }
+  }
+
+  async function openCheckedRecent(recent: RecentItem) {
+    notice = null
+    const current = generation
+    const check = await checkRecent(fetch, recent)
+    // The palette was closed (or reopened) while the check ran: do not navigate on its behalf.
+    if (!open || current !== generation) return
+    if (check.status === 'ok') {
+      if (userId) addRecent(userId, recent)
+      await openRecord(recent)
+      return
+    }
+    if (check.status === 'gone') {
+      if (userId) removeRecent(userId, recent)
+      recentItems = recentItems.filter(
+        (item) => !(item.type === recent.type && item.id === recent.id)
+      )
+      notice = 'That item is no longer available.'
+    } else {
+      notice = 'Could not open that item. Try again.'
+    }
+  }
+
+  async function selectRow(row: PaletteRow) {
+    if (row.group === 'actions') await goToTarget(row.action.target)
+    else if (row.group === 'recent') await openRecent(row.recent)
+    else await navigate(row.item)
+  }
+
   function selectCurrent() {
-    const item = flatResults[selectedIndex]
-    if (item) void navigate(item)
+    const row = rows[selectedIndex]
+    if (row) void selectRow(row)
   }
 
   function handlePaletteKeydown(event: KeyboardEvent) {
@@ -110,13 +294,12 @@
     }
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      if (flatResults.length > 0) selectedIndex = (selectedIndex + 1) % flatResults.length
+      if (rows.length > 0) selectedIndex = (selectedIndex + 1) % rows.length
       return
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault()
-      if (flatResults.length > 0)
-        selectedIndex = (selectedIndex - 1 + flatResults.length) % flatResults.length
+      if (rows.length > 0) selectedIndex = (selectedIndex - 1 + rows.length) % rows.length
       return
     }
     if (event.key === 'Enter') {
@@ -128,6 +311,22 @@
   function handleBackdropClick(event: MouseEvent) {
     if (event.target === event.currentTarget) closeSearch()
   }
+
+  // Rows can shrink while results and checks arrive; keep the highlight on a row that exists.
+  $effect(() => {
+    if (selectedIndex >= rows.length) selectedIndex = 0
+  })
+
+  // The layout opens the palette by setting `open` (header button, Ctrl/Cmd-K), so recents load when
+  // `open` turns true, whoever set it.
+  let wasOpen = false
+  $effect(() => {
+    if (open && !wasOpen) {
+      notice = null
+      untrack(() => void loadRecents())
+    }
+    wasOpen = open
+  })
 
   $effect(() => {
     if (open && dialogRef) {
@@ -174,7 +373,7 @@
         <input
           bind:this={inputRef}
           bind:value={query}
-          class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base"
+          class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-3 text-base"
           type="search"
           placeholder="Search secrets, projects…"
           aria-label="Search"
@@ -187,6 +386,78 @@
         <FormHelpText id="global-search-help" kind="search" />
       </div>
 
+      <p class={notice ? 'px-4 pt-3 text-sm text-amber-900' : 'sr-only'} role="status">
+        {notice ?? ''}
+      </p>
+
+      {#if rows.length > 0}
+        <ul id="global-search-results" class="max-h-[50vh] overflow-y-auto p-2" role="listbox">
+          {#each rows as row, index (row.group + row.id)}
+            {#if index === 0 || rows[index - 1]?.group !== row.group}
+              <li role="presentation" class="px-3 pb-1 pt-2 text-xs font-semibold text-slate-600">
+                {GROUP_LABEL[row.group]}
+              </li>
+            {/if}
+            <li
+              role="option"
+              aria-selected={index === selectedIndex}
+              class={`rounded-xl ${index === selectedIndex ? 'bg-slate-100' : ''}`}
+            >
+              <button
+                type="button"
+                class="w-full cursor-pointer rounded-xl px-3 py-3 text-left hover:bg-slate-50"
+                onclick={() => void selectRow(row)}
+              >
+                {#if row.group === 'actions'}
+                  <span class="font-medium text-slate-950">{row.action.label}</span>
+                {:else if row.group === 'recent'}
+                  {#if row.recent.type === 'credential'}
+                    <span class="text-sm font-semibold text-slate-500">
+                      {row.recent.projectName}
+                    </span>
+                    <span class="text-slate-400">/</span>
+                    <span class="font-medium text-slate-950">{row.recent.name}</span>
+                  {:else}
+                    <span class="font-medium text-slate-950">{row.recent.name}</span>
+                  {/if}
+                {:else}
+                  {@const item = row.item}
+                  {#if item.type === 'credential'}
+                    <div class="flex flex-wrap items-center gap-2 text-sm">
+                      <span class="font-semibold text-slate-500">{item.projectName}</span>
+                      <span class="text-slate-400">/</span>
+                      <span class="font-medium text-slate-950">
+                        {@render highlighted(item.name)}
+                      </span>
+                      {#if item.expiresAt && expiresWithinDays(item.expiresAt)}
+                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">
+                          expires in {daysUntil(item.expiresAt)} days
+                        </span>
+                      {/if}
+                    </div>
+                    {#if item.snippet}
+                      <p class="mt-1 text-sm text-slate-600">
+                        {@render highlighted(item.snippet)}
+                      </p>
+                    {/if}
+                  {:else}
+                    <div class="font-medium text-slate-950">
+                      {@render highlighted(item.name)}
+                    </div>
+                    <p class="mt-1 text-sm text-slate-600">
+                      {item.credentialCount} secrets
+                      {#if item.snippet}
+                        · {@render highlighted(item.snippet)}
+                      {/if}
+                    </p>
+                  {/if}
+                {/if}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
       {#if loading}
         <p class="sr-only" aria-live="polite">Searching…</p>
         <div class="flex justify-center p-6">
@@ -197,52 +468,6 @@
         </div>
       {:else if query.trim() && results.length === 0}
         <p class="p-6 text-slate-700">No results for "{query}"</p>
-      {:else if results.length > 0}
-        <ul id="global-search-results" class="max-h-[50vh] overflow-y-auto p-2" role="listbox">
-          {#each flatResults as item, index (item.type + item.id)}
-            <li
-              role="option"
-              aria-selected={index === selectedIndex}
-              class={`rounded-xl ${index === selectedIndex ? 'bg-slate-100' : ''}`}
-            >
-              <button
-                type="button"
-                class="w-full cursor-pointer rounded-xl px-3 py-3 text-left hover:bg-slate-50"
-                onclick={() => navigate(item)}
-              >
-                {#if item.type === 'credential'}
-                  <div class="flex flex-wrap items-center gap-2 text-sm">
-                    <span class="font-semibold text-slate-500">{item.projectName}</span>
-                    <span class="text-slate-400">/</span>
-                    <span class="font-medium text-slate-950">
-                      {@render highlighted(item.name)}
-                    </span>
-                    {#if item.expiresAt && expiresWithinDays(item.expiresAt)}
-                      <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">
-                        expires in {daysUntil(item.expiresAt)} days
-                      </span>
-                    {/if}
-                  </div>
-                  {#if item.snippet}
-                    <p class="mt-1 text-sm text-slate-600">
-                      {@render highlighted(item.snippet)}
-                    </p>
-                  {/if}
-                {:else}
-                  <div class="font-medium text-slate-950">
-                    {@render highlighted(item.name)}
-                  </div>
-                  <p class="mt-1 text-sm text-slate-600">
-                    {item.credentialCount} secrets
-                    {#if item.snippet}
-                      · {@render highlighted(item.snippet)}
-                    {/if}
-                  </p>
-                {/if}
-              </button>
-            </li>
-          {/each}
-        </ul>
       {/if}
 
       <footer class="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
