@@ -74,10 +74,33 @@ describe('the account dropdown (Story 72.6)', () => {
     render(ShellAccount, { props: { user: user() } })
     const summary = menu().querySelector('summary') as HTMLElement
     await openMenu()
-    await fireEvent.keyDown(screen.getByRole('link', { name: 'Language' }), { code: 'Escape' })
+    await fireEvent.keyDown(screen.getByRole('link', { name: 'Language' }), { key: 'Escape' })
     await tick()
     expect(menu().open).toBe(false)
     expect(document.activeElement).toBe(summary)
+  })
+
+  it('Tabbing out of the menu closes it', async () => {
+    render(ShellAccount, { props: { user: user() } })
+    await openMenu()
+    await fireEvent.focusOut(screen.getByRole('button', { name: 'Sign out' }), {
+      relatedTarget: document.body,
+    })
+    await tick()
+    expect(menu().open).toBe(false)
+  })
+
+  it('closes and focuses the trigger BEFORE an item handler runs (so a dialog returns focus there)', async () => {
+    render(ShortcutsDialogHost)
+    render(ShellAccount, { props: { user: user() } })
+    const summary = menu().querySelector('summary') as HTMLElement
+    await openMenu()
+    const focusAtHandler: Array<Element | null> = []
+    const item = screen.getByRole('button', { name: 'Keyboard shortcuts' })
+    item.addEventListener('click', () => focusAtHandler.push(document.activeElement))
+    item.focus()
+    await fireEvent.click(item)
+    expect(focusAtHandler).toEqual([summary])
   })
 
   it('a click outside closes it without moving focus', async () => {

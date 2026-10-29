@@ -49,7 +49,8 @@ export interface NavItemFields<C> {
   /** A keyboard shortcut hint shown next to an action (PV's search: ⌘K). */
   shortcut?: string
   /** Short text shown as a chip next to the label (a count or "New"); evaluated per render. Story
-   * 72.6: the primary nav and the account menu render it; other surfaces ignore it. */
+   * 72.6: a renderer that shows the label through `NavEntry`/`NavDisclosure` default content (primary nav,
+   * account menu, footer, link rows, back links...) shows it; one with its own content (cards, tabs) ignores it. */
   badge?: NavLabel<C>
   /** The tone of the badge, or, with no badge text, a small status dot. Story 72.6. */
   status?: NavStatus

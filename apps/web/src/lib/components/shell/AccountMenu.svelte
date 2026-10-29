@@ -1,14 +1,14 @@
 <!--
   Story 72.6 (P3a): the account dropdown. A native <details>/<summary> disclosure (works without
   script; keyboard: Tab focuses, Enter/Space toggles) whose panel lists the `account` surface's
-  nodes: links, the Help external link and actions (Keyboard shortcuts, Sign out). Escape and a
-  click outside close it; Escape returns focus to the trigger. Choosing an item closes the menu and
-  puts focus on the trigger first, so a dialog the item opens returns focus to something visible.
+  nodes: links, the Help external link and actions (Keyboard shortcuts, Sign out). Escape, a click
+  outside and tabbing out close it; Escape returns focus to the trigger. Choosing an item closes
+  the menu and puts focus on the trigger BEFORE the item's own handler runs (capture phase), so a
+  dialog the item opens returns focus to a visible element.
 -->
 <script lang="ts">
   import { m } from '$lib/paraglide/messages.js'
-  import NavDisclosure from '$lib/navigation/NavDisclosure.svelte'
-  import NavEntry from '$lib/navigation/NavEntry.svelte'
+  import NavNodeEntry from '$lib/navigation/NavNodeEntry.svelte'
   import type { NavNode } from '$lib/navigation/types.js'
 
   let { items, itemClass }: { items: NavNode[]; itemClass: string } = $props()
@@ -25,23 +25,34 @@
   $effect(() => {
     const root = rootEl
     if (!open || !root) return
-    function onPressed(event: KeyboardEvent) {
-      if (event.code !== 'Escape') return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
       event.stopPropagation()
       close(true)
     }
-    function onClick(event: MouseEvent) {
+    function onInsideClick(event: MouseEvent) {
       const target = event.target
-      if (!(target instanceof Element)) return
-      if (!root?.contains(target)) close(false)
+      if (!(target instanceof Element) || summaryEl?.contains(target)) return
       // A link or button inside the panel closes the menu; a disclosure's summary does not.
-      else if (!summaryEl?.contains(target) && target.closest('a, button')) close(true)
+      if (target.closest('a, button')) close(true)
     }
-    root.addEventListener('keydown', onPressed)
-    window.addEventListener('click', onClick)
+    function onOutsideClick(event: MouseEvent) {
+      if (event.target instanceof Node && !root?.contains(event.target)) close(false)
+    }
+    // Tabbing out of the menu closes it and leaves focus where the user put it.
+    function onFocusOut(event: FocusEvent) {
+      const next = event.relatedTarget
+      if (next instanceof Node && !root?.contains(next)) close(false)
+    }
+    root.addEventListener('keydown', onKeyDown)
+    root.addEventListener('click', onInsideClick, true)
+    root.addEventListener('focusout', onFocusOut)
+    window.addEventListener('click', onOutsideClick)
     return () => {
-      root.removeEventListener('keydown', onPressed)
-      window.removeEventListener('click', onClick)
+      root.removeEventListener('keydown', onKeyDown)
+      root.removeEventListener('click', onInsideClick, true)
+      root.removeEventListener('focusout', onFocusOut)
+      window.removeEventListener('click', onOutsideClick)
     }
   })
 </script>
@@ -56,11 +67,7 @@
     class="mt-1 flex min-w-48 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg md:absolute md:right-0 md:z-10"
   >
     {#each items as item (item.id)}
-      {#if item.children.length > 0}
-        <NavDisclosure node={item} class={itemClass} />
-      {:else}
-        <NavEntry node={item} class={itemClass} />
-      {/if}
+      <NavNodeEntry node={item} class={itemClass} />
     {/each}
   </div>
 </details>

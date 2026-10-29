@@ -356,20 +356,21 @@ resolved path like any other (M4), and each carries `@pv-stable` in its first co
 a change to them is a minor bump of `@project-vault/web-host`. No existing component is retro-stamped. The
 `component-index.json` of the pack lists them with `stability: "stable"` (generated, never typed here).
 
-| Component                     | Props                                                                                                                                                                        | Events / bindings                    | Status |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------ |
-| `ui/Button.svelte`            | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`                    | `onclick`                            | stable |
-| `ui/Field.svelte`             | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                                      | none                                 | stable |
-| `ui/TextField.svelte`         | `id`, `label`, `value`, `name`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                                    | `bind:value`                         | stable |
-| `ui/Textarea.svelte`          | `id`, `label`, `value`, `name`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                                    | `bind:value`                         | stable |
-| `ui/Select.svelte`            | `id`, `label`, `value`, `name`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                                | `bind:value`                         | stable |
-| `ui/ChoiceGroup.svelte`       | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled`               | `bind:value`                         | stable |
-| `ui/FieldMessages.svelte`     | `id`, `hint`, `helpId`, `error`                                                                                                                                              | none                                 | stable |
-| `ui/field-ids.ts`             | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                               | none                                 | stable |
-| `ui/control-classes.ts`       | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                              | none                                 | stable |
-| `ui/Dialog.svelte`            | `open` (bindable), `id` (required), `title`, `description`, `dismissible` (default true), `onclose`, `children`, `footer`                                                    | `bind:open`, `onclose`               | stable |
-| `ui/ConfirmDialog.svelte`     | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
-| `ui/ConfirmDialogHost.svelte` | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                                      | none                                 | stable |
+| Component                          | Props                                                                                                                                                                        | Events / bindings                    | Status |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------ |
+| `ui/Button.svelte`                 | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`                    | `onclick`                            | stable |
+| `ui/Field.svelte`                  | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                                      | none                                 | stable |
+| `ui/TextField.svelte`              | `id`, `label`, `value`, `name`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                                    | `bind:value`                         | stable |
+| `ui/Textarea.svelte`               | `id`, `label`, `value`, `name`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                                    | `bind:value`                         | stable |
+| `ui/Select.svelte`                 | `id`, `label`, `value`, `name`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                                | `bind:value`                         | stable |
+| `ui/ChoiceGroup.svelte`            | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled`               | `bind:value`                         | stable |
+| `ui/FieldMessages.svelte`          | `id`, `hint`, `helpId`, `error`                                                                                                                                              | none                                 | stable |
+| `ui/field-ids.ts`                  | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                               | none                                 | stable |
+| `ui/control-classes.ts`            | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                              | none                                 | stable |
+| `ui/Dialog.svelte`                 | `open` (bindable), `id` (required), `title`, `description`, `dismissible` (default true), `onclose`, `children`, `footer`                                                    | `bind:open`, `onclose`               | stable |
+| `ui/ConfirmDialog.svelte`          | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
+| `ui/ConfirmDialogHost.svelte`      | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                                      | none                                 | stable |
+| `shell/ShortcutsDialogHost.svelte` | none (mounted once in the `(app)` layout; the keyboard shortcuts dialog the account menu opens; renders a closed `<dialog>` until asked)                                     |
 
 Contract rules: `id` is required and explicit (no generated ids, so the server and the browser cannot disagree); the
 control is named by its `<label for>` (or the fieldset `legend`); `aria-describedby` (on each input of a group) lists the error id first and the
@@ -883,8 +884,9 @@ nav model (the contract test proves both shapes assignable both ways):
   dot with a screen-reader word ("Info", "OK", "Needs attention", "Problem", in `en` and `es`), so the tone is never
   conveyed by colour alone. Any other value is a bad item (dev throws with the id, production drops the item).
 
-The primary nav, the account menu and every surface rendered through `NavEntry` (brand, utility, footer, back and
-auth links) show them; the tab bars, index cards and breadcrumbs ignore both fields. A **top-level `group`** (an item
+The primary nav and every renderer that shows an item's label through `NavEntry` or `NavDisclosure` default content (the
+account menu, brand, footer, link rows, back and auth links, breadcrumbs) show them, with the status word read after the
+label ("Billing, Problem"); a renderer that supplies its own content (the index cards) ignores both fields. A **top-level `group`** (an item
 with children and no link of its own, directly under the primary surface root) renders as a **section label**: its
 label names a `role="group"` and its children follow it at the same level. A group nested in a section, or at any
 other depth, and any item with an `href` and children, still render as the native `<details>` disclosure of 68-7. A
@@ -895,7 +897,7 @@ on purpose):
 
 - **Skip link** (`shell/SkipLink.svelte`, rendered first by `AppLayoutShell`): the first tab stop of every `(app)`
   page, ahead of the orphaned-theme notice. It targets `<main id="main-content" tabindex="-1">` of `AppShell`.
-- **Header search field** (`shell/HeaderSearchField.svelte`, between the brand and the bell, from the `md` breakpoint
+- **Header search field** (`shell/HeaderSearchField.svelte`, outside the nav delta: it renders whenever the primary nav does, its key caps `Ctrl K`, `Enter`, `Esc` are literal key names in every locale, between the brand and the bell, from the `md` breakpoint
   up, hidden while onboarding): a field-shaped button with the hint `Ctrl K` that calls the same `onsearch` the nav's
   search button calls, so it opens whichever `GlobalSearch` is mounted (PV's or a CM replacement). `primary.search`
   keeps its id and its action and is shown below `md` only (it gains `md:hidden`).

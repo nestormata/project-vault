@@ -16,7 +16,6 @@
 <button
   type="button"
   class={`hidden min-w-64 items-center gap-2 rounded-xl border ${CONTROL_BORDER} bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 md:flex`}
-  aria-label={m.shell_search_field_label()}
   aria-keyshortcuts="Control+K Meta+K"
   data-testid="header-search-field"
   onclick={() => onsearch?.()}

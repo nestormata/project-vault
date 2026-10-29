@@ -81,7 +81,7 @@
       <span
         id={`nav-section-${node.id}`}
         class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-600">{node.label}</span
-      >
+      >{#if node.badge !== undefined || node.status !== undefined}<NavBadge {node} />{/if}
       {#each node.children as child (child.id)}
         {@render navNode(child, false, false)}
       {/each}

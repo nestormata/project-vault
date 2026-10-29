@@ -243,7 +243,6 @@
   "nav_status_warning": "Needs attention",
   "nav_status_danger": "Problem",
   "shell_skip_to_content": "Skip to main content",
-  "shell_search_field_label": "Search",
   "shell_search_field_placeholder": "Search projects and secrets",
   "shell_account_menu": "Account menu",
   "nav_account": "Account",

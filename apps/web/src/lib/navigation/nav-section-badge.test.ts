@@ -199,17 +199,28 @@ describe('the primary nav renders sections, badges and statuses (Story 72.6)', (
       ],
     })
     const { container } = render(PrimaryNav, { props: {} })
+    expectChip(container)
+    expectDot(container)
+  })
+
+  function expectChip(container: HTMLElement) {
     const chip = container.querySelector('[data-nav-badge]')
     expect(chip?.textContent?.trim()).toBe('3')
     expect(chip?.getAttribute('data-status')).toBe('warning')
     expect(chip?.className).toContain('bg-amber-100')
+    // A chip with a status also names it, so the tone is not colour alone (", Needs attention").
+    expect(chip?.nextElementSibling?.textContent).toBe(', Needs attention')
+  }
+
+  function expectDot(container: HTMLElement) {
     const dot = container.querySelector('[data-nav-status="danger"]')
     expect(dot?.getAttribute('aria-hidden')).toBe('true')
     expect(dot?.nextElementSibling?.className).toContain('sr-only')
-    expect(dot?.nextElementSibling?.textContent).toBe('Problem')
+    expect(dot?.nextElementSibling?.textContent).toBe(', Problem')
     // Items without either field render no badge markup.
     expect(container.querySelectorAll('[data-nav-badge], [data-nav-status]')).toHaveLength(2)
-  })
+    expect(screen.getByRole('link', { name: /^Health.*, Problem$/ })).toBeTruthy()
+  }
 
   it('the status word follows the locale', async () => {
     useDelta({
@@ -223,7 +234,38 @@ describe('the primary nav renders sections, badges and statuses (Story 72.6)', (
     })
     await setLocale('es', { reload: false })
     const { container } = render(PrimaryNav, { props: {} })
-    expect(container.querySelector('[data-nav-status] + .sr-only')?.textContent).toBe('Problema')
+    expect(container.querySelector('[data-nav-status] + .sr-only')?.textContent).toBe(', Problema')
+  })
+})
+
+describe('a section label and a disclosure summary show their badge (Story 72.6)', () => {
+  it('shows the badge of a top-level group and of a group nested in a disclosure', () => {
+    useDelta({
+      primary: [
+        {
+          op: 'insert',
+          parent: 'primary',
+          item: {
+            id: 'cm.tools',
+            label: 'Tools',
+            badge: '2',
+            children: [
+              {
+                id: 'cm.tools.inner',
+                label: 'Inner',
+                badge: 'New',
+                children: [{ id: 'cm.tools.leaf', label: 'Leaf', href: () => path('/leaf') }],
+              },
+            ],
+          },
+        },
+      ],
+    })
+    const { container } = render(PrimaryNav, { props: {} })
+    const chips = [...container.querySelectorAll('[data-nav-badge]')].map((el) =>
+      el.textContent?.trim()
+    )
+    expect(chips).toEqual(['2', 'New'])
   })
 })
 

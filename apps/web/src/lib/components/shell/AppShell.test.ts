@@ -226,7 +226,8 @@ describe('AppShell.svelte', () => {
     expect(field.textContent).toContain('Search projects and secrets')
     expect(field.textContent).toContain('Ctrl K')
     expect(field.getAttribute('aria-keyshortcuts')).toBe('Control+K Meta+K')
-    expect(field.getAttribute('aria-label')).toBe('Search')
+    // Named by its visible text (label in name), not by an overriding aria-label.
+    expect(field.hasAttribute('aria-label')).toBe(false)
     unmount()
     render(AppShell, {
       props: { user: baseUser(), children: childrenSnippet(), hidePrimaryNav: true },

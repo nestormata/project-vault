@@ -42,11 +42,11 @@
     data-status={node.status}
   >
     {node.badge}
-  </span>
+  </span>{#if node.status !== undefined}<span class="sr-only">{`, ${word}`}</span>{/if}
 {:else if node.status !== undefined}
   <span
     class={`inline-block h-2 w-2 rounded-full ${dot}`}
     data-nav-status={node.status}
     aria-hidden="true"
-  ></span><span class="sr-only">{word}</span>
+  ></span><span class="sr-only">{`, ${word}`}</span>
 {/if}
