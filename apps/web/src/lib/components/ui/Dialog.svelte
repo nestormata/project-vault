@@ -81,8 +81,9 @@
   })
 
   $effect(() => {
-    const el = dialogEl
-    if (!el) return
+    const found = dialogEl
+    if (!found) return
+    const el: HTMLDialogElement = found
     function handleClose() {
       open = false
       // Browsers return focus on close; do it explicitly as well so it also holds when the opener
