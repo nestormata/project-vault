@@ -116,7 +116,7 @@
               {#if canSnooze}
                 {#each snoozePresets as preset (preset.minutes)}
                   <button
-                    class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-900"
+                    class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-xs font-semibold text-slate-900"
                     type="button"
                     onclick={() => void handleSnooze(alert.id, preset.minutes)}
                   >
