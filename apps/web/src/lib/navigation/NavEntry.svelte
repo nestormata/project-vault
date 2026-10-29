@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import NavBadge from './NavBadge.svelte'
   import type { NavNode } from './types.js'
 
   let {
@@ -17,7 +18,9 @@
 </script>
 
 {#snippet content()}{#if children}{@render children()}{:else}{#if node.icon}<node.icon
-      />{/if}{node.label}{/if}{/snippet}
+      />{/if}{node.label}{#if node.badge !== undefined || node.status !== undefined}<NavBadge
+        {node}
+      />{/if}{/if}{/snippet}
 {#if node.external}
   <a
     href={`${node.external.scheme}://${node.external.rest}`}

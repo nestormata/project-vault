@@ -18,6 +18,9 @@ export type NavKind = 'external' | 'badge-link' | 'group' | 'action' | 'link'
 /** An absolute external URL (`kind: 'external'`). */
 export type ExternalUrl = `http://${string}` | `https://${string}`
 
+/** The tone of an item's badge, or of its status dot when it has no badge text (kit 0.10.0). */
+export type NavStatus = 'info' | 'success' | 'warning' | 'danger'
+
 export interface NavItemFields<Ctx, Href extends string = string> {
   /** Required, also for an icon-only item: it is the item's accessible name. */
   label: NavLabel<Ctx>
@@ -37,6 +40,11 @@ export interface NavItemFields<Ctx, Href extends string = string> {
   mobileLabel?: NavLabel<Ctx>
   title?: NavLabel<Ctx>
   shortcut?: string
+  /** Short text shown as a chip next to the label (a count or "New"). The primary nav and the
+   * account menu render it; a newer web-host may render more surfaces. */
+  badge?: NavLabel<Ctx>
+  /** The tone of the badge, or, with no badge text, a small status dot. */
+  status?: NavStatus
   children?: NavItem<Ctx, Href>[]
 }
 

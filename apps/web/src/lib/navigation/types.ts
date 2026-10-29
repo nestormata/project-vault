@@ -10,6 +10,12 @@ export type ExternalUrl = `https://${string}` | `http://${string}`
 
 export type NavKind = 'link' | 'action' | 'group' | 'badge-link' | 'external'
 
+/** The tone of an item's badge or status dot (Story 72.6). The tone is also announced: a status
+ * with no badge text renders a dot with a screen-reader word. */
+export type NavStatus = 'info' | 'success' | 'warning' | 'danger'
+
+export const NAV_STATUSES: readonly NavStatus[] = ['info', 'success', 'warning', 'danger']
+
 /** A label: evaluated per render (locale-reactive). A plain string is accepted and rendered as is
  * in every locale (normalized to a constant function). */
 export type NavLabel<C> = ((ctx: C) => string) | string
@@ -42,6 +48,11 @@ export interface NavItemFields<C> {
   icon?: Component | string
   /** A keyboard shortcut hint shown next to an action (PV's search: ⌘K). */
   shortcut?: string
+  /** Short text shown as a chip next to the label (a count or "New"); evaluated per render. Story
+   * 72.6: the primary nav and the account menu render it; other surfaces ignore it. */
+  badge?: NavLabel<C>
+  /** The tone of the badge, or, with no badge text, a small status dot. Story 72.6. */
+  status?: NavStatus
   /** `action` items: what selecting the item does. */
   onSelect?: (ctx: C) => void | Promise<void>
   children?: NavItem<C>[]
@@ -131,6 +142,9 @@ export interface NavNode {
   current: boolean
   icon?: Component
   shortcut: string
+  /** The badge text, present only when the item has a non-empty badge. */
+  badge?: string
+  status?: NavStatus
   onSelect?: () => void | Promise<void>
   children: NavNode[]
 }

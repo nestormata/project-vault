@@ -12,14 +12,15 @@ import { activeDelta } from './active-delta.js'
 import { applyNavDelta, kindOf, visibleItems, type TreeItem } from './apply-delta.js'
 import { surfaceOfNavId } from './nav-registry.js'
 import { surfaceItems } from './surfaces/index.js'
-import type {
-  NavContexts,
-  NavDelta,
-  NavItem,
-  NavLabel,
-  NavNode,
-  NavOp,
-  NavSurfaceId,
+import {
+  NAV_STATUSES,
+  type NavContexts,
+  type NavDelta,
+  type NavItem,
+  type NavLabel,
+  type NavNode,
+  type NavOp,
+  type NavSurfaceId,
 } from './types.js'
 
 export interface BuiltSurface<C> {
@@ -151,6 +152,22 @@ function isActive<C>(
   return ctx.pathname === target || ctx.pathname.startsWith(`${target}/`)
 }
 
+/** The badge text and status of an item (Story 72.6): both absent unless the item set them. A status
+ * that is not one of the four tones is a bad item, not a silent default. */
+function badgeFields<C>(item: NavItem<C>, ctx: C): Pick<NavNode, 'badge' | 'status'> {
+  const badge = item.badge === undefined ? '' : textOf(item.badge, ctx)
+  const { status } = item
+  if (status !== undefined && !NAV_STATUSES.includes(status)) {
+    throw new NavItemError(
+      `a status must be one of ${NAV_STATUSES.join(', ')}, got ${JSON.stringify(status)}`
+    )
+  }
+  return {
+    ...(badge === '' ? {} : { badge }),
+    ...(status === undefined ? {} : { status }),
+  }
+}
+
 function evaluate<C extends { pathname: string }>(
   item: NavItem<C>,
   ctx: C,
@@ -174,6 +191,7 @@ function evaluate<C extends { pathname: string }>(
     current: active || children.some((child) => child.current),
     ...(typeof item.icon === 'function' ? { icon: item.icon } : {}),
     shortcut: item.shortcut ?? '',
+    ...badgeFields(item, ctx),
     ...(handler === undefined ? {} : { onSelect: () => handler(ctx) }),
     children,
   }
