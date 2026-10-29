@@ -50,6 +50,7 @@ export function appLayoutData(overrides: Partial<AppLayoutData> = {}): AppLayout
     projects: [],
     importRouteLive: false,
     unreadCount: 0,
+    shellVariant: 'header',
     hasUiPanelExtension: false,
     extensionNavItems: [],
     appliedTheme: null,

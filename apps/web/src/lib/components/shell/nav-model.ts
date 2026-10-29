@@ -1,5 +1,6 @@
 import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
 import { renderSurface } from '$lib/navigation/build-surface.js'
+import type { NavNode } from '$lib/navigation/types.js'
 
 export type PrimaryNavItem = {
   label: string
@@ -86,4 +87,23 @@ export function getPrimaryNavItems(
 
 export function isActiveNavItem(itemHref: string, pathname: string) {
   return pathname === itemHref || pathname.startsWith(`${itemHref}/`)
+}
+
+/**
+ * Story 72.7: the evaluated `primary` surface (the active nav delta applied), shared by every
+ * renderer of the primary nav: the header, the rail and the bottom bar render these same nodes.
+ */
+export function renderPrimaryNodes(opts: {
+  pathname: string
+  isPlatformOperator: boolean
+  orgRole: string
+  hasUiPanelExtension: boolean
+  search?: () => void
+}): NavNode[] {
+  return renderSurface('primary', {
+    pathname: opts.pathname,
+    user: { isPlatformOperator: opts.isPlatformOperator, orgRole: opts.orgRole },
+    hasUiPanelExtension: opts.hasUiPanelExtension,
+    search: opts.search,
+  })
 }

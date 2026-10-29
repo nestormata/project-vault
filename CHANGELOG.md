@@ -11,6 +11,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Rail and bottom-bar shell variant, project tab overflow** (Story 72.7, Epic 72, web-host MINOR). `WEB_SHELL_VARIANT=rail`
+  renders the same primary nav data as a left rail from the `md` breakpoint and as a bottom tab bar (four links and a
+  "More" menu) below it; the bar is hidden on task pages (`new`, `import`, `rotate`) and while a text field has focus.
+  Unset keeps the header shell exactly as before. Below 900 px the project tabs past the third collapse into a keyboard
+  operable "More" menu. No kit change. See `docs/composition-kit.md` and `docs/configuration.md`.
 - **Nav section labels, badges and statuses, a skip link, a header search field and an account dropdown** (Story 72.6,
   Epic 72, web-host MINOR; `@project-vault/composition-kit` 0.10.0 gains the additive `badge` and `status` nav fields).
   A top-level nav `group` renders as a section label; the primary nav, the account menu and the `NavEntry` surfaces show

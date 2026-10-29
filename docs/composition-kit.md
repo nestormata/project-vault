@@ -356,21 +356,21 @@ resolved path like any other (M4), and each carries `@pv-stable` in its first co
 a change to them is a minor bump of `@project-vault/web-host`. No existing component is retro-stamped. The
 `component-index.json` of the pack lists them with `stability: "stable"` (generated, never typed here).
 
-| Component                          | Props                                                                                                                                                                        | Events / bindings                    | Status |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------ |
-| `ui/Button.svelte`                 | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`                    | `onclick`                            | stable |
-| `ui/Field.svelte`                  | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                                      | none                                 | stable |
-| `ui/TextField.svelte`              | `id`, `label`, `value`, `name`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                                    | `bind:value`                         | stable |
-| `ui/Textarea.svelte`               | `id`, `label`, `value`, `name`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                                    | `bind:value`                         | stable |
-| `ui/Select.svelte`                 | `id`, `label`, `value`, `name`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                                | `bind:value`                         | stable |
-| `ui/ChoiceGroup.svelte`            | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled`               | `bind:value`                         | stable |
-| `ui/FieldMessages.svelte`          | `id`, `hint`, `helpId`, `error`                                                                                                                                              | none                                 | stable |
-| `ui/field-ids.ts`                  | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                               | none                                 | stable |
-| `ui/control-classes.ts`            | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                              | none                                 | stable |
-| `ui/Dialog.svelte`                 | `open` (bindable), `id` (required), `title`, `description`, `dismissible` (default true), `onclose`, `children`, `footer`                                                    | `bind:open`, `onclose`               | stable |
-| `ui/ConfirmDialog.svelte`          | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
-| `ui/ConfirmDialogHost.svelte`      | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                                      | none                                 | stable |
-| `shell/ShortcutsDialogHost.svelte` | none (mounted once in the `(app)` layout; the keyboard shortcuts dialog the account menu opens; renders a closed `<dialog>` until asked)                                     |
+| Component                             | Props                                                                                                                                                                        | Events / bindings                    | Status |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------ |
+| `ui/Button.svelte`                    | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`                    | `onclick`                            | stable |
+| `ui/Field.svelte`                     | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                                      | none                                 | stable |
+| `ui/TextField.svelte`                 | `id`, `label`, `value`, `name`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                                    | `bind:value`                         | stable |
+| `ui/Textarea.svelte`                  | `id`, `label`, `value`, `name`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                                    | `bind:value`                         | stable |
+| `ui/Select.svelte`                    | `id`, `label`, `value`, `name`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                                | `bind:value`                         | stable |
+| `ui/ChoiceGroup.svelte`               | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled`               | `bind:value`                         | stable |
+| `ui/FieldMessages.svelte`             | `id`, `hint`, `helpId`, `error`                                                                                                                                              | none                                 | stable |
+| `ui/field-ids.ts`                     | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                               | none                                 | stable |
+| `ui/control-classes.ts`               | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                              | none                                 | stable |
+| `ui/Dialog.svelte`                    | `open` (bindable), `id` (required), `title`, `description`, `dismissible` (default true), `onclose`, `children`, `footer`                                                    | `bind:open`, `onclose`               | stable |
+| `ui/ConfirmDialog.svelte`             | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
+| `ui/ConfirmDialogHost.svelte`         | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                                      | none                                 | stable |
+| `shell/ShortcutsDialogHost.svelte`    | none (mounted once in the `(app)` layout; the keyboard shortcuts dialog the account menu opens; renders a closed `<dialog>` until asked)                                     |
 
 Contract rules: `id` is required and explicit (no generated ids, so the server and the browser cannot disagree); the
 control is named by its `<label for>` (or the fieldset `legend`); `aria-describedby` (on each input of a group) lists the error id first and the
@@ -916,6 +916,41 @@ neither `hostSha256` changes. The new native ids `account.account`, `account.lan
 `account.language`: CM drops its own insert or hides the native one. `account.sign-out` keeps its id and action. The account surface now renders inside a dropdown, so a
 Playwright step that clicked "Sign out" opens the "Account menu" first. The `AppShell` characterization and the
 `(app)/+layout.svelte` route snapshots changed (re-recorded under 72-1 D1).
+
+### Rail and bottom-bar shell variant, project tab overflow (Epic 72, Story 72-7)
+
+PV's shell has two layouts over the SAME nav data (the `primary` surface with the active delta applied, plus the frozen
+extension `navItems`). Nothing in the nav model changes: no new kit field, no kit version bump.
+
+- **`header`** (the default, unchanged byte for byte): the primary nav sits in the top header.
+- **`rail`**: a persistent left rail (`aside`, 14 rem, from the `md` breakpoint; `PrimaryNav variant="rail"`, section
+  labels stacked, disclosures inline) and, below `md`, a fixed **bottom bar** (`PrimaryNav variant="bottom"`): the first
+  four internal links of the primary nav in nav order and a keyboard-operable **More** menu holding everything else
+  (further links, external links, extension items, the Search action). The header keeps the brand, the search field
+  (a search icon button below `md`), notifications and the account menu. The bar reads no nav ids, so a host's delta
+  (hide, move, insert) reshapes it; nested groups are flattened into the bar or More so no item is unreachable.
+  The bar is **not rendered on task pages** (a page whose last path segment is `new`, `import` or `rotate`, i.e. a form
+  or flow; `shell/shell-variant.ts`, with a test that walks the real route tree) **and while a text field has focus**
+  (CM D-09, F-23), so only one fixed element is on screen. The server omits it on task pages; the focus rule applies after hydration.
+  Onboarding (`hidePrimaryNav`) has neither rail nor bar. `MoreMenu`, `DetailsMenu` and the `PrimaryNav` `variant` prop are not `@pv-stable`: their props may change in a web-host minor.
+
+Choosing the variant is the operator's: set `WEB_SHELL_VARIANT=rail` on the web service (see `docs/configuration.md`).
+Unset, empty or any other value is `header`. The `(app)` layout load returns it as `data.shellVariant`; `AppLayoutShell`
+passes it to `AppShell` as `variant`. A composed app that replaces `AppShell` or `AppLayoutShell` receives the same prop.
+
+**Project tabs.** Below 900 px the project tab bar shows its first three tabs and puts the rest in a **More** menu
+(`shell/MoreMenu.svelte`, a native `<details>`; Enter/Space opens it, Escape closes it and returns focus to the
+trigger, as do tabbing out, a click outside and choosing a tab). The trigger is marked current while the current tab is
+inside it. The collapse is applied after mount from the viewport width, so the server render and a browser without
+script keep every tab inline, as before. This applies to every shell variant.
+
+**CM impact.** None of `GlobalSearch.svelte`, `ShellBrand.svelte` or the dashboard route override is edited, so none of
+their `hostSha256` values changes in this story (72-5 already drifted `GlobalSearch`). `AppShell`, `AppLayoutShell`,
+`PrimaryNav`, `ProjectNav` and `AccountMenu` are not in CM's lock. With the default variant nothing renders differently.
+CM opts into the rail with `WEB_SHELL_VARIANT=rail` on its composed image and then verifies the shell with its own
+nav delta (CM's `cm.*` primary items land in the rail, in the bar's first four or in More by their position). The CM
+reconciliation story the epic asks for (accept the host shell or retire the CM overrides of `GlobalSearch` and
+`ShellBrand`, whose hashes already drifted under 72-5) belongs in CM's sprint; it is not registered from this repo.
 
 ### At compose time
 

@@ -2,10 +2,17 @@
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
-  import { renderSurface } from '$lib/navigation/build-surface.js'
   import NavBadge from '$lib/navigation/NavBadge.svelte'
+  import NavEntry from '$lib/navigation/NavEntry.svelte'
   import type { NavNode, NavUser } from '$lib/navigation/types.js'
-  import { buildExtensionNavTopLevelItems, isActiveNavItem } from './nav-model.js'
+  import { buildBottomBarModel, legacyNavNodes } from './bottom-bar-model.js'
+  import MoreMenu from './MoreMenu.svelte'
+  import { isTaskPage, isTextEntry } from './shell-variant.js'
+  import {
+    buildExtensionNavTopLevelItems,
+    isActiveNavItem,
+    renderPrimaryNodes,
+  } from './nav-model.js'
 
   let {
     onsearch,
@@ -13,6 +20,7 @@
     hasUiPanelExtension = false,
     extensionNavItems = [],
     user,
+    variant = 'bar',
   }: {
     onsearch?: () => void
     isPlatformOperator?: boolean
@@ -20,6 +28,9 @@
     extensionNavItems?: ResolvedExtensionNavItem[]
     /** Story 68.7: the signed-in user, for nav conditions (`when`) that read the org role. */
     user?: NavUser
+    /** Story 72.7: `bar` (the header, the default), `rail` (a vertical list for the left rail) or `bottom`
+     * (the phone bottom bar: four links and a More menu, see `bottom-bar-model.ts`). */
+    variant?: 'bar' | 'rail' | 'bottom'
   } = $props()
 
   // Story 28.4 AC2 / Story 68.7 AC-4: one $derived over the props, so the labels re-resolve on every
@@ -32,14 +43,41 @@
   const ACTION_GAP = '  '
 
   const nav = $derived({
-    nodes: renderSurface('primary', {
+    nodes: renderPrimaryNodes({
       pathname: page.url.pathname,
-      user: { isPlatformOperator, orgRole: user?.orgRole ?? '' },
+      isPlatformOperator,
+      orgRole: user?.orgRole ?? '',
       hasUiPanelExtension,
       search: () => onsearch?.(),
     }),
     legacy: buildExtensionNavTopLevelItems(extensionNavItems),
   })
+
+  // Story 72.7 (P3b): the bottom bar renders the SAME nodes (PV's and the frozen extension items).
+  // It is not rendered on task pages (forms and flows) and while a text field has focus, so only one
+  // fixed element is on screen; the server renders it (it cannot know about focus).
+  const bottom = $derived(
+    variant === 'bottom'
+      ? buildBottomBarModel([...nav.nodes, ...legacyNavNodes(nav.legacy, page.url.pathname)])
+      : undefined
+  )
+  let textFocused = $state(false)
+  const barVisible = $derived(!isTaskPage(page.url.pathname) && !textFocused)
+  $effect(() => {
+    if (variant !== 'bottom') return
+    function onFocusChange() {
+      textFocused = isTextEntry(document.activeElement)
+    }
+    onFocusChange()
+    document.addEventListener('focusin', onFocusChange)
+    document.addEventListener('focusout', onFocusChange)
+    return () => {
+      document.removeEventListener('focusin', onFocusChange)
+      document.removeEventListener('focusout', onFocusChange)
+    }
+  })
+  const barCell = (active: boolean) =>
+    `flex min-h-14 w-full items-center justify-center gap-1 px-1 py-2 text-xs font-medium ${active ? 'text-brand-700 underline decoration-2 underline-offset-4' : 'text-slate-700'}`
 
   /**
    * Story 29.3 AC6/AC12 — the host-owned icon-token-to-glyph map. An icon token with no matching
@@ -47,6 +85,14 @@
    * not assume that invariant holds forever) renders no icon rather than throwing — see the
    * `{#if}` guard below, which simply omits the icon element for an unrecognized token.
    */
+  // A disclosure's panel: a popover from the `md` breakpoint in the header, an indented inline list
+  // in the rail (a popover would overflow the narrow rail).
+  const PANEL_CLASS = $derived(
+    variant === 'rail'
+      ? 'flex flex-col gap-1 py-1 pl-3'
+      : 'flex flex-col gap-1 py-1 md:absolute md:z-10 md:min-w-40 md:rounded-xl md:border md:border-slate-200 md:bg-white md:p-1 md:shadow-lg'
+  )
+
   const NAV_ICON_GLYPHS: Record<string, string> = {
     'puzzle-piece': '🧩',
     link: '🔗',
@@ -54,138 +100,192 @@
   }
 </script>
 
-<nav
-  aria-label="Primary navigation"
-  data-testid="primary-nav"
-  class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3"
->
-  {#snippet nodeLabel(node: NavNode)}
-    {#if node.icon}<node.icon />{/if}
-    <span class="hidden sm:inline">{node.label}</span>
-    <span class="sm:hidden">{node.mobileLabel}</span
-    >{#if node.badge !== undefined || node.status !== undefined}<NavBadge {node} />{/if}
-  {/snippet}
-  <!--
+{#if bottom !== undefined}
+  {#if barVisible && (bottom.bar.length > 0 || bottom.more.length > 0)}
+    <nav
+      aria-label="Primary navigation"
+      data-testid="bottom-bar"
+      class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden"
+    >
+      <ul class="mx-auto flex max-w-7xl items-stretch">
+        {#each bottom.bar as node (node.id)}
+          <li class="flex-1">
+            <a
+              class={barCell(node.active)}
+              href={node.href}
+              aria-current={node.active ? 'page' : undefined}
+              >{node.mobileLabel}{#if node.badge !== undefined || node.status !== undefined}<NavBadge
+                  {node}
+                />{/if}</a
+            >
+          </li>
+        {/each}
+        {#if bottom.more.length > 0}
+          <li class="flex-1">
+            <MoreMenu
+              placement="up"
+              current={bottom.moreCurrent}
+              summaryClass={barCell(bottom.moreCurrent)}
+              testid="bottom-bar-more"
+            >
+              {#each bottom.more as node (node.id)}
+                {@const itemClass = `flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium ${node.active ? 'bg-brand-600 text-white' : 'text-slate-800 hover:bg-slate-100'}`}
+                {#if node.href !== undefined && node.external === undefined}
+                  <a
+                    class={itemClass}
+                    href={node.href}
+                    aria-current={node.active ? 'page' : undefined}
+                    >{node.label}{#if node.badge !== undefined || node.status !== undefined}<NavBadge
+                        {node}
+                      />{/if}</a
+                  >
+                {:else}
+                  <NavEntry {node} class={itemClass} />
+                {/if}
+              {/each}
+            </MoreMenu>
+          </li>
+        {/if}
+      </ul>
+    </nav>
+  {/if}
+{:else}
+  <nav
+    aria-label="Primary navigation"
+    data-testid="primary-nav"
+    data-nav-variant={variant === 'rail' ? 'rail' : undefined}
+    class={variant === 'rail'
+      ? 'flex flex-col gap-1'
+      : 'flex flex-col gap-2 md:flex-row md:items-center md:gap-3'}
+  >
+    {#snippet nodeLabel(node: NavNode)}
+      {#if node.icon}<node.icon />{/if}
+      <span class="hidden sm:inline">{node.label}</span>
+      <span class="sm:hidden">{node.mobileLabel}</span
+      >{#if node.badge !== undefined || node.status !== undefined}<NavBadge {node} />{/if}
+    {/snippet}
+    <!--
     Story 72.6 (P3a): a top-level `group` (an item with children and no link of its own) is a
     section label, not a disclosure. Its label is heading-like text that names the `role="group"`
     around it, and its children render right after it at the same level through the same renderer
     (links, actions and disclosures; a group inside a section stays a disclosure). A group renders
     no link of its own: give the item an `href` for a disclosure whose panel starts with a link.
   -->
-  {#snippet navSection(node: NavNode)}
-    <div
-      role="group"
-      aria-labelledby={`nav-section-${node.id}`}
-      class="flex flex-col gap-1 md:flex-row md:items-center md:gap-2"
-    >
-      <span
-        id={`nav-section-${node.id}`}
-        class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-600">{node.label}</span
-      >{#if node.badge !== undefined || node.status !== undefined}<NavBadge {node} />{/if}
-      {#each node.children as child (child.id)}
-        {@render navNode(child, false, false)}
-      {/each}
-    </div>
-  {/snippet}
-  <!--
+    {#snippet navSection(node: NavNode)}
+      <div
+        role="group"
+        aria-labelledby={`nav-section-${node.id}`}
+        class={variant === 'rail'
+          ? 'flex flex-col gap-1'
+          : 'flex flex-col gap-1 md:flex-row md:items-center md:gap-2'}
+      >
+        <span
+          id={`nav-section-${node.id}`}
+          class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-600"
+          >{node.label}</span
+        >{#if node.badge !== undefined || node.status !== undefined}<NavBadge {node} />{/if}
+        {#each node.children as child (child.id)}
+          {@render navNode(child, false, false)}
+        {/each}
+      </div>
+    {/snippet}
+    <!--
     Story 68.7 AC-3: one renderer for every depth. A node with children is a native
     <details>/<summary> disclosure (keyboard: Tab focuses, Enter/Space toggles); its <summary> is
     marked active while any descendant is. A node with both an href and children lists its own link
     first inside the disclosure. Nested entries render like the legacy children below.
   -->
-  {#snippet navNode(node: NavNode, nested: boolean, sectioned: boolean = true)}
-    {#if sectioned && !nested && node.kind === 'group' && node.children.length > 0}
-      {@render navSection(node)}
-    {:else if node.children.length > 0}
-      <details class="relative">
-        <summary
-          class={`flex cursor-pointer list-none items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${node.current ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-        >
-          {@render nodeLabel(node)}
-        </summary>
-        <div
-          class="flex flex-col gap-1 py-1 md:absolute md:z-10 md:min-w-40 md:rounded-xl md:border md:border-slate-200 md:bg-white md:p-1 md:shadow-lg"
-        >
-          {#if node.href !== undefined || node.external !== undefined}
-            {@render navLeaf({ ...node, children: [] }, true)}
-          {/if}
-          {#each node.children as child (child.id)}
-            {@render navNode(child, true)}
-          {/each}
-        </div>
-      </details>
-    {:else}
-      {@render navLeaf(node, nested)}
-    {/if}
-  {/snippet}
-  <!--
+    {#snippet navNode(node: NavNode, nested: boolean, sectioned: boolean = true)}
+      {#if sectioned && !nested && node.kind === 'group' && node.children.length > 0}
+        {@render navSection(node)}
+      {:else if node.children.length > 0}
+        <details class="relative">
+          <summary
+            class={`flex cursor-pointer list-none items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${node.current ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+          >
+            {@render nodeLabel(node)}
+          </summary>
+          <div class={PANEL_CLASS}>
+            {#if node.href !== undefined || node.external !== undefined}
+              {@render navLeaf({ ...node, children: [] }, true)}
+            {/if}
+            {#each node.children as child (child.id)}
+              {@render navNode(child, true)}
+            {/each}
+          </div>
+        </details>
+      {:else}
+        {@render navLeaf(node, nested)}
+      {/if}
+    {/snippet}
+    <!--
     An action: an icon-only action keeps its label as screen-reader text (its accessible name). A
     top-level action is followed by the same two-space separator main's markup had after PV's search
     button (AppShell's characterization test compares it byte for byte).
   -->
-  {#snippet actionContent(node: NavNode)}
-    {#if node.icon}<node.icon />{/if}
-    <span class={node.icon ? 'sr-only' : undefined}>{node.label}</span>
-    {#if node.shortcut}<kbd
-        class="hidden rounded border border-slate-300 px-1 text-xs sm:inline"
-        aria-hidden="true">{node.shortcut}</kbd
-      >{/if}
-  {/snippet}
-  {#snippet navLeaf(node: NavNode, nested: boolean)}
-    {#if node.onSelect !== undefined && node.href === undefined && node.external === undefined}
-      {#if nested}
-        <button
-          class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
-          type="button"
-          title={node.title || undefined}
-          onclick={() => node.onSelect?.()}
+    {#snippet actionContent(node: NavNode)}
+      {#if node.icon}<node.icon />{/if}
+      <span class={node.icon ? 'sr-only' : undefined}>{node.label}</span>
+      {#if node.shortcut}<kbd
+          class="hidden rounded border border-slate-300 px-1 text-xs sm:inline"
+          aria-hidden="true">{node.shortcut}</kbd
+        >{/if}
+    {/snippet}
+    {#snippet navLeaf(node: NavNode, nested: boolean)}
+      {#if node.onSelect !== undefined && node.href === undefined && node.external === undefined}
+        {#if nested}
+          <button
+            class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+            type="button"
+            title={node.title || undefined}
+            onclick={() => node.onSelect?.()}
+          >
+            {@render actionContent(node)}
+          </button>
+        {:else}
+          <button
+            class={`flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800${node.id === 'primary.search' ? ' md:hidden' : ''}`}
+            type="button"
+            aria-label={node.title || undefined}
+            title={node.title || undefined}
+            onclick={() => node.onSelect?.()}
+          >
+            {@render actionContent(node)}
+          </button>{ACTION_GAP}
+        {/if}
+      {:else if node.external !== undefined}
+        <a
+          href={`${node.external.scheme}://${node.external.rest}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          class={nested
+            ? 'rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100'
+            : 'flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100'}
         >
-          {@render actionContent(node)}
-        </button>
+          {@render nodeLabel(node)}
+        </a>
+      {:else if nested}
+        <a
+          class={`rounded-lg px-3 py-2 text-sm font-medium ${node.active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+          aria-current={node.active ? 'page' : undefined}
+          href={node.href}
+        >
+          {#if node.icon}<node.icon />{/if}
+          {node.label}{#if node.badge !== undefined || node.status !== undefined}<NavBadge
+              {node}
+            />{/if}
+        </a>
       {:else}
-        <button
-          class={`flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800${node.id === 'primary.search' ? ' md:hidden' : ''}`}
-          type="button"
-          aria-label={node.title || undefined}
-          title={node.title || undefined}
-          onclick={() => node.onSelect?.()}
+        <a
+          class={`flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${node.active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+          aria-current={node.active ? 'page' : undefined}
+          href={node.href}
         >
-          {@render actionContent(node)}
-        </button>{ACTION_GAP}
+          {@render nodeLabel(node)}
+        </a>
       {/if}
-    {:else if node.external !== undefined}
-      <a
-        href={`${node.external.scheme}://${node.external.rest}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        class={nested
-          ? 'rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100'
-          : 'flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100'}
-      >
-        {@render nodeLabel(node)}
-      </a>
-    {:else if nested}
-      <a
-        class={`rounded-lg px-3 py-2 text-sm font-medium ${node.active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-        aria-current={node.active ? 'page' : undefined}
-        href={node.href}
-      >
-        {#if node.icon}<node.icon />{/if}
-        {node.label}{#if node.badge !== undefined || node.status !== undefined}<NavBadge
-            {node}
-          />{/if}
-      </a>
-    {:else}
-      <a
-        class={`flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${node.active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-        aria-current={node.active ? 'page' : undefined}
-        href={node.href}
-      >
-        {@render nodeLabel(node)}
-      </a>
-    {/if}
-  {/snippet}
-  <!--
+    {/snippet}
+    <!--
     Story 29.3 AC10/AC12 bug fix (found via Chrome-driven manual verification, 2026-08-29): keyed
     by array index, not `item.href`. AC10 does not forbid a manifest-declared `navItems` entry's
     `href` from matching one of PV's own hardcoded nav routes (a real, plausible case — an
@@ -196,39 +296,37 @@
     rendering entirely. `navItems` is rebuilt fresh, in a stable order, on every render (no
     reordering/dragging), so an index key loses no real reconciliation behavior here.
   -->
-  <!--
+    <!--
     Extracted (code-review fix, 2026-08-29): the icon+label markup was duplicated verbatim between
     the <summary> branch (a parent item) and the <a> branch (a leaf item) below — jscpd flagged the
     clone. A snippet keeps both branches rendering identical icon/label markup from one definition.
   -->
-  {#snippet itemLabel(item: { icon?: string; label: string; mobileLabel: string })}
-    {#if item.icon && NAV_ICON_GLYPHS[item.icon]}
-      <span data-nav-icon={item.icon} aria-hidden="true">{NAV_ICON_GLYPHS[item.icon]}</span>
-    {/if}
-    <span class="hidden sm:inline">{item.label}</span>
-    <span class="sm:hidden">{item.mobileLabel}</span>
-  {/snippet}
-  <!-- PV's and a composed app's items (keyed by id), then the frozen legacy tail (index keys). -->
-  {#each nav.nodes as node (node.id)}
-    {@render navNode(node, false)}
-  {/each}{#each nav.legacy as item, itemIndex (itemIndex)}
-    {@const active = isActiveNavItem(item.href, page.url.pathname)}
-    {#if item.children && item.children.length > 0}
-      <!--
+    {#snippet itemLabel(item: { icon?: string; label: string; mobileLabel: string })}
+      {#if item.icon && NAV_ICON_GLYPHS[item.icon]}
+        <span data-nav-icon={item.icon} aria-hidden="true">{NAV_ICON_GLYPHS[item.icon]}</span>
+      {/if}
+      <span class="hidden sm:inline">{item.label}</span>
+      <span class="sm:hidden">{item.mobileLabel}</span>
+    {/snippet}
+    <!-- PV's and a composed app's items (keyed by id), then the frozen legacy tail (index keys). -->
+    {#each nav.nodes as node (node.id)}
+      {@render navNode(node, false)}
+    {/each}{#each nav.legacy as item, itemIndex (itemIndex)}
+      {@const active = isActiveNavItem(item.href, page.url.pathname)}
+      {#if item.children && item.children.length > 0}
+        <!--
         Story 29.3 AC12 — a native <details>/<summary> disclosure for a parent item's children:
         keyboard/screen-reader accessibility comes from the browser's own semantics (Tab to focus,
         Enter/Space to toggle) rather than new custom JS/ARIA wiring.
       -->
-      <details class="relative">
-        <summary
-          class={`flex cursor-pointer list-none items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-        >
-          {@render itemLabel(item)}
-        </summary>
-        <div
-          class="flex flex-col gap-1 py-1 md:absolute md:z-10 md:min-w-40 md:rounded-xl md:border md:border-slate-200 md:bg-white md:p-1 md:shadow-lg"
-        >
-          <!--
+        <details class="relative">
+          <summary
+            class={`flex cursor-pointer list-none items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+          >
+            {@render itemLabel(item)}
+          </summary>
+          <div class={PANEL_CLASS}>
+            <!--
             Code-review fix (2026-08-29): keyed by array index, for the same reason as the
             top-level {#each} above. validateNavItemsShape() only enforces `id` uniqueness across
             a manifest's navItems, not `href` uniqueness — two children declared under the same
@@ -237,34 +335,35 @@
             addressed, one nesting level down. `item.children` is rebuilt fresh, in a stable
             order, on every render, so an index key loses no real reconciliation behavior here.
           -->
-          {#each item.children as child, childIndex (childIndex)}
-            {@const childActive = isActiveNavItem(child.href, page.url.pathname)}
-            {@const childHref = resolve(
-              // @ts-expect-error -- extension navItems hrefs are runtime strings validated by NAV_ITEM_HREF_PATTERN, not members of the generated Pathname union; signed off by Nestor 2026-09-30 (story 68-1, AGENTS.md quality-gate exception), remove with 68-7
-              child.href
-            )}
-            <a
-              class={`rounded-lg px-3 py-2 text-sm font-medium ${childActive ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-              aria-current={childActive ? 'page' : undefined}
-              href={childHref}
-            >
-              {child.label}
-            </a>
-          {/each}
-        </div>
-      </details>
-    {:else}
-      {@const itemHref = resolve(
-        // @ts-expect-error -- extension navItems hrefs are runtime strings validated by NAV_ITEM_HREF_PATTERN, not members of the generated Pathname union; signed off by Nestor 2026-09-30 (story 68-1, AGENTS.md quality-gate exception), remove with 68-7
-        item.href
-      )}
-      <a
-        class={`flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-        aria-current={active ? 'page' : undefined}
-        href={itemHref}
-      >
-        {@render itemLabel(item)}
-      </a>
-    {/if}
-  {/each}
-</nav>
+            {#each item.children as child, childIndex (childIndex)}
+              {@const childActive = isActiveNavItem(child.href, page.url.pathname)}
+              {@const childHref = resolve(
+                // @ts-expect-error -- extension navItems hrefs are runtime strings validated by NAV_ITEM_HREF_PATTERN, not members of the generated Pathname union; signed off by Nestor 2026-09-30 (story 68-1, AGENTS.md quality-gate exception), remove with 68-7
+                child.href
+              )}
+              <a
+                class={`rounded-lg px-3 py-2 text-sm font-medium ${childActive ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                aria-current={childActive ? 'page' : undefined}
+                href={childHref}
+              >
+                {child.label}
+              </a>
+            {/each}
+          </div>
+        </details>
+      {:else}
+        {@const itemHref = resolve(
+          // @ts-expect-error -- extension navItems hrefs are runtime strings validated by NAV_ITEM_HREF_PATTERN, not members of the generated Pathname union; signed off by Nestor 2026-09-30 (story 68-1, AGENTS.md quality-gate exception), remove with 68-7
+          item.href
+        )}
+        <a
+          class={`flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+          aria-current={active ? 'page' : undefined}
+          href={itemHref}
+        >
+          {@render itemLabel(item)}
+        </a>
+      {/if}
+    {/each}
+  </nav>
+{/if}

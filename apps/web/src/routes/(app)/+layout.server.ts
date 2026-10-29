@@ -1,5 +1,7 @@
 import { withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { redirect } from '@sveltejs/kit'
+import { env } from '$env/dynamic/private'
+import { parseShellVariant } from '$lib/components/shell/shell-variant.js'
 import { getOnboardingStatus } from '$lib/api/onboarding.js'
 import { listProjects } from '$lib/api/projects.js'
 import { getUsersMe } from '$lib/api/inbox.js'
@@ -124,6 +126,8 @@ const ownLoad = (async ({ locals, fetch }) => {
     projects: projects.items,
     importRouteLive: ['owner', 'admin'].includes(locals.user.orgRole),
     unreadCount,
+    // Story 72.7: an unset or unknown WEB_SHELL_VARIANT is the default header shell.
+    shellVariant: parseShellVariant(env.WEB_SHELL_VARIANT),
     ...extensionNavLoad,
     ...themeLoad,
   }
