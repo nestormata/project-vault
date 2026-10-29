@@ -25,14 +25,14 @@
           .revealedKey.value}</pre>
       <div class="mt-3 flex gap-3">
         <button
-          class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
+          class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium"
           type="button"
           onclick={() => void keys.copy()}
         >
           Copy
         </button>
         <button
-          class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
+          class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium"
           type="button"
           onclick={() => keys.hide()}
         >

@@ -23,7 +23,7 @@
     <label class="block font-medium text-slate-900" for="invite-email">Email</label>
     <input
       id="invite-email"
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
+      class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
       type="email"
       bind:value={email}
       required
@@ -35,7 +35,7 @@
     <label class="block font-medium text-slate-900" for="invite-role">Role</label>
     <select
       id="invite-role"
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
+      class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
       bind:value={role}
       aria-describedby="invite-role-help"
     >

@@ -24,7 +24,7 @@
   </a>
   {#if !project.isArchived}
     <a
-      class="inline-block rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
+      class="inline-block rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-semibold text-slate-900"
       href={resolve(`/projects/${project.id}/credentials`)}
     >
       View secrets

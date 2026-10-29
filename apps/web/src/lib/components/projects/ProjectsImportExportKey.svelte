@@ -22,7 +22,7 @@
     <input
       id="export-key"
       type={flow.showExportKey ? 'text' : 'password'}
-      class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+      class="block w-full rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
       bind:value={flow.exportKey}
       bind:this={flow.exportKeyInput}
       placeholder="The one-time key shown when this file was exported"
@@ -37,7 +37,7 @@
     />
     <button
       type="button"
-      class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800"
+      class="shrink-0 rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-medium text-slate-800"
       aria-pressed={flow.showExportKey}
       aria-controls="export-key"
       onclick={() => flow.toggleExportKeyVisibility()}

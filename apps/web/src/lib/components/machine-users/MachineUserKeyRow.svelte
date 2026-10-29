@@ -37,7 +37,7 @@
       <label class="flex items-center gap-2 text-sm text-slate-700">
         Overlap (min)
         <input
-          class="w-20 rounded-lg border border-slate-300 px-2 py-1"
+          class="w-20 rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
           type="number"
           min="1"
           max="1440"
