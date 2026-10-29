@@ -61,12 +61,13 @@ describe('checkRecent (server re-check)', () => {
       name: 'C',
       projectName: 'P',
     }
-    for (const status of [403, 404]) {
-      const fetchFn = vi.fn(async () => json(status, { code: 'x', message: 'no' }))
-      await expect(checkRecent(fetchFn as unknown as typeof fetch, credential)).resolves.toEqual({
-        status: 'gone',
+    const checks = await Promise.all(
+      [403, 404].map((status) => {
+        const fetchFn = vi.fn(async () => json(status, { code: 'x', message: 'no' }))
+        return checkRecent(fetchFn as unknown as typeof fetch, credential)
       })
-    }
+    )
+    expect(checks).toEqual([{ status: 'gone' }, { status: 'gone' }])
     const boom = vi.fn(async () => json(500, { code: 'x', message: 'boom' }))
     await expect(checkRecent(boom as unknown as typeof fetch, credential)).resolves.toEqual({
       status: 'unknown',
