@@ -22,6 +22,7 @@ vi.mock('$lib/api/service-endpoints.js', async (importOriginal) => ({
 const pageState = vi.hoisted(() => ({
   route: { id: '/(app)/test' } as { id: string | null },
   params: {} as Record<string, string>,
+  data: {} as { user?: { orgRole: string } },
 }))
 vi.mock('$app/state', () => ({ page: pageState }))
 

@@ -3,6 +3,9 @@ import { archivableEntityAuditFields } from './audit-fields.js'
 
 export const ProjectRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer'])
 
+/** Story 72-9: days a deleted project can be restored before the purge job erases it. */
+export const PROJECT_DELETE_GRACE_DAYS = 30
+
 /** Story 72-9: caps for a project's reference links. */
 export const PROJECT_URLS_MAX = 10
 export const PROJECT_URL_MAX_LENGTH = 2048

@@ -57,6 +57,7 @@ export function sampleProject(overrides: Partial<ProjectOverview> = {}): Project
     role: 'member',
     tags: [],
     memberCount: 1,
+    urls: [],
     createdBy: null,
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,

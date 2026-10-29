@@ -1,5 +1,6 @@
 import {
   trimHyphens,
+  type DeletedProject,
   type ProjectArchiveState,
   type ProjectDashboard,
   type ProjectDetail,
@@ -17,6 +18,8 @@ export type CreateProjectRequest = {
 export type UpdateProjectRequest = {
   name?: string
   description?: string | null
+  /** Story 72-9: replaces the whole list; an empty array clears it. */
+  urls?: string[]
 }
 
 export type UpdateProjectResponse = {
@@ -24,7 +27,18 @@ export type UpdateProjectResponse = {
   name: string
   slug: string
   description: string | null
+  urls: string[]
   updatedAt: string
+}
+
+/** Story 72-9: the result of a soft delete. */
+export type DeleteProjectResponse = {
+  id: string
+  name: string
+  slug: string
+  deletedAt: string
+  purgeAfter: string
+  revokedShareCount: number
 }
 
 export type ProjectListPage = {
@@ -175,6 +189,32 @@ export function unarchiveProject(
   return apiFetch<ProjectArchiveState>(fetchFn, `/api/v1/projects/${projectId}/unarchive`, {
     method: 'POST',
   })
+}
+
+/** Story 72-9: soft delete (project owner or org owner, MFA). Purged after the grace period. */
+export function deleteProject(
+  fetchFn: typeof fetch,
+  projectId: string
+): Promise<DeleteProjectResponse> {
+  return apiFetch<DeleteProjectResponse>(fetchFn, `/api/v1/projects/${projectId}`, {
+    method: 'DELETE',
+  })
+}
+
+/** Story 72-9: restore a soft-deleted project; it comes back archived. */
+export function restoreProject(
+  fetchFn: typeof fetch,
+  projectId: string
+): Promise<ProjectArchiveState> {
+  return apiFetch<ProjectArchiveState>(fetchFn, `/api/v1/projects/${projectId}/restore`, {
+    method: 'POST',
+  })
+}
+
+/** Story 72-9: the deleted projects the caller may restore. */
+export async function listDeletedProjects(fetchFn: typeof fetch): Promise<DeletedProject[]> {
+  const result = await apiFetch<{ items: DeletedProject[] }>(fetchFn, '/api/v1/projects/deleted')
+  return result.items
 }
 
 export function getProjectDashboard(fetchFn: typeof fetch, projectId: string) {

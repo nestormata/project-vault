@@ -20,6 +20,7 @@ import {
   serviceEndpoints,
   statusPages,
 } from '@project-vault/db/schema'
+import { PROJECT_DELETE_GRACE_DAYS } from '@project-vault/shared'
 import { isUuid } from '../../middleware/rls.js'
 import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 import { findBlockingRotationIds } from './archive-guards.js'
@@ -33,7 +34,7 @@ import { findBlockingRotationIds } from './archive-guards.js'
  * every `:projectId` route except restore. Restore clears the deletion markers and leaves the
  * project ARCHIVED (the caller unarchives it as a separate, explicit step).
  */
-export const PROJECT_DELETE_GRACE_DAYS = 30
+export { PROJECT_DELETE_GRACE_DAYS }
 const DAY_MS = 86_400_000
 
 export function purgeAfterFor(deletedAt: Date): Date {

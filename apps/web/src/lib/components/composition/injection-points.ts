@@ -323,10 +323,16 @@ export interface InjectionPointProps {
   'project.members.after': StandardPointProps
   'project.members.before': StandardPointProps
   'project.members.header.actions': StandardPointProps
+  'project.deleted.after': StandardPointProps
+  'project.deleted.before': StandardPointProps
+  'project.deleted.header.actions': StandardPointProps
   'project.new.after': StandardPointProps
   'project.new.before': StandardPointProps
   'project.new.header.actions': StandardPointProps
   'project.preview.after': StandardPointProps
+  'project.settings.after': StandardPointProps
+  'project.settings.before': StandardPointProps
+  'project.settings.header.actions': StandardPointProps
   'project.preview.before': StandardPointProps
   'project.preview.header.actions': StandardPointProps
   'project.service-endpoints-detail.after': StandardPointProps
@@ -619,6 +625,12 @@ export interface InjectionPointProps {
   'project.import.export-key': StandardPointProps
   'project.import.name': StandardPointProps
   'project.import.submit': StandardPointProps
+  'project.deleted.header': StandardPointProps
+  'project.deleted.list': StandardPointProps
+  'project.settings.header': StandardPointProps
+  'project.settings.form': StandardPointProps
+  'project.settings.delete': StandardPointProps
+  'project.settings.not-found': StandardPointProps
   'project.new.header': StandardPointProps
   'project.new.form': StandardPointProps
   'project.new.name': StandardPointProps
@@ -864,6 +876,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     'project.credentials-rotate',
     'project.credentials-rotations-detail',
     'project.credentials',
+    'project.deleted',
     'project.domains-detail',
     'project.domains-new',
     'project.domains',
@@ -875,6 +888,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     'project.members',
     'project.new',
     'project.preview',
+    'project.settings',
     'project.service-endpoints-detail',
     'project.service-endpoints-new',
     'project.service-endpoints',
@@ -1369,6 +1383,21 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'project.import.export-key',
       'project.import.name',
       'project.import.submit',
+    ]
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/deleted#page'],
+    ['project.deleted.header', 'project.deleted.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/settings#page'],
+    [
+      'project.settings.header',
+      'project.settings.form',
+      'project.settings.delete',
+      'project.settings.not-found',
     ]
   ),
   ...regionPoints(

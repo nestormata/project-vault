@@ -100,8 +100,8 @@ function outcome(component: never, isLayout: boolean): string {
 afterEach(cleanup)
 
 describe('route render snapshot (Story 68.4 AC-12)', () => {
-  it('covers every one of the 70 route files', () => {
-    expect(Object.keys(routes)).toHaveLength(70)
+  it('covers every one of the 72 route files', () => {
+    expect(Object.keys(routes)).toHaveLength(72)
   })
 
   it('renders every route file exactly as it did before the injection points existed', async () => {
@@ -119,6 +119,6 @@ describe('route render snapshot (Story 68.4 AC-12)', () => {
     await expect(`${JSON.stringify(result, null, 2)}\n`).toMatchFileSnapshot(
       './route-render.snapshot.json'
     )
-    expect(Object.keys(result)).toHaveLength(70)
+    expect(Object.keys(result)).toHaveLength(72)
   })
 })

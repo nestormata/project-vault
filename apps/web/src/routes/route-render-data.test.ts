@@ -10,7 +10,7 @@ process.env.TZ = 'America/Panama'
 
 // Story 69.5 AC-5: the DATA-RICH twin of route-render-snapshot.test.ts. That oracle renders every
 // route file against an EMPTY permissive `data`, so almost no `{#if data.x}` / `{#each}` branch is
-// exercised, and two routes throw. This one renders the same 70 route files against a FULL
+// exercised, and two routes throw. This one renders the same 72 route files against a FULL
 // permissive `data` (every property is truthy, every list iterates two stable items, every string is
 // the unique path of the value that produced it, e.g. `r.users.0.email`) in four variants:
 //   full    - every branch that needs data renders, role and gate flags are other truthy values
@@ -1438,8 +1438,8 @@ afterEach(() => {
 })
 
 describe('route render data-rich snapshot (Story 69.5 AC-5)', () => {
-  it('covers every one of the 70 route files', () => {
-    expect(Object.keys(routes)).toHaveLength(70)
+  it('covers every one of the 72 route files', () => {
+    expect(Object.keys(routes)).toHaveLength(72)
   })
 
   it('renders every route file with full data exactly as before the componentization', async () => {
