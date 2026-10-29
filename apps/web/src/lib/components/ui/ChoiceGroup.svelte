@@ -69,6 +69,7 @@
         value={option.value}
         checked={selected(option.value)}
         disabled={disabled || option.disabled}
+        aria-describedby={describedBy}
         onchange={(event) => choose(option.value, event.currentTarget.checked)}
       />
       <span>{option.label}</span>

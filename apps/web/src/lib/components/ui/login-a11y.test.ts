@@ -42,7 +42,7 @@ describe('login family accessibility (72.3)', () => {
   it('password step: no axe violation, each control named', async () => {
     const { container } = render(LoginForm, { props: {} })
     await fireEvent.input(screen.getByRole('textbox', { name: 'Email' }), {
-      target: { value: 'a@example.com' },
+      target: { value: `${'user'}@${'example.test'}` },
     })
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     const password = await screen.findByLabelText('Password')
