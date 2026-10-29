@@ -30,6 +30,7 @@ import { projectExportRoutes } from './modules/project-export/routes.js'
 import { projectInvitationRoutes } from './modules/invitations/routes.js'
 import { invitationTokenRoutes } from './modules/invitations/token-routes.js'
 import { credentialRoutes } from './modules/credentials/routes.js'
+import { credentialTotpRoutes } from './modules/credentials/totp-routes.js'
 import { rotationRoutes } from './modules/rotation/routes.js'
 import { credentialSharesRoutes } from './modules/credential-shares/routes.js'
 import { credentialShareAccessRoutes } from './modules/credential-shares/access-routes.js'
@@ -609,6 +610,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(projectInvitationRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(invitationTokenRoutes, { prefix: '/api/v1/invitations' })
   await fastify.register(credentialRoutes, { prefix: '/api/v1/projects' })
+  await fastify.register(credentialTotpRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(rotationRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(credentialSharesRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(credentialShareAccessRoutes, { prefix: '/api/v1/shares' })

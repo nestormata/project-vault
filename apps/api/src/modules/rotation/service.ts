@@ -31,6 +31,7 @@ import {
 import {
   fieldMetaForResponse,
   parseFieldsFromPlaintext,
+  plaintextWithoutTotpSeeds,
   serializeFieldEnvelope,
   unwrapRevealValue,
 } from '../credentials/field-set.js'
@@ -1931,7 +1932,11 @@ export async function getStagedValue(
   const plaintext = await withSecret(version.encryptedValue, (buf) =>
     Promise.resolve(buf.toString('utf8'))
   )
-  const value = unwrapRevealValue(version.schemaVersion, plaintext)
+  // Story 72.10: a `totp` seed is write-only, so it is blanked before this reveal.
+  const value = unwrapRevealValue(
+    version.schemaVersion,
+    plaintextWithoutTotpSeeds(version.schemaVersion, plaintext)
+  )
   return { status: 'found', value, versionNumber: version.versionNumber }
 }
 

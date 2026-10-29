@@ -22,6 +22,7 @@ import {
   withSecret,
   type EncryptedValue,
 } from '@project-vault/crypto'
+import { plaintextWithoutTotpSeeds } from '../credentials/field-set.js'
 import { EXPORT_FORMAT_VERSION, type ExportBundle, type ExportCredential } from './schema.js'
 
 /**
@@ -154,8 +155,10 @@ function buildExportRotation(
 
 function decryptVersionValue(version: CredentialVersionRow): Promise<string | null> {
   if (!version.encryptedValue) return Promise.resolve(null) // purged (retention job) — nothing to carry across
+  // Story 72.10: a `totp` seed is write-only and never leaves the vault, the export included. The
+  // field is carried with an empty seed; after an import the owner enters the seed again.
   return withSecret(version.encryptedValue as EncryptedValue, (buf) =>
-    Promise.resolve(buf.toString('utf8'))
+    Promise.resolve(plaintextWithoutTotpSeeds(version.schemaVersion, buf.toString('utf8')))
   )
 }
 

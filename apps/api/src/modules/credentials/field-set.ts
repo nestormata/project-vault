@@ -7,11 +7,14 @@
 // only — NEVER values.
 import {
   DEFAULT_FIELD_KEY,
+  FIELD_KINDS,
   normalizeFieldKey,
   type CredentialTemplate,
   type Field,
+  type FieldKind,
   type FieldMeta,
 } from '@project-vault/shared'
+import { assertValidTotpSeeds, TotpSeedRequiredError } from './totp-field.js'
 
 /** Thrown by the service layer when two field keys collide case-insensitively (AC-3). Mapped to a
  *  `409 field_key_conflict` by the route, before any write — the failed request has zero side
@@ -80,22 +83,52 @@ export type ResolvedFieldSet = {
   template?: CredentialTemplate
 }
 
+/** The kind a field is persisted with: `text` is the default and is never written, so a credential
+ *  that uses no new kind stores byte-for-byte what it stored before Story 72.10. */
+function storedKind(kind: FieldKind | undefined): { kind?: Exclude<FieldKind, 'text'> } {
+  return kind !== undefined && kind !== 'text' ? { kind } : {}
+}
+
 /**
  * Turns a create/edit body into the field set to persist. A `{ fields }` body is validated for
  * key uniqueness; a legacy `{ value }` body synthesizes exactly one default field (AC-5). Keys are
  * already trimmed by the shared `FieldSchema`.
+ *
+ * Story 72.10: a `totp` field is always sensitive. Its seed is write-only, so an edit cannot send
+ * it back: an EMPTY seed on a `totp` field means "keep the stored one" and is filled from
+ * `previousFields` (the current version, decrypted in memory by the caller). With nothing to keep,
+ * or with a seed that cannot produce codes, the write fails before any side effect.
  */
-export function resolveFieldSet(body: CreateBodyish): ResolvedFieldSet {
+export function resolveFieldSet(
+  body: CreateBodyish,
+  previousFields: Field[] | null = null
+): ResolvedFieldSet {
   if (isFieldSetBody(body)) {
     assertUniqueFieldKeys(body.fields)
-    return {
-      fields: body.fields.map((f) => ({ key: f.key, value: f.value, sensitive: f.sensitive })),
-      template: body.template,
-    }
+    const fields: Field[] = body.fields.map((item) => {
+      const isTotp = item.kind === 'totp'
+      return {
+        key: item.key,
+        value: isTotp && item.value === '' ? keptTotpSeed(item.key, previousFields) : item.value,
+        sensitive: isTotp ? true : item.sensitive,
+        ...storedKind(item.kind),
+      }
+    })
+    assertValidTotpSeeds(fields)
+    return { fields, template: body.template }
   }
   return {
     fields: [{ key: DEFAULT_FIELD_KEY, value: body.value ?? '', sensitive: true }],
   }
+}
+
+function keptTotpSeed(name: string, previousFields: Field[] | null): string {
+  const wanted = normalizeFieldKey(name)
+  const previous = previousFields?.find(
+    (item) => item.kind === 'totp' && normalizeFieldKey(item.key) === wanted
+  )
+  if (!previous || previous.value === '') throw new TotpSeedRequiredError(name)
+  return previous.value
 }
 
 /** Plaintext field metadata for `credential_versions.field_meta` — keys/sensitivity/template only,
@@ -105,13 +138,19 @@ export function buildFieldMeta(resolved: ResolvedFieldSet): FieldMeta[] {
     key: f.key,
     sensitive: f.sensitive,
     ...(resolved.template ? { template: resolved.template } : {}),
+    ...storedKind(f.kind),
   }))
 }
 
 /** The plaintext that gets encrypted into `encrypted_value` for a schema_version = 2 row. */
 export function serializeFieldEnvelope(resolved: ResolvedFieldSet): string {
   return JSON.stringify(
-    resolved.fields.map((f) => ({ key: f.key, value: f.value, sensitive: f.sensitive }))
+    resolved.fields.map((f) => ({
+      key: f.key,
+      value: f.value,
+      sensitive: f.sensitive,
+      ...storedKind(f.kind),
+    }))
   )
 }
 
@@ -158,7 +197,31 @@ function parseEnvelope(plaintext: string): Field[] {
       key: String(f.key),
       value: typeof f.value === 'string' ? f.value : '',
       sensitive: Boolean(f.sensitive),
+      ...storedKind(parseKind(f.kind)),
     }
+  })
+}
+
+function parseKind(raw: unknown): FieldKind | undefined {
+  return FIELD_KINDS.find((kind) => kind === raw)
+}
+
+/** Story 72.10: the fields a read may hand out. A `totp` seed is write-only, so those fields are
+ *  dropped here: this is the single choke point for the reveal route, the share adapters and the
+ *  machine-user credential read, which all go through `revealCurrentValue`. */
+export function withoutTotpFields(fields: Field[]): Field[] {
+  return fields.filter((item) => item.kind !== 'totp')
+}
+
+/** Story 72.10: the plaintext of a stored version with every `totp` seed blanked, for the project
+ *  export. The field stays (key, sensitivity, kind) so an import knows a seed has to be re-entered;
+ *  only the seed is withheld. Legacy rows have no kinds and are returned as they are. */
+export function plaintextWithoutTotpSeeds(schemaVersion: number, plaintext: string): string {
+  if (schemaVersion < 2) return plaintext
+  const fields = parseEnvelope(plaintext)
+  if (!fields.some((item) => item.kind === 'totp')) return plaintext
+  return serializeFieldEnvelope({
+    fields: fields.map((item) => (item.kind === 'totp' ? { ...item, value: '' } : item)),
   })
 }
 
