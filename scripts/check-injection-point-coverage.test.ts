@@ -770,7 +770,7 @@ describe('check-injection-point-coverage: the real tree and its wiring', () => {
   it('reports zero problems on apps/web and scans every route file', () => {
     const result = checkInjectionPointCoverage({ webRoot: WEB })
     expect(result.problems).toEqual([])
-    expect(result.scannedRouteFiles).toBe(70)
+    expect(result.scannedRouteFiles).toBe(72)
   })
 
   it('measures 100 % on apps/web with no region, use or page left out (Story 69.6)', () => {
@@ -779,7 +779,7 @@ describe('check-injection-point-coverage: the real tree and its wiring', () => {
     expect(figure.regions.total).toBeGreaterThan(180)
     expect(figure.regions.covered).toBe(figure.regions.total)
     expect(figure.uses.covered).toBe(figure.uses.total)
-    expect(figure.pages).toEqual({ covered: 70, total: 70 })
+    expect(figure.pages).toEqual({ covered: 72, total: 72 })
     expect(figure.exempt).toBe(0)
   })
 

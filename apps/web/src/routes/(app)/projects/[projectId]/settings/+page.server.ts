@@ -1,6 +1,5 @@
 import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
-import { ApiClientError } from '$lib/api/client.js'
-import { getProject } from '$lib/api/projects.js'
+import { getProjectOrNull } from '$lib/api/projects.js'
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
@@ -8,15 +7,8 @@ import type { PageServerLoad } from './$types.js'
 // the honest not-found result, like the overview page; the API enforces who may edit or delete.
 const ownLoad = (async ({ params, fetch, locals }) => {
   const orgRole = requireUser(locals).orgRole
-  try {
-    const project = await getProject(fetch, params.projectId)
-    return { projectId: params.projectId, orgRole, project, notFound: false as const }
-  } catch (error) {
-    if (error instanceof ApiClientError && error.status === 404) {
-      return { projectId: params.projectId, orgRole, project: null, notFound: true as const }
-    }
-    throw error
-  }
+  const project = await getProjectOrNull(fetch, params.projectId)
+  return { projectId: params.projectId, orgRole, project, notFound: project === null }
 }) satisfies PageServerLoad
 
 export const load: PageServerLoad = withInjectedLoad(

@@ -7,7 +7,7 @@ import {
   type ProjectOverview,
   type ProjectSummary,
 } from '@project-vault/shared'
-import { apiFetch } from './client.js'
+import { ApiClientError, apiFetch } from './client.js'
 
 export type CreateProjectRequest = {
   name: string
@@ -225,6 +225,19 @@ export function getProjectDashboard(fetchFn: typeof fetch, projectId: string) {
 // member count) for the new /projects/:id page.
 export function getProject(fetchFn: typeof fetch, projectId: string): Promise<ProjectOverview> {
   return apiFetch<ProjectOverview>(fetchFn, `/api/v1/projects/${projectId}`)
+}
+
+/** Story 72-9: the project, or null when the API answers 404 (missing, foreign or deleted). */
+export async function getProjectOrNull(
+  fetchFn: typeof fetch,
+  projectId: string
+): Promise<ProjectOverview | null> {
+  try {
+    return await getProject(fetchFn, projectId)
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) return null
+    throw error
+  }
 }
 
 export function updateProject(

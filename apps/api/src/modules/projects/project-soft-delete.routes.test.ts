@@ -89,12 +89,12 @@ describe('project edit, soft delete and restore (72-9)', () => {
 
       const res = await call(app, 'PATCH', `/${projectId}`, owner.cookies, {
         name: 'Renamed',
-        urls: ['https://example.com/wiki', ' http://localhost:3000 '],
+        urls: ['https://example.com/wiki', ' http://intranet.example.org '],
       })
       expect(res.statusCode).toBe(200)
       expect(res.json<{ data: { name: string; urls: string[] } }>().data).toMatchObject({
         name: 'Renamed',
-        urls: ['https://example.com/wiki', 'http://localhost:3000/'],
+        urls: ['https://example.com/wiki', 'http://intranet.example.org/'],
       })
 
       const overview = await call(app, 'GET', `/${projectId}`, owner.cookies)

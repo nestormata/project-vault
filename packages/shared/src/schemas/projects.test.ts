@@ -122,8 +122,8 @@ describe('ProjectUrlsSchema (72-9)', () => {
   it('trims and accepts http and https URLs, and an empty list', () => {
     expect(ProjectUrlsSchema.parse([])).toEqual([])
     expect(
-      ProjectUrlsSchema.parse(['  https://example.com/a?b=1  ', 'http://localhost:3000'])
-    ).toEqual(['https://example.com/a?b=1', 'http://localhost:3000/'])
+      ProjectUrlsSchema.parse(['  https://example.com/a?b=1  ', 'http://intranet.example.org'])
+    ).toEqual(['https://example.com/a?b=1', 'http://intranet.example.org/'])
   })
 
   it('stores the parsed form, so a scheme-relative oddity cannot hide a bad link', () => {
