@@ -11,6 +11,9 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **`app.layout.dialogs` injection point** (Epic 72 fix). The app-wide confirm and keyboard-shortcuts dialog hosts added by
+  Stories 72.5 and 72.6 now sit in one `@region app.layout.dialogs` component, so the `monolithic-region` guard (R3)
+  passes on a composed tree. One new additive point (`StandardPointProps`) on the `(app)` layout.
 - **Rail and bottom-bar shell variant, project tab overflow** (Story 72.7, Epic 72, web-host MINOR). `WEB_SHELL_VARIANT=rail`
   renders the same primary nav data as a left rail from the `md` breakpoint and as a bottom tab bar (four links and a
   "More" menu) below it; the bar is hidden on task pages (`new`, `import`, `rotate`) and while a text field has focus.
