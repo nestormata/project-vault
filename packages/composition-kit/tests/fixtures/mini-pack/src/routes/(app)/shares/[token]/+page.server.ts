@@ -13,8 +13,9 @@ interface ShareAccessPageData {
 }
 
 export const load: PageServerLoad = async ({ params, fetch, setHeaders }) => {
-  // The URL carries the share token: keep PV's no-referrer, as PV's route does.
-  setHeaders({ 'Referrer-Policy': 'no-referrer' })
+  // The URL carries the share token: keep PV's no-referrer and (Story 72.8) its no-store, as PV's
+  // route does. PV's header policy lists both names for this route id.
+  setHeaders({ 'Referrer-Policy': 'no-referrer', 'cache-control': 'no-store' })
   await countCall(fetch, 'cm-shares-load')
   const data: ShareAccessPageData = { token: params.token, metadata: null, error: 'not_found' }
   return data
