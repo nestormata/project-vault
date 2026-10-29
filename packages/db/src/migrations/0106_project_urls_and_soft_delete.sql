@@ -1,17 +1,24 @@
 -- Story 72-9 — project URLs and soft delete with a grace period.
--- Purely additive and idempotent, like 0104/0105: four columns on projects plus one partial index.
+-- Purely additive and idempotent, like 0104/0105: five columns on projects plus one partial index.
 --   * urls: jsonb array of http/https links, NOT NULL DEFAULT '[]' (the previous app version never
 --     writes it and keeps working; every existing row reads as "no URLs", no backfill).
 --   * deleted_at / deleted_by / purge_after: NULL = not deleted. A delete sets all three and also
 --     sets archived_at (when it was NULL), so the archive-aware readers already hide the project.
 --     The purge job hard-deletes rows whose purge_after has passed (children cascade). deleted_by
 --     is ON DELETE SET NULL, the same delete rule as created_by.
+--   * purged_at: set by the purge job when it has erased the project's data. The projects row is
+--     KEPT as a tombstone (name, slug, description, tags, urls and creation request id blanked)
+--     instead of being hard-deleted: audit_log_entries.project_id references projects(id) ON
+--     DELETE SET NULL and the append-only trigger forbids that UPDATE, so a project with any
+--     project-scoped audit row (export, delete, restore) cannot be removed. Dropping that foreign
+--     key would be a destructive migration and a gate exception, so it is deliberately not done.
 -- No RLS change: projects keeps its existing org-scoped FORCE RLS policy, and the purge job runs
 -- one transaction per organization with app.current_org_id bound.
 ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "urls" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
 ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "deleted_by" uuid;--> statement-breakpoint
 ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "purge_after" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "purged_at" timestamp with time zone;--> statement-breakpoint
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -20,4 +27,4 @@ BEGIN
     ALTER TABLE "projects" ADD CONSTRAINT "projects_deleted_by_users_id_fk" FOREIGN KEY ("deleted_by") REFERENCES "public"."users"("id") ON DELETE set null;
   END IF;
 END $$;--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_projects_purge_due" ON "projects" USING btree ("purge_after") WHERE "projects"."deleted_at" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "idx_projects_purge_due" ON "projects" USING btree ("purge_after") WHERE "projects"."deleted_at" IS NOT NULL AND "projects"."purged_at" IS NULL;

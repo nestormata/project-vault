@@ -50,6 +50,12 @@ export const AuditEvent = {
   PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
   PROJECT_ARCHIVED: 'project.archived',
   PROJECT_UNARCHIVED: 'project.unarchived',
+  // Story 72-9: soft delete with a grace period. `project.deleted` (human) and `project.restored`
+  // (human) are same-transaction audit rows; `project.purged` is the system row the purge job
+  // writes inside the same org-scoped transaction as the hard delete.
+  PROJECT_DELETED: 'project.deleted',
+  PROJECT_RESTORED: 'project.restored',
+  PROJECT_PURGED: 'project.purged',
   ORG_USER_DEACTIVATED: 'org.user_deactivated',
   // Story 32.1 Task 6: written once per successful call to the machine-authenticated per-member
   // provisioning route (POST /api/v1/service/organizations/:organizationId/members), inside the

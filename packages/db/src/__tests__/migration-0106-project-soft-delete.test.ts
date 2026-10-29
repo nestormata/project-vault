@@ -38,12 +38,12 @@ describe('migration 0106 (projects urls and soft delete)', () => {
       { column_name: string; is_nullable: string; column_default: string | null }[]
     >`
       SELECT column_name, is_nullable, column_default FROM information_schema.columns
-      WHERE table_name = 'projects' AND column_name IN ('urls','deleted_at','deleted_by','purge_after')`
+      WHERE table_name = 'projects' AND column_name IN ('urls','deleted_at','deleted_by','purge_after','purged_at')`
     const byName = Object.fromEntries(rows.map((r) => [r.column_name, r]))
     expect(byName.urls?.is_nullable).toBe('NO')
     expect(byName.urls?.column_default).toMatch(/'\[\]'::jsonb/)
-    for (const name of ['deleted_at', 'deleted_by', 'purge_after']) {
-      expect(byName[name]?.is_nullable).toBe('YES')
+    for (const name of ['deleted_at', 'deleted_by', 'purge_after', 'purged_at']) {
+      expect(rows.find((r) => r.column_name === name)?.is_nullable).toBe('YES')
     }
   })
 
@@ -61,6 +61,8 @@ describe('migration 0106 (projects urls and soft delete)', () => {
       SELECT indexdef FROM pg_indexes
       WHERE tablename = 'projects' AND indexname = 'idx_projects_purge_due'`
     expect(index?.indexdef).toMatch(/\(purge_after\)/)
-    expect(index?.indexdef).toMatch(/WHERE \(deleted_at IS NOT NULL\)/)
+    expect(index?.indexdef).toMatch(
+      /WHERE \(\(deleted_at IS NOT NULL\) AND \(purged_at IS NULL\)\)/
+    )
   })
 })

@@ -3,6 +3,44 @@ import { archivableEntityAuditFields } from './audit-fields.js'
 
 export const ProjectRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer'])
 
+/** Story 72-9: caps for a project's reference links. */
+export const PROJECT_URLS_MAX = 10
+export const PROJECT_URL_MAX_LENGTH = 2048
+
+function isAllowedProjectUrl(value: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return false
+  }
+  // http/https only (never javascript:, data:, file:), and no embedded user:password.
+  return (
+    (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+    parsed.username === '' &&
+    parsed.password === ''
+  )
+}
+
+/**
+ * Story 72-9: the `urls` field of a project edit. Each entry is trimmed, at most 2048 characters,
+ * an absolute http(s) URL without credentials; at most 10 entries, no case-insensitive duplicates.
+ */
+export const ProjectUrlsSchema = z
+  .array(
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(PROJECT_URL_MAX_LENGTH)
+      .refine(isAllowedProjectUrl, 'Must be an absolute http or https URL without credentials')
+  )
+  .max(PROJECT_URLS_MAX)
+  .refine(
+    (urls) => new Set(urls.map((url) => url.toLowerCase())).size === urls.length,
+    'URLs must be unique'
+  )
+
 export const ProjectSummarySchema = z
   .object({
     id: z.uuid(),
@@ -62,7 +100,22 @@ export type ProjectDetail = z.infer<typeof ProjectDetailSchema>
 // itself, which create/update-project responses already depend on.
 export const ProjectOverviewSchema = ProjectDetailSchema.extend({
   tags: z.array(z.string()),
+  // Story 72-9: reference links (http/https), empty when none.
+  urls: z.array(z.string()),
   memberCount: z.number().int().nonnegative(),
 }).meta({ id: 'ProjectOverview' })
 
 export type ProjectOverview = z.infer<typeof ProjectOverviewSchema>
+
+/** Story 72-9: a soft-deleted project awaiting purge (the restore list). */
+export const DeletedProjectSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    slug: z.string(),
+    deletedAt: z.iso.datetime(),
+    purgeAfter: z.iso.datetime(),
+  })
+  .meta({ id: 'DeletedProject' })
+
+export type DeletedProject = z.infer<typeof DeletedProjectSchema>

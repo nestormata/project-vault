@@ -44,6 +44,7 @@ import { runBreakGlassOverlapExpiryJob } from './workers/rotation-break-glass-ex
 import { runStaleRotationRecoveryJob } from './workers/rotation-recover.js'
 import { runStaleStagedAlertJob } from './workers/rotation-stale-staged-alert.js'
 import { runCredentialShareExpireJob } from './workers/credential-share-expire.js'
+import { PROJECT_PURGE_JOB, runProjectPurgeJob } from './workers/project-purge.js'
 import { importCleanupExpired } from './workers/import-cleanup.js'
 import {
   EXTENSION_STATE_CLEANUP_JOB,
@@ -263,6 +264,7 @@ async function main(): Promise<void> {
       [ROTATION_RECOVER_JOB]: { cron: '*/15 * * * *' },
       [ROTATION_STALE_STAGED_ALERT_JOB]: { cron: '0 8 * * *' },
       [CREDENTIAL_SHARE_EXPIRE_JOB]: { cron: '0 * * * *' },
+      [PROJECT_PURGE_JOB]: { cron: '30 * * * *' },
       'import/cleanup-expired': { cron: EVERY_FIVE_MINUTES_CRON },
       [EXTENSION_STATE_CLEANUP_JOB]: { cron: EVERY_FIVE_MINUTES_CRON },
       'payment/expiry-alert': { cron: '0 8 * * *' },
@@ -371,6 +373,10 @@ async function main(): Promise<void> {
       [CREDENTIAL_SHARE_EXPIRE_JOB]: (job) =>
         withJobLogging(fastify.log, CREDENTIAL_SHARE_EXPIRE_JOB, job.id ?? 'unknown', () =>
           runCredentialShareExpireJob(fastify.log)
+        ),
+      [PROJECT_PURGE_JOB]: (job) =>
+        withJobLogging(fastify.log, PROJECT_PURGE_JOB, job.id ?? 'unknown', () =>
+          runProjectPurgeJob(fastify.log)
         ),
       'import/cleanup-expired': (job) =>
         withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>

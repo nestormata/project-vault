@@ -145,6 +145,9 @@ export const OperationalEvent = {
   // log, mirroring ROTATION_STALE_DETECTION_ROW_FAILED's "log and skip, never abort the rest of
   // the run" contract.
   CREDENTIAL_SHARE_EXPIRE_SWEEP_ROW_FAILED: 'credential_share.expire_sweep.row_failed',
+  // Story 72-9: the deleted-project purge job.
+  PROJECT_PURGE_RUN: 'project.purge.run',
+  PROJECT_PURGE_ROW_FAILED: 'project.purge.row_failed',
   // Story 65.4: the deferred (post-response) losing-attempt write of an external share miss threw.
   // The response was already sent unchanged, so this is log-only; the fields carry the redacted
   // error and nothing that names the token, share, org or miss class.

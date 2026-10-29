@@ -34,6 +34,8 @@ import {
   ActiveRotationsErrorSchema,
   ArchiveResponseSchema,
   CreateProjectBodySchema,
+  DeleteProjectResponseSchema,
+  DeletedProjectsListResponseSchema,
   ListProjectsQuerySchema,
   PatchProjectBodySchema,
   PatchProjectResponseSchema,
@@ -45,6 +47,7 @@ import {
   ProjectOverviewResponseSchema,
   ProjectParamsSchema,
   ProjectTagUpdateResponseSchema,
+  RestoreProjectResponseSchema,
   TagArrayBodySchema,
   TransferOwnershipBodySchema,
   TransferOwnershipResponseSchema,
@@ -63,6 +66,14 @@ import {
 } from './member-management.js'
 import { requireProjectVisible } from './project-access.js'
 import {
+  findDeleteBlockers,
+  listDeletedProjects,
+  markProjectDeleted,
+  markProjectRestored,
+  revokeProjectShares,
+} from './project-lifecycle.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
+import {
   findBlockingRotationIds,
   findBlockingShareIds,
   PROJECT_ARCHIVED_ERROR,
@@ -75,6 +86,7 @@ import { raceWithTimeout } from '../../lib/race-with-timeout.js'
 import { EXTENSION_CALLOUT_TIMEOUT_MS } from '../../lib/extension-callout-timeout.js'
 import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
+const PROJECT_URL = '/:projectId'
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 const CREATION_REQUEST_CONFLICT = {
   code: 'creation_request_conflict',
@@ -177,7 +189,7 @@ type ArchiveTogglePreflight =
       ok: true
       params: { projectId: string }
       secureCtx: SecureRouteContext
-      project: { id: string; archivedAt: Date | null }
+      project: { id: string; archivedAt: Date | null; deletedAt: Date | null }
       authorizedVia: ArchiveAuthority
     }
   | { ok: false }
@@ -194,7 +206,7 @@ async function loadOwnedProjectForArchiveToggle(
   ctx: SecureRouteContext | PublicRouteContext,
   req: FastifyRequest,
   reply: FastifyReply,
-  actionVerb: 'archive' | 'unarchive'
+  actionVerb: 'archive' | 'unarchive' | 'edit' | 'delete' | 'restore'
 ): Promise<ArchiveTogglePreflight> {
   const params = parseParams(ProjectParamsSchema, req, reply)
   if (!params) return { ok: false }
@@ -208,7 +220,7 @@ async function loadOwnedProjectForArchiveToggle(
   }
 
   const [project] = await secureCtx.tx
-    .select({ id: projects.id, archivedAt: projects.archivedAt })
+    .select({ id: projects.id, archivedAt: projects.archivedAt, deletedAt: projects.deletedAt })
     .from(projects)
     .where(eq(projects.id, params.projectId))
     .for('update')
@@ -238,6 +250,20 @@ async function loadOwnedProjectForArchiveToggle(
   }
 
   return { ok: true, params, secureCtx, project, authorizedVia }
+}
+
+type EditableProjectFields = { name: string; description: string | null; urls: string[] }
+
+/** Names of the editable fields whose stored value differs (never the values themselves). */
+function changedProjectFields(
+  before: EditableProjectFields,
+  after: EditableProjectFields
+): string[] {
+  const changed: string[] = []
+  if (before.name !== after.name) changed.push('name')
+  if (before.description !== after.description) changed.push('description')
+  if (JSON.stringify(before.urls) !== JSON.stringify(after.urls)) changed.push('urls')
+  return changed
 }
 
 type TransferTargetsResult =
@@ -378,7 +404,11 @@ async function findReplayedProject(
 }
 
 async function readProjectCount(secureCtx: SecureRouteContext): Promise<number> {
-  const [countRow] = await secureCtx.tx.select({ count: sql<number>`count(*)::int` }).from(projects)
+  // Story 72-9: a purged project (a tombstone row) no longer counts toward a project limit.
+  const [countRow] = await secureCtx.tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(projects)
+    .where(isNull(projects.purgedAt))
   return Number(countRow?.count ?? 0)
 }
 
@@ -652,7 +682,10 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
       const pagination = parsePagination(page, limit)
       const offset = paginationOffset(pagination)
 
-      const listWhere = includeArchived ? undefined : isNull(projects.archivedAt)
+      // Story 72-9: a soft-deleted project never appears here, even with includeArchived.
+      const listWhere = includeArchived
+        ? isNull(projects.deletedAt)
+        : and(isNull(projects.archivedAt), isNull(projects.deletedAt))
       // Story 4.5 AC-V2/D1: org owner/admin keep leftJoin (see all projects); member/viewer
       // require an explicit project_memberships row via innerJoin.
       const seesAllProjects = roleRank(orgRoleOrDeny(secureCtx.auth)) >= roleRank('admin')
@@ -765,7 +798,7 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
   // BEFORE any row is read, so a 404 never leaks the target project's name/description/tags (AC-3).
   secureRoute(fastify, {
     method: 'GET',
-    url: '/:projectId',
+    url: PROJECT_URL,
     schema: projectReadResponseSchema(ProjectOverviewResponseSchema),
     security: { writeAuditEvent: false, minimumRole: 'viewer' },
     handler: async (ctx, req, reply) => {
@@ -795,15 +828,20 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
             (role ?? orgRoleOrDeny(secureCtx.auth)) as ProjectRole
           ),
           tags: project.tags,
+          urls: project.urls,
           memberCount,
         },
       }
     },
   })
 
+  // Story 72-9: edit name, description and URLs. Authority is the archive rule (project owner or
+  // org owner), checked BEFORE the body is validated or any state is read back, so a caller
+  // without it learns nothing from a 422 or a 410. The audit row records the changed field NAMES
+  // only (never values).
   secureRoute(fastify, {
     method: 'PATCH',
-    url: '/:projectId',
+    url: PROJECT_URL,
     schema: {
       response: {
         200: PatchProjectResponseSchema,
@@ -815,19 +853,26 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'admin',
+      minimumRole: 'member', // broad floor; the in-handler archiveAuthority() rule decides.
       requireMfa: false,
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(ProjectParamsSchema, req, reply)
-      if (!params) return reply
+      const preflight = await loadOwnedProjectForArchiveToggle(ctx, req, reply, 'edit')
+      if (!preflight.ok) return reply
+      const { params, secureCtx, project, authorizedVia } = preflight
       const parsed = parseBody(PatchProjectBodySchema, req, reply)
       if (!parsed.success) return reply
       const body = parsed.data as PatchProjectBody
-      const updateSet: { name?: string; description?: string | null; updatedAt?: Date } = {}
+      const updateSet: {
+        name?: string
+        description?: string | null
+        urls?: string[]
+        updatedAt?: Date
+      } = {}
       if (body.name !== undefined) updateSet.name = body.name
       if (body.description !== undefined) updateSet.description = body.description
+      if (body.urls !== undefined) updateSet.urls = body.urls
       if (Object.keys(updateSet).length === 0) {
         return reply
           .status(422)
@@ -835,17 +880,20 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
       }
       updateSet.updatedAt = new Date()
 
-      const secureCtx = ctx as SecureRouteContext
-
       // 4.4 AC-5: an archived project is read-only — reject metadata edits with 410 (distinct
       // from 404 "not found"/cross-org), never a silent 404.
-      const [existing] = await secureCtx.tx
-        .select({ archivedAt: projects.archivedAt })
+      if (project.archivedAt !== null) return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
+
+      const [before] = await secureCtx.tx
+        .select({
+          name: projects.name,
+          description: projects.description,
+          urls: projects.urls,
+        })
         .from(projects)
         .where(eq(projects.id, params.projectId))
         .limit(1)
-      if (!existing) return reply.status(404).send(PROJECT_NOT_FOUND)
-      if (existing.archivedAt !== null) return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
+      if (!before) return reply.status(404).send(PROJECT_NOT_FOUND)
 
       const [updated] = await secureCtx.tx
         .update(projects)
@@ -856,6 +904,7 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
           name: projects.name,
           slug: projects.slug,
           description: projects.description,
+          urls: projects.urls,
           updatedAt: projects.updatedAt,
         })
 
@@ -869,7 +918,8 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: secureCtx.auth.userId,
         eventType: 'project.updated',
         resourceId: updated.id,
-        payload: {},
+        projectId: updated.id,
+        payload: { authorizedVia, changedFields: changedProjectFields(before, updated) },
         request: req,
       })
 
@@ -1414,6 +1464,212 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
           slug: restored.slug,
           archivedAt: null,
           isArchived: false,
+        },
+      }
+    },
+  })
+  // Story 72-9: soft delete with a grace period. Authority is the archive rule (project owner or
+  // org owner), MFA is required, and the same two blockers as archive apply (an active rotation or
+  // machine-user key). Active shares do not block: they are revoked here, one audit row each. The
+  // project is also archived, so it is read-only and hidden; the purge job removes it after
+  // PROJECT_DELETE_GRACE_DAYS and restore (below) cancels it.
+  secureRoute(fastify, {
+    method: 'DELETE',
+    url: PROJECT_URL,
+    schema: {
+      response: {
+        200: DeleteProjectResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: z.union([
+          ActiveRotationsErrorSchema,
+          ActiveMachineUserKeysErrorSchema,
+          ApiErrorSchema,
+        ]),
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member', // broad floor; the in-handler archiveAuthority() rule decides.
+      requireMfa: true,
+      rateLimit: { max: 10, timeWindowMs: 60_000, key: 'DELETE /api/v1/projects/:projectId' },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const preflight = await loadOwnedProjectForArchiveToggle(ctx, req, reply, 'delete')
+      if (!preflight.ok) return reply
+      const { params, secureCtx, project, authorizedVia } = preflight
+
+      const blockers = await findDeleteBlockers(secureCtx.tx, params.projectId)
+      if (blockers.blocked) {
+        logArchiveDenied(req, {
+          projectId: params.projectId,
+          callerId: secureCtx.auth.userId,
+          reason: 'delete_blocked',
+        })
+        return reply.status(409).send(blockers.body)
+      }
+
+      const deleted = await markProjectDeleted(secureCtx.tx, {
+        projectId: params.projectId,
+        actorUserId: secureCtx.auth.userId,
+        wasArchived: project.archivedAt !== null,
+        now: new Date(),
+      })
+      if (!deleted) {
+        return reply
+          .status(409)
+          .send({ code: 'already_deleted', message: 'Project is already deleted' })
+      }
+
+      const revokedShares = await revokeProjectShares(secureCtx.tx, params.projectId)
+      await forEachSequential(revokedShares, (share) =>
+        writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+          resourceType: 'credential_share',
+          orgId: secureCtx.auth.orgId,
+          actorUserId: secureCtx.auth.userId,
+          eventType: AuditEvent.CREDENTIAL_SHARE_REVOKED,
+          resourceId: share.id,
+          projectId: params.projectId,
+          payload: {
+            credentialId: share.credentialId,
+            reason: 'project_deleted',
+            attributeKeys: share.attributeKeys,
+          },
+          request: req,
+        })
+      )
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.PROJECT_DELETED,
+        resourceId: deleted.id,
+        projectId: deleted.id,
+        payload: {
+          authorizedVia,
+          purgeAfter: deleted.purgeAfter.toISOString(),
+          revokedShareCount: revokedShares.length,
+          wasArchived: deleted.wasArchived,
+        },
+        request: req,
+      })
+
+      return {
+        data: {
+          id: deleted.id,
+          name: deleted.name,
+          slug: deleted.slug,
+          deletedAt: deleted.deletedAt.toISOString(),
+          purgeAfter: deleted.purgeAfter.toISOString(),
+          revokedShareCount: revokedShares.length,
+        },
+      }
+    },
+  })
+
+  // Story 72-9: restore a soft-deleted project (project owner or org owner, MFA). It opts out of
+  // the deleted-project 404 gate because it has to find the row. The project comes back ARCHIVED
+  // (read-only); unarchive is the separate, explicit step. Shares revoked at delete stay revoked.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/restore',
+    schema: {
+      response: {
+        200: RestoreProjectResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member', // broad floor; the in-handler archiveAuthority() rule decides.
+      requireMfa: true,
+      includeDeletedProject: true,
+      rateLimit: { max: 10, timeWindowMs: 60_000, key: 'POST /api/v1/projects/:projectId/restore' },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const preflight = await loadOwnedProjectForArchiveToggle(ctx, req, reply, 'restore')
+      if (!preflight.ok) return reply
+      const { params, secureCtx, project, authorizedVia } = preflight
+      if (project.deletedAt === null) {
+        return reply.status(409).send({ code: 'not_deleted', message: 'Project is not deleted' })
+      }
+      const restored = await markProjectRestored(secureCtx.tx, params.projectId)
+      if (!restored) {
+        return reply.status(409).send({ code: 'not_deleted', message: 'Project is not deleted' })
+      }
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.PROJECT_RESTORED,
+        resourceId: restored.id,
+        projectId: restored.id,
+        payload: { authorizedVia },
+        request: req,
+      })
+      return {
+        data: {
+          id: restored.id,
+          name: restored.name,
+          slug: restored.slug,
+          archivedAt: restored.archivedAt?.toISOString() ?? null,
+          isArchived: restored.archivedAt !== null,
+        },
+      }
+    },
+  })
+
+  // Story 72-9: the projects awaiting purge that the caller may restore (org owner: all; otherwise
+  // the projects they own). Projects the caller cannot restore are not listed, so the list is no
+  // existence oracle.
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/deleted',
+    schema: {
+      response: {
+        200: DeletedProjectsListResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+      },
+    },
+    security: { minimumRole: 'member', writeAuditEvent: false },
+    handler: async (ctx) => {
+      const secureCtx = ctx as SecureRouteContext
+      const deleted = await listDeletedProjects(secureCtx.tx)
+      const isOrgOwner = orgRoleOrDeny(secureCtx.auth) === 'owner'
+      const ownedIds = isOrgOwner
+        ? null
+        : new Set(
+            (
+              await secureCtx.tx
+                .select({ projectId: projectMemberships.projectId })
+                .from(projectMemberships)
+                .where(
+                  and(
+                    eq(projectMemberships.userId, secureCtx.auth.userId),
+                    eq(projectMemberships.role, 'owner')
+                  )
+                )
+            ).map((row) => row.projectId)
+          )
+      return {
+        data: {
+          items: deleted
+            .filter((row) => ownedIds === null || ownedIds.has(row.id))
+            .map((row) => ({
+              id: row.id,
+              name: row.name,
+              slug: row.slug,
+              deletedAt: row.deletedAt.toISOString(),
+              purgeAfter: row.purgeAfter.toISOString(),
+            })),
         },
       }
     },

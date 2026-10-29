@@ -34,6 +34,9 @@ export const projects = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references(() => users.id, { onDelete: 'set null' }),
     purgeAfter: timestamp('purge_after', { withTimezone: true }),
+    // Story 72-9: set when the purge job erased the data; the row stays as a tombstone because
+    // audit_log_entries.project_id references it and the audit log is append-only.
+    purgedAt: timestamp('purged_at', { withTimezone: true }),
   },
   (t) => ({
     orgSlugUnique: uniqueIndex('idx_projects_org_slug').on(t.orgId, t.slug),
@@ -43,6 +46,6 @@ export const projects = pgTable(
     orgCreatedIdx: index('idx_projects_org_created').on(t.orgId, t.createdAt.desc()),
     purgeDueIdx: index('idx_projects_purge_due')
       .on(t.purgeAfter)
-      .where(sql`${t.deletedAt} IS NOT NULL`),
+      .where(sql`${t.deletedAt} IS NOT NULL AND ${t.purgedAt} IS NULL`),
   })
 )

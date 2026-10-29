@@ -1145,6 +1145,22 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'project.unarchived',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  'DELETE /api/v1/projects/:projectId': {
+    action: SECURITY_ACTION,
+    auditEvent: 'project.deleted',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/projects/:projectId/restore': {
+    action: SECURITY_ACTION,
+    auditEvent: 'project.restored',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/deleted': {
+    action: 'read',
+    auditOmissionReason:
+      'Deleted-project list is limited to projects the caller may restore and reveals no secret values.',
+    reviewer: SECURITY_OWNER,
+  },
   'POST /api/v1/org/users/:userId/deactivate': {
     action: SECURITY_ACTION,
     auditEvent: 'org.user_deactivated',

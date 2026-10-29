@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   ProjectArchiveStateSchema,
+  DeletedProjectSchema,
   ProjectDetailSchema,
+  ProjectOverviewSchema,
+  ProjectUrlsSchema,
+  PROJECT_URLS_MAX,
   ProjectRoleSchema,
   ProjectSummarySchema,
 } from './projects.js'
@@ -111,5 +115,72 @@ describe('project response schemas', () => {
         isArchived: false,
       })
     ).toMatchObject({ isArchived: false })
+  })
+})
+
+describe('ProjectUrlsSchema (72-9)', () => {
+  it('trims and accepts http and https URLs, and an empty list', () => {
+    expect(ProjectUrlsSchema.parse([])).toEqual([])
+    expect(
+      ProjectUrlsSchema.parse(['  https://example.com/a?b=1  ', 'http://localhost:3000'])
+    ).toEqual(['https://example.com/a?b=1', 'http://localhost:3000'])
+  })
+
+  it.each([
+    ['javascript scheme', 'javascript:alert(1)'],
+    ['data scheme', 'data:text/html,x'],
+    ['file scheme', 'file:///etc/passwd'],
+    ['relative', '/projects/1'],
+    ['not a URL', 'not a url'],
+    ['embedded credentials', 'https://user:pass@example.com'],
+    ['empty', '   '],
+  ])('rejects %s', (_label, value) => {
+    expect(ProjectUrlsSchema.safeParse([value]).success).toBe(false)
+  })
+
+  it('rejects an over-long URL, too many entries and case-insensitive duplicates', () => {
+    expect(ProjectUrlsSchema.safeParse([`https://example.com/${'a'.repeat(2048)}`]).success).toBe(
+      false
+    )
+    const many = Array.from({ length: PROJECT_URLS_MAX + 1 }, (_, i) => `https://example.com/${i}`)
+    expect(ProjectUrlsSchema.safeParse(many).success).toBe(false)
+    expect(
+      ProjectUrlsSchema.safeParse(['https://Example.com/a', 'https://example.com/a']).success
+    ).toBe(false)
+  })
+})
+
+describe('72-9 response schemas', () => {
+  it('requires urls on the project overview', () => {
+    const base = {
+      id: PROJECT_ID,
+      orgId: ORG_ID,
+      name: PROJECT_NAME,
+      slug: PROJECT_SLUG,
+      description: null,
+      role: 'owner',
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
+      archivedAt: null,
+      createdBy: null,
+      tags: [],
+      memberCount: 1,
+    }
+    expect(
+      ProjectOverviewSchema.safeParse({ ...base, urls: ['https://example.com'] }).success
+    ).toBe(true)
+    expect(ProjectOverviewSchema.safeParse(base).success).toBe(false)
+  })
+
+  it('parses a deleted project item', () => {
+    expect(
+      DeletedProjectSchema.parse({
+        id: PROJECT_ID,
+        name: PROJECT_NAME,
+        slug: PROJECT_SLUG,
+        deletedAt: CREATED_AT,
+        purgeAfter: '2026-07-31T00:00:00.000Z',
+      }).slug
+    ).toBe(PROJECT_SLUG)
   })
 })

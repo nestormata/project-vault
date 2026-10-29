@@ -34,6 +34,7 @@ import { requireOrgRole, type OrgRole } from '../plugins/require-org-role.js'
 import { enforceUserRateLimit } from './route-helpers.js'
 import { setRlsOrgContext } from '../middleware/rls.js'
 import { effectiveProjectRoleForCaller } from '../modules/projects/project-access.js'
+import { isProjectDeleted } from '../modules/projects/project-lifecycle.js'
 import {
   hasProjectIdParam,
   resolveProjectRoleGate,
@@ -169,6 +170,9 @@ export type SecureRouteRegistrationOptions = {
     // another role only with a reason. Story 69.18: an extension's own security gets the same
     // default from extension-api 3.37.0 on (`secure-route-project-role.ts`).
     minimumProjectRole?: OrgRole
+    // Story 72-9: a route under `:projectId` answers 404 for a soft-deleted project (the same
+    // body as a missing project). Only the restore route opts out, because it must find it.
+    includeDeletedProject?: boolean
     requireMfa?: boolean
     writeAuditEvent?: boolean | AuditConfig
     rateLimit?: false | { max: number; timeWindowMs?: number; key?: string }
@@ -568,6 +572,27 @@ async function rejectUnscopedBelowProjectRole(input: {
   return rejected === true
 }
 
+const DELETED_PROJECT_NOT_FOUND = {
+  code: 'project_not_found',
+  message: 'Project not found',
+} as const
+
+// Story 72-9: a soft-deleted project is gone for every route under `:projectId` (reads and writes,
+// PV's and an extension's), before the role gate and the handler, so no business code runs.
+async function rejectIfProjectDeleted(
+  tx: Tx,
+  options: SecureRouteRegistrationOptions,
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<boolean> {
+  if (options.security?.includeDeletedProject === true || !hasProjectIdParam(options.url)) {
+    return false
+  }
+  if (!(await isProjectDeleted(tx, projectIdParamOf(request)))) return false
+  reply.status(404).send(DELETED_PROJECT_NOT_FOUND)
+  return true
+}
+
 const INSUFFICIENT_PROJECT_ROLE = {
   code: 'insufficient_project_role',
   message: 'Your role in this project does not permit this action',
@@ -849,6 +874,7 @@ async function runProtectedHandler({
     state.phase = 'rls'
     await setRlsOrgContext(tx as { execute: (query: unknown) => Promise<unknown> }, auth.orgId)
     state.phase = 'handler'
+    if (await rejectIfProjectDeleted(typedTx, options, request, reply)) return reply
     if (
       minimumProjectRole &&
       (await rejectIfBelowProjectRole(typedTx, auth, minimumProjectRole, request, reply))
