@@ -137,8 +137,7 @@ describe('reveal contract (72-8)', () => {
     await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull())
   })
 
-  it('a failed Extend leaves the old window running instead of extending it silently', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
+  it('a failed Extend hides the value instead of leaving it on screen', async () => {
     revealOnce()
     revealMock.mockRejectedValueOnce(
       new ApiClientError(403, { code: 'insufficient_project_role', message: 'nope' }, 'nope')
@@ -146,11 +145,22 @@ describe('reveal contract (72-8)', () => {
     mount()
     await fireEvent.click(button('Reveal value'))
     await waitFor(() => expect(screen.getByText(SECRET)).toBeTruthy())
-    await vi.advanceTimersByTimeAsync(20_000)
     await fireEvent.click(button('Extend'))
     await waitFor(() => expect(revealMock).toHaveBeenCalledTimes(2))
-    await vi.advanceTimersByTimeAsync(11_000)
     await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull())
+  })
+
+  it('drops a reveal that lands after the tab was hidden', async () => {
+    let resolve: (value: unknown) => void = () => undefined
+    revealMock.mockReturnValueOnce(new Promise((r) => (resolve = r)))
+    mount()
+    await fireEvent.click(button('Reveal value'))
+    setVisibility('hidden')
+    resolve({ value: SECRET, versionNumber: 3 })
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /reveal value/i })).not.toBeNull()
+    )
+    expect(screen.queryByText(SECRET)).toBeNull()
   })
 
   it('hides when the tab becomes hidden', async () => {

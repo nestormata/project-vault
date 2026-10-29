@@ -73,7 +73,6 @@ describe('credential detail +page.server.ts rotation section', () => {
   // Story 72.8 (P11): the page is never stored, and no secret value reaches the page data. The
   // value only ever arrives through the audited reveal call made by the browser.
   it('Story 72.8: sends cache-control no-store and returns no secret value in the page data', async () => {
-    const SENTINEL = 'PAGE-DATA-SENTINEL-VALUE'
     getCredentialMock.mockResolvedValue({
       id: credentialId,
       name: 'Stripe Secret Key',
@@ -85,8 +84,11 @@ describe('credential detail +page.server.ts rotation section', () => {
     const result = expectLoaded(await load(event))
 
     expect(event.setHeaders).toHaveBeenCalledWith({ 'cache-control': 'no-store' })
-    expect(JSON.stringify(result)).not.toContain(SENTINEL)
-    expect(Object.keys(result)).not.toEqual(expect.arrayContaining(['value', 'revealedValue']))
+    // The detail contract never carries a sensitive value (API test 'the credential value never
+    // appears in any non-reveal response body'); the load makes no reveal call (the reveal client is
+    // not even mocked here, so a call would throw) and adds no value-shaped key of its own.
+    expect(result).not.toHaveProperty('value')
+    expect(result).not.toHaveProperty('revealedValue')
   })
 
   // Story 17.3 AC-11: +page.server.ts's load calls listRotationRecommendedNudges alongside the

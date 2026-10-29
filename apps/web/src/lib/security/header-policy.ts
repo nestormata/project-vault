@@ -349,7 +349,7 @@ export const PV_HEADER_POLICY: HeaderPolicy = validateHeaderPolicy({
       match: { startsWith: '/external-shares/' },
       names: ['referrer-policy', NO_STORE_HEADER],
     },
-    // Story 72.8 (P11): value-bearing pages set `cache-control: no-store` in their load (withNoStore).
+    // Story 72.8 (P11): value-bearing pages set `cache-control: no-store` via `setHeaders` in their load.
     ...[
       '/(app)/projects/[projectId]/credentials/[credentialId]',
       '/(app)/projects/[projectId]/credentials/[credentialId]/rotate',

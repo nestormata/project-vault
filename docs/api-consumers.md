@@ -340,7 +340,8 @@ What the server writes (all in the event `payload`, key names only, **never a va
 | `credential.value_revealed`  | `versionNumber` and, new, `purpose: "copy"` when the value was fetched to be copied without being shown (`GET .../value?purpose=copy`). An absent `purpose` means a view reveal, so rows written before this change read the same way.                                                                           |
 
 A copy row records that **the server released the value to the copy action**, not that the clipboard was
-written (the server cannot see the clipboard). A TOTP code will be audited as a `credential.value_revealed`
+written (the server cannot see the clipboard). `purpose` is asserted by the caller: it labels the request,
+it is not proof of what the client then did with the value. A TOTP code will be audited as a `credential.value_revealed`
 with `purpose: "totp"` when the TOTP field kind exists (story 72-10); the `purpose` enum is additive.
 
 **Consumers never synthesize events.** A client (CentralizeMe included) must not invent history rows or labels
