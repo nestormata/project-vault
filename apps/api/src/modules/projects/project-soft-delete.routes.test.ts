@@ -123,14 +123,29 @@ describe('project edit, soft delete and restore (72-9)', () => {
       expect(res.statusCode).toBe(422)
     })
 
-    it('403 for an org admin and for a project member who does not own the project', async () => {
+    it('an org admin who is not a project member can edit, recorded as org_admin', async () => {
+      const owner = await registerOwner(app, 'patch-admin')
+      const projectId = await createProject(app, owner.cookies, 'patch-admin')
+      const admin = await addUserToOrg(app, owner.orgId, 'patch-admin-user', { orgRole: 'admin' })
+
+      const res = await call(app, 'PATCH', `/${projectId}`, admin.cookies, {
+        description: 'by org admin',
+      })
+      expect(res.statusCode).toBe(200)
+      expect((await projectRow(owner.orgId, projectId))?.description).toBe('by org admin')
+      const audit = await archiveAuditRowsFor(owner.orgId, AuditEvent.PROJECT_UPDATED, projectId)
+      expect(audit[0]?.payload).toMatchObject({ authorizedVia: 'org_admin' })
+    })
+
+    it('403 for a project member who does not own the project, and for a viewer', async () => {
       const owner = await registerOwner(app, 'patch-403')
       const projectId = await createProject(app, owner.cookies, 'patch-403')
-      const admin = await addUserToOrg(app, owner.orgId, 'patch-403-admin', { orgRole: 'admin' })
       const member = await addUserToOrg(app, owner.orgId, 'patch-403-member', { orgRole: 'member' })
       await addProjectMember(owner.orgId, projectId, member.userId, 'member')
+      const viewer = await addUserToOrg(app, owner.orgId, 'patch-403-viewer', { orgRole: 'viewer' })
+      await addProjectMember(owner.orgId, projectId, viewer.userId, 'viewer')
 
-      for (const caller of [admin, member]) {
+      for (const caller of [member, viewer]) {
         const res = await call(app, 'PATCH', `/${projectId}`, caller.cookies, { name: 'Nope' })
         expect(res.statusCode).toBe(403)
       }
@@ -158,8 +173,11 @@ describe('project edit, soft delete and restore (72-9)', () => {
     it('answers the authorization failure before validating the body', async () => {
       const owner = await registerOwner(app, 'patch-order')
       const projectId = await createProject(app, owner.cookies, 'patch-order')
-      const admin = await addUserToOrg(app, owner.orgId, 'patch-order-admin', { orgRole: 'admin' })
-      const res = await call(app, 'PATCH', `/${projectId}`, admin.cookies, {
+      const member = await addUserToOrg(app, owner.orgId, 'patch-order-member', {
+        orgRole: 'member',
+      })
+      await addProjectMember(owner.orgId, projectId, member.userId, 'member')
+      const res = await call(app, 'PATCH', `/${projectId}`, member.cookies, {
         urls: ['javascript:x'],
       })
       expect(res.statusCode).toBe(403)

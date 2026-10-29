@@ -38,7 +38,8 @@ export function settingsErrorOf(error: unknown): { message: string; fields: Sett
   }
   if (error.status === 403) {
     return {
-      message: 'Only the project owner or an organization owner can edit this project.',
+      message:
+        'Only the project owner, an organization owner or an organization admin can edit this project.',
       fields: {},
     }
   }
