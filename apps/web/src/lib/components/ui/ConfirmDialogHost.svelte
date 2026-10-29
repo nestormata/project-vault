@@ -5,26 +5,28 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { beforeNavigate } from '$app/navigation'
   import {
+    cancelAllConfirms,
     getActiveConfirm,
     registerConfirmHost,
     settleConfirm,
   } from '$lib/state/confirm.svelte.js'
   import ConfirmDialog from './ConfirmDialog.svelte'
 
-  const request = $derived(getActiveConfirm())
-  let open = $state(true)
+  const active = $derived(getActiveConfirm())
+  const request = $derived(active?.request ?? null)
   let answered = false
 
   $effect(() => {
-    // A new request (a fresh dialog instance, see the key below) starts unanswered and open.
-    if (request) {
-      open = true
-      answered = false
-    }
+    // Each request gets a fresh dialog instance (see the key below), unanswered.
+    if (active) answered = false
   })
 
   onMount(() => registerConfirmHost())
+
+  // A confirmation belongs to the page that raised it: leaving the page answers it with no.
+  beforeNavigate(() => cancelAllConfirms())
 
   function answer(value: boolean) {
     if (answered) return
@@ -34,9 +36,9 @@
 </script>
 
 {#if request}
-  {#key request}
+  {#key active?.seq}
     <ConfirmDialog
-      bind:open
+      open={true}
       id="app-confirm"
       title={request.title}
       message={request.message}

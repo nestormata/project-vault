@@ -16,7 +16,9 @@ export type ConfirmRequest = {
   typedLabel?: string
 }
 
-type Pending = { request: ConfirmRequest; resolve: (answer: boolean) => void }
+type Pending = { seq: number; request: ConfirmRequest; resolve: (answer: boolean) => void }
+
+let nextSeq = 0
 
 let hosts = 0
 let active = $state<Pending | null>(null)
@@ -35,16 +37,36 @@ export function registerConfirmHost(): () => void {
 }
 
 export function requestConfirm(request: ConfirmRequest): Promise<boolean> {
-  if (hosts === 0) return Promise.resolve(window.confirm(request.message))
+  if (hosts === 0) return Promise.resolve(confirmWithoutHost(request))
   return new Promise<boolean>((resolve) => {
-    const entry: Pending = { request, resolve }
+    nextSeq += 1
+    const entry: Pending = { seq: nextSeq, request, resolve }
     if (active) waiting.push(entry)
     else active = entry
   })
 }
 
-export function getActiveConfirm(): ConfirmRequest | null {
-  return active?.request ?? null
+/** The request now on screen, with a sequence number that is unique per request (two requests may
+ * share one object, so the object itself cannot tell them apart). */
+export function getActiveConfirm(): { seq: number; request: ConfirmRequest } | null {
+  return active ? { seq: active.seq, request: active.request } : null
+}
+
+/** Answers every request still waiting (on screen or queued) with `false`, e.g. on navigation. */
+export function cancelAllConfirms(): void {
+  const all = [...(active ? [active] : []), ...waiting.splice(0)]
+  active = null
+  for (const entry of all) entry.resolve(false)
+}
+
+function confirmWithoutHost(request: ConfirmRequest): boolean {
+  if (request.typedValue === undefined) return window.confirm(request.message)
+  // A typed confirmation must stay typed: ask for the value in a prompt, compared like
+  // TypedConfirmInput (trimmed, case-insensitive).
+  const typed = window.prompt(
+    `${request.message}\n\n${request.typedLabel ?? 'Type the exact name to confirm'}`
+  )
+  return typed !== null && typed.trim().toLowerCase() === request.typedValue.trim().toLowerCase()
 }
 
 export function settleConfirm(answer: boolean): void {

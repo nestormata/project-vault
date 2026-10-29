@@ -41,14 +41,24 @@
 
   let typedMatches = $state(false)
   let confirmed = false
+  let submitting = $state(false)
 
-  const canConfirm = $derived(!pending && (typedValue === undefined || typedMatches))
+  const canConfirm = $derived(!pending && !submitting && (typedValue === undefined || typedMatches))
 
   async function handleConfirm() {
     if (!canConfirm) return
     confirmed = true
-    await onconfirm()
-    open = false
+    submitting = true
+    try {
+      await onconfirm()
+      open = false
+    } catch {
+      // The caller failed (it reports its own error): stay open, and let a later Cancel or Escape
+      // report oncancel.
+      confirmed = false
+    } finally {
+      submitting = false
+    }
   }
 
   function handleClose() {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
 import { tick } from 'svelte'
 import { installDialogPolyfill, pressEscape } from '$lib/test/dialog-test-helpers.js'
-import { requestConfirm } from '$lib/state/confirm.svelte.js'
+import { cancelAllConfirms, requestConfirm } from '$lib/state/confirm.svelte.js'
 import ConfirmDialog from './ConfirmDialog.svelte'
 import ConfirmDialogHost from './ConfirmDialogHost.svelte'
 
@@ -77,6 +77,32 @@ describe('ConfirmDialog', () => {
     )
   })
 
+  it('a double click calls onconfirm once while it is in flight', async () => {
+    let finish!: () => void
+    const onconfirm = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)))
+    render(ConfirmDialog, { props: { ...base, open: true, onconfirm } })
+    await tick()
+    const confirm = screen.getByRole('button', { name: 'Confirm' })
+    await fireEvent.click(confirm)
+    await fireEvent.click(confirm)
+    expect(onconfirm).toHaveBeenCalledTimes(1)
+    finish()
+  })
+
+  it('a failed onconfirm leaves it open and a later Cancel still reports oncancel', async () => {
+    const oncancel = vi.fn()
+    const onconfirm = vi.fn(async () => {
+      throw new Error('boom')
+    })
+    render(ConfirmDialog, { props: { ...base, open: true, onconfirm, oncancel } })
+    await tick()
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm' })).catch(() => {})
+    await tick()
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await tick()
+    expect(oncancel).toHaveBeenCalledTimes(1)
+  })
+
   it('initial focus is Cancel, the safe choice', async () => {
     render(ConfirmDialog, { props: { ...base, open: true, onconfirm: vi.fn() } })
     await tick()
@@ -133,6 +159,49 @@ describe('requestConfirm + ConfirmDialogHost', () => {
     expect(screen.getByRole('dialog', { name: 'Two' })).toBeTruthy()
     pressEscape(document.querySelector('dialog') as HTMLDialogElement)
     await expect(second).resolves.toBe(false)
+  })
+
+  it('two queued requests sharing one object are both answered', async () => {
+    render(ConfirmDialogHost)
+    await tick()
+    const shared = { title: 'Same', message: 'same' }
+    const first = requestConfirm(shared)
+    const second = requestConfirm(shared)
+    await tick()
+    await tick()
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await expect(first).resolves.toBe(true)
+    await tick()
+    await tick()
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await expect(second).resolves.toBe(true)
+  })
+
+  it('cancelAllConfirms (navigation) answers the shown and queued requests with false', async () => {
+    render(ConfirmDialogHost)
+    await tick()
+    const first = requestConfirm({ title: 'A', message: 'a' })
+    const second = requestConfirm({ title: 'B', message: 'b' })
+    await tick()
+    cancelAllConfirms()
+    await expect(first).resolves.toBe(false)
+    await expect(second).resolves.toBe(false)
+  })
+
+  it('without a host a typed confirmation is asked in a prompt and compared like the input', async () => {
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('  PAYMENTS ')
+    await expect(
+      requestConfirm({ title: 'T', message: 'Delete?', typedValue: 'payments' })
+    ).resolves.toBe(true)
+    prompt.mockReturnValue('nope')
+    await expect(
+      requestConfirm({ title: 'T', message: 'Delete?', typedValue: 'payments' })
+    ).resolves.toBe(false)
+    prompt.mockReturnValue(null)
+    await expect(
+      requestConfirm({ title: 'T', message: 'Delete?', typedValue: 'payments' })
+    ).resolves.toBe(false)
+    prompt.mockRestore()
   })
 
   it('unmounting the host answers a pending request with false', async () => {

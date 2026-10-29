@@ -242,9 +242,23 @@
 
   /** A recent is re-checked server-side on selection: one that can no longer be opened is dropped
    * and never navigated to, and the palette says so. */
+  let openingRecent = false
   async function openRecent(recent: RecentItem) {
+    if (openingRecent) return
+    openingRecent = true
+    try {
+      await openCheckedRecent(recent)
+    } finally {
+      openingRecent = false
+    }
+  }
+
+  async function openCheckedRecent(recent: RecentItem) {
     notice = null
+    const current = generation
     const check = await checkRecent(fetch, recent)
+    // The palette was closed (or reopened) while the check ran: do not navigate on its behalf.
+    if (!open || current !== generation) return
     if (check.status === 'ok') {
       if (userId) addRecent(userId, recent)
       await openRecord(recent)
@@ -297,6 +311,11 @@
   function handleBackdropClick(event: MouseEvent) {
     if (event.target === event.currentTarget) closeSearch()
   }
+
+  // Rows can shrink while results and checks arrive; keep the highlight on a row that exists.
+  $effect(() => {
+    if (selectedIndex >= rows.length) selectedIndex = 0
+  })
 
   // The layout opens the palette by setting `open` (header button, Ctrl/Cmd-K), so recents load when
   // `open` turns true, whoever set it.
@@ -367,9 +386,9 @@
         <FormHelpText id="global-search-help" kind="search" />
       </div>
 
-      {#if notice}
-        <p class="px-4 pt-3 text-sm text-amber-900" role="status">{notice}</p>
-      {/if}
+      <p class={notice ? 'px-4 pt-3 text-sm text-amber-900' : 'sr-only'} role="status">
+        {notice ?? ''}
+      </p>
 
       {#if rows.length > 0}
         <ul id="global-search-results" class="max-h-[50vh] overflow-y-auto p-2" role="listbox">

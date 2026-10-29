@@ -15,6 +15,7 @@ const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(async () => {}),
   invalidateAll: invalidateAllMock,
+  beforeNavigate: vi.fn(),
 }))
 
 vi.mock('$app/state', () => ({
