@@ -24,8 +24,9 @@ test.describe('M4 component replacement', () => {
     await seedOrgOwner(context, 'm4-account')
     await page.goto('/settings')
     await expect(page.getByTestId('mock-account-wrap')).toHaveText('mock-ui-pack:m4-account-wrap')
-    // PV's own ShellAccount output is inside the wrap (Sign out sits in the account dropdown)
-    await page.getByTestId('account-menu').locator('summary').click()
+    // PV's own ShellAccount output is inside the wrap (Sign out sits in the account dropdown). The
+    // dropdown trigger is the first summary; a pack nav item with children adds a nested one (72-6).
+    await page.getByTestId('account-menu').locator('summary').first().click()
     await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
   })
 

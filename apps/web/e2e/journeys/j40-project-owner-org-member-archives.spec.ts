@@ -4,6 +4,7 @@ import { createInvitationViaApi, createProjectViaApi } from '../fixtures/api.js'
 import { extractTokenFromAcceptUrl, readLatestInvitationAcceptUrl } from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 import { gotoHydrated } from '../fixtures/hydration.js'
+import { confirmDialog } from '../fixtures/confirm-dialog.js'
 
 // J40 (Story 69.20, DW-618): an org `member` who owns a project archives it from the projects list,
 // and the same user, as a project `admin` on someone else's project, is offered no Archive and the
@@ -52,8 +53,8 @@ test.describe('J40 — a project owner who is an org member can archive', () => 
     const refused = await memberContext.request.post(`/api/v1/projects/${theirs.id}/archive`)
     expect(refused.status()).toBe(403)
 
-    page.once('dialog', (dialog) => void dialog.accept())
     await card(page, mine.name).getByRole('button', { name: 'Archive project' }).click()
+    await confirmDialog(page, 'Archive project?', 'Archive')
     await expect(page.getByText(mine.name)).toHaveCount(0)
 
     const list = await memberContext.request.get('/api/v1/projects?includeArchived=true')
