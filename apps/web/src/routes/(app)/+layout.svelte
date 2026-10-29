@@ -105,6 +105,7 @@
   extensionNavItems={data.extensionNavItems}
   injected={data.__inject}
   {openSearch}
+  shellVariant={data.shellVariant}
   projects={data.projects}
   importRouteLive={data.importRouteLive}
   {completeOnboarding}

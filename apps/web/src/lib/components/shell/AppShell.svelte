@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/state'
   import NavEntry from '$lib/navigation/NavEntry.svelte'
   import { renderSurface, withDescendants } from '$lib/navigation/build-surface.js'
   import { MFA_SETTINGS_PATH } from '$lib/navigation/surfaces/shell.js'
@@ -6,10 +7,12 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import Footer from './Footer.svelte'
   import HeaderSearchField from './HeaderSearchField.svelte'
+  import HeaderSearchIcon from './HeaderSearchIcon.svelte'
   import NotificationsLink from './NotificationsLink.svelte'
   import PrimaryNav from './PrimaryNav.svelte'
   import ShellAccount from './ShellAccount.svelte'
   import ShellBrand from './ShellBrand.svelte'
+  import { isTaskPage, type ShellVariant } from './shell-variant.js'
 
   let {
     user,
@@ -20,6 +23,7 @@
     hasUiPanelExtension = false,
     extensionNavItems = [],
     injected,
+    variant = 'header',
   }: {
     user: import('$lib/api/auth.js').AuthUser
     children: import('svelte').Snippet
@@ -30,8 +34,15 @@
     extensionNavItems?: ResolvedExtensionNavItem[]
     /** The `(app)` layout's `data.__inject`, for the `shell.header.end` point. */
     injected?: App.PageData['__inject']
+    /** Story 72.7: `header` (default) or `rail` (left rail from `md`, bottom bar below it). */
+    variant?: ShellVariant
   } = $props()
   let logoutError = $state(null)
+
+  // Story 72.7 (P3b): the rail variant moves the primary nav out of the header. Onboarding hides the
+  // nav, so it has no rail either. The bottom bar needs room below the page unless it is not shown.
+  const rail = $derived(variant === 'rail' && !hidePrimaryNav)
+  const barSpace = $derived(rail && !isTaskPage(page.url.pathname))
 
   // Story 68.7 (S5): the MFA banner's message names `/settings/security`; the link spliced in its
   // place is the `shell.mfa-banner` surface's data (its children follow it as sibling links). With
@@ -43,13 +54,17 @@
   const bannerAt = $derived(bannerMessage.indexOf(MFA_SETTINGS_PATH))
 </script>
 
-<div class="min-h-screen bg-slate-50 text-slate-950">
+<div
+  class={barSpace
+    ? 'min-h-screen bg-slate-50 pb-16 text-slate-950 md:pb-0'
+    : 'min-h-screen bg-slate-50 text-slate-950'}
+>
   <header class="border-b border-slate-200 bg-white">
     <div
       class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between"
     >
       <ShellBrand {hidePrimaryNav} />
-      {#if !hidePrimaryNav}
+      {#if !hidePrimaryNav && !rail}
         <PrimaryNav
           {onsearch}
           isPlatformOperator={user.isPlatformOperator}
@@ -60,7 +75,7 @@
       {/if}
       <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
         {#if !hidePrimaryNav}
-          <HeaderSearchField {onsearch} />
+          <HeaderSearchField {onsearch} />{#if rail}<HeaderSearchIcon {onsearch} />{/if}
           <NotificationsLink {unreadCount} />
         {/if}
         <ShellAccount {user} /><InjectionPoint name="shell.header.end" data={injected} />
@@ -82,13 +97,45 @@
       <p class="px-4 py-2 text-sm text-red-700" role="alert">{logoutError}</p>
     {/if}
   </header>
-  <main
-    id="main-content"
-    tabindex="-1"
-    class={hidePrimaryNav ? 'p-0' : 'mx-auto max-w-7xl px-4 py-6 focus:outline-none'}
-  >
-    {@render children()}
-  </main>
+  {#snippet mainRegion()}
+    <main
+      id="main-content"
+      tabindex="-1"
+      class={hidePrimaryNav
+        ? 'p-0'
+        : rail
+          ? 'min-w-0 flex-1 py-6 focus:outline-none'
+          : 'mx-auto max-w-7xl px-4 py-6 focus:outline-none'}
+    >
+      {@render children()}
+    </main>
+  {/snippet}
+  {#if rail}
+    <!-- Story 72.7: the rail holds the primary nav from `md`; below it the bottom bar takes over. -->
+    <div class="mx-auto flex max-w-7xl gap-6 px-4">
+      <aside class="hidden w-56 shrink-0 py-6 md:block" data-testid="nav-rail">
+        <PrimaryNav
+          variant="rail"
+          {onsearch}
+          isPlatformOperator={user.isPlatformOperator}
+          {user}
+          {hasUiPanelExtension}
+          {extensionNavItems}
+        />
+      </aside>
+      {@render mainRegion()}
+    </div>
+    <PrimaryNav
+      variant="bottom"
+      {onsearch}
+      isPlatformOperator={user.isPlatformOperator}
+      {user}
+      {hasUiPanelExtension}
+      {extensionNavItems}
+    />
+  {:else}
+    {@render mainRegion()}
+  {/if}
   <div class="border-t border-slate-200">
     <Footer />
   </div>

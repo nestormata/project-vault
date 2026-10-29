@@ -237,6 +237,8 @@ services:
       # origin (http(s) only). Deliberately EMPTY by default — the link appears only when an
       # operator explicitly configures a CentralizeMe issuer; otherwise the guidance is plain text.
       VAULT_HANDOFF_ISSUER: ${VAULT_HANDOFF_ISSUER:-}
+      # Story 72.7: `rail` selects the left-rail / bottom-bar shell; empty or unknown = the header shell.
+      WEB_SHELL_VARIANT: ${WEB_SHELL_VARIANT:-}
       # Story 60.1 (Finding F1 fix): same expression/default as the api service's
       # CORS_ALLOWED_ORIGINS above. apps/web/src/lib/server/handoff-cors.ts reads this in the
       # web process itself to CORS-guard the handoff prepare route — without it here, that check's

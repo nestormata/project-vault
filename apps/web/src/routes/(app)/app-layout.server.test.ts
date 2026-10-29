@@ -6,6 +6,9 @@ const listProjectsMock = vi.hoisted(() => vi.fn())
 const getUsersMeMock = vi.hoisted(() => vi.fn())
 const getThemesMock = vi.hoisted(() => vi.fn())
 const getExtensionNavMock = vi.hoisted(() => vi.fn())
+const envMock = vi.hoisted(() => ({}) as Record<string, string | undefined>)
+
+vi.mock('$env/dynamic/private', () => ({ env: envMock }))
 
 vi.mock('$lib/api/onboarding.js', () => ({
   getOnboardingStatus: getOnboardingStatusMock,
@@ -47,6 +50,17 @@ describe('/(app) +layout.server.ts', () => {
     getThemesMock.mockResolvedValue(noCustomThemes)
     getExtensionNavMock.mockReset()
     getExtensionNavMock.mockResolvedValue({ uiPanelSlot: null })
+    delete envMock.WEB_SHELL_VARIANT
+  })
+
+  it('Story 72.7: shellVariant is the header shell unless WEB_SHELL_VARIANT is rail (any case)', async () => {
+    getOnboardingStatusMock.mockResolvedValue({ completed: true })
+    getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+    expect(expectLoaded(await load(makeEvent(baseUser))).shellVariant).toBe('header')
+    envMock.WEB_SHELL_VARIANT = ' Rail '
+    expect(expectLoaded(await load(makeEvent(baseUser))).shellVariant).toBe('rail')
+    envMock.WEB_SHELL_VARIANT = 'sidebar'
+    expect(expectLoaded(await load(makeEvent(baseUser))).shellVariant).toBe('header')
   })
 
   it('redirects to /login when there is no authenticated user', async () => {

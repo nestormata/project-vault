@@ -4,6 +4,7 @@
   import OnboardingWizard from '$lib/components/onboarding/OnboardingWizard.svelte'
   import AppShell from '$lib/components/shell/AppShell.svelte'
   import SkipLink from '$lib/components/shell/SkipLink.svelte'
+  import type { ShellVariant } from '$lib/components/shell/shell-variant.js'
   import { m } from '$lib/paraglide/messages.js'
 
   let {
@@ -17,6 +18,7 @@
     extensionNavItems,
     injected,
     openSearch,
+    shellVariant = 'header',
     projects,
     importRouteLive,
     completeOnboarding,
@@ -33,6 +35,8 @@
     extensionNavItems: ComponentProps<typeof AppShell>['extensionNavItems']
     injected: ComponentProps<typeof AppShell>['injected']
     openSearch: () => void
+    /** Story 72.7: the operator-chosen shell (`WEB_SHELL_VARIANT`). */
+    shellVariant?: ShellVariant
     projects: ComponentProps<typeof OnboardingWizard>['projects']
     importRouteLive: boolean
     completeOnboarding: () => Promise<void>
@@ -75,6 +79,7 @@
     {extensionNavItems}
     {injected}
     onsearch={openSearch}
+    variant={shellVariant}
   >
     {#if !onboardingDone}
       <OnboardingWizard {user} {projects} {importRouteLive} oncompleted={completeOnboarding} />
