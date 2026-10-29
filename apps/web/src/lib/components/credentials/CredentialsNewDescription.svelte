@@ -17,7 +17,7 @@
   <label class="block font-medium text-slate-900" for="credential-description">Description</label>
   <textarea
     id="credential-description"
-    class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3"
+    class="min-h-24 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
     bind:value={description}
     aria-describedby="credential-description-help"></textarea>
   <FormHelpText id="credential-description-help" kind="text" /><InjectionPoint

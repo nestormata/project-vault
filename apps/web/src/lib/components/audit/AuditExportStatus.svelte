@@ -33,7 +33,7 @@
     <p class="mt-4 text-sm text-amber-800">This export is taking longer than expected.</p>
     <button
       type="button"
-      class="mt-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+      class="mt-2 rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-semibold text-slate-700"
       onclick={() => controller.checkAgain()}
     >
       Check again

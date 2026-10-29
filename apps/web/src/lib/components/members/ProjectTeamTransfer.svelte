@@ -28,7 +28,7 @@
   <label class="font-medium text-slate-900" for="transfer-owner">Transfer ownership</label>
   <select
     id="transfer-owner"
-    class="rounded-lg border border-slate-300 px-2 py-1 text-sm"
+    class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-sm"
     bind:value={transferTarget}
     aria-describedby="transfer-owner-help"
   >

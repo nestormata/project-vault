@@ -31,7 +31,7 @@
         id="dashboard-project"
         name="projectId"
         aria-describedby="dashboard-project-help"
-        class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
         value={selectedProject.id}
       >
         {#each projects?.items ?? [] as project (project.id)}

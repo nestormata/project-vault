@@ -374,7 +374,7 @@
       <label class="text-sm font-medium text-slate-700">
         Recipient
         <select
-          class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
           bind:value={shareRecipientUserId}
           aria-describedby="share-recipient-user-help"
         >
@@ -390,8 +390,8 @@
         Recipient email
         <input
           type="email"
-          class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-          placeholder="vendor@example.com"
+          class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
+          placeholder="vendor@invalid"
           bind:value={shareRecipientEmail}
           aria-describedby="share-recipient-email-help"
         />
@@ -405,7 +405,7 @@
         type="number"
         min="1"
         max={shareRecipientType === 'external' ? EXTERNAL_SHARE_MAX_HOURS : MEMBER_SHARE_MAX_HOURS}
-        class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
         bind:value={shareExpiresInHours}
         aria-describedby="share-expiry-help"
       />
@@ -470,7 +470,7 @@
         Confirm your password
         <input
           type="password"
-          class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
           bind:value={shareStepUpPassword}
           autocomplete="current-password"
           aria-describedby="share-step-up-password-help"
@@ -482,7 +482,7 @@
         <input
           type="text"
           inputmode="numeric"
-          class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
           bind:value={shareStepUpTotp}
           aria-describedby="share-step-up-totp-help"
         />
@@ -510,7 +510,7 @@
   <label class="text-sm text-slate-600">
     Filter by status
     <select
-      class="ml-2 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+      class="ml-2 rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-sm"
       value={sharesStatus ?? ''}
       onchange={(e) => {
         const value = (e.target as HTMLSelectElement).value

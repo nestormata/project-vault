@@ -48,7 +48,7 @@
           {controller.addingVersion ? 'Saving…' : 'Save fields'}
         </button>
         <button
-          class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
+          class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium"
           type="button"
           onclick={() => controller.cancelEditFieldSet()}
         >

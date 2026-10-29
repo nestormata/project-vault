@@ -21,7 +21,7 @@
   <input
     id="project-name"
     type="text"
-    class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+    class="mt-1 block w-full rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
     bind:value={flow.projectName}
     placeholder="Defaults to the exported project's own name"
     aria-describedby="project-name-help"

@@ -49,7 +49,7 @@
           : m.auth_handoff_confirm_button()}
       </button>
       <a
-        class="rounded-xl border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
         class:pointer-events-none={flow.phase === 'submitting'}
         class:opacity-60={flow.phase === 'submitting'}
         href={resolve('/login')}

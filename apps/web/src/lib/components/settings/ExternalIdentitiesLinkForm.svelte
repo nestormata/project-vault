@@ -59,7 +59,7 @@
       Member
       <select
         id="new-user"
-        class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
         bind:value={newUserId}
         required
         aria-describedby="external-identity-member-help"
@@ -76,7 +76,7 @@
       <input
         id="new-provider-name"
         type="text"
-        class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
         placeholder="e.g. test.mock-sso-extension"
         aria-describedby="external-identity-provider-help"
         bind:value={newProviderName}
@@ -89,7 +89,7 @@
       <input
         id="new-external-subject"
         type="text"
-        class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
         placeholder="e.g. alex-sso-subject-123"
         aria-describedby="external-identity-subject-help"
         bind:value={newExternalSubject}

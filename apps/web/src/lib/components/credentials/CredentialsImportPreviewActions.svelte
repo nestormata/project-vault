@@ -25,7 +25,7 @@
       {flow.confirming ? 'Importing…' : 'Confirm import'}
     </button>
     <button
-      class="rounded-xl border border-slate-300 px-4 py-3 font-semibold text-slate-900"
+      class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-3 font-semibold text-slate-900"
       type="button"
       onclick={() => flow.restart()}
     >

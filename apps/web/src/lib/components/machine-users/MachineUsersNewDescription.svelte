@@ -20,7 +20,7 @@
   </label>
   <textarea
     id="machine-user-description"
-    class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3"
+    class="min-h-24 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
     bind:value={description}
     aria-describedby="machine-user-description-help"></textarea>
   <FormHelpText id="machine-user-description-help" kind="text" /><InjectionPoint

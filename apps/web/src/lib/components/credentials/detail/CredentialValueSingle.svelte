@@ -24,7 +24,7 @@
         {controller.revealing ? 'Revealing…' : 'Reveal value'}
       </button>
       <button
-        class="rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium disabled:opacity-60"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-3 text-sm font-medium disabled:opacity-60"
         type="button"
         aria-describedby="credential-copy-help"
         disabled={controller.copyingValue}
@@ -41,7 +41,7 @@
       class="mt-4 overflow-x-auto rounded-xl bg-slate-950 p-4 font-mono text-sm text-white">{controller.revealedValue}</pre>
     <div class="mt-3 flex gap-3">
       <button
-        class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium"
         type="button"
         aria-describedby="credential-copy-revealed-help"
         onclick={() => void controller.copyValue()}
@@ -49,7 +49,7 @@
         {m.credential_copy_revealed_label()}
       </button>
       <button
-        class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium"
         type="button"
         onclick={() => controller.hideValue()}
       >

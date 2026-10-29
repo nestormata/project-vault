@@ -25,7 +25,7 @@
     {:else}
       <button
         type="button"
-        class="mt-3 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 disabled:opacity-60"
+        class="mt-3 rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-semibold text-slate-800 disabled:opacity-60"
         disabled={controller.revealingStagedValue}
         onclick={() => void controller.revealStagedValue()}
       >

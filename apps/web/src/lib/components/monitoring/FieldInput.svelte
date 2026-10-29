@@ -31,7 +31,7 @@
   <label class="block font-medium text-slate-900" for={id}>{label}</label>
   <input
     {id}
-    class="w-full rounded-xl border border-slate-300 px-3 py-3"
+    class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
     {type}
     {placeholder}
     {min}

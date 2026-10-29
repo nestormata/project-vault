@@ -124,7 +124,7 @@
         </label>
         <input
           id="lifecycle-expires-at"
-          class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+          class="w-full max-w-xs rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
           type="date"
           bind:value={lifecycleExpiresAt}
           aria-describedby="lifecycle-expires-help"
@@ -140,7 +140,7 @@
         </div>
         <input
           id="lifecycle-rotation-schedule"
-          class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+          class="w-full max-w-xs rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
           type="text"
           placeholder="0 0 1 * *"
           aria-describedby="lifecycle-rotation-schedule-help"

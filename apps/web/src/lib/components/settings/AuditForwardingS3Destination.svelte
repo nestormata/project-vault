@@ -22,7 +22,7 @@
     <input
       id="s3-bucket"
       type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       bind:value={bucket}
       aria-describedby="s3-bucket-help"
     />
@@ -33,7 +33,7 @@
     <input
       id="s3-region"
       type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       bind:value={region}
       aria-describedby="s3-region-help"
     />

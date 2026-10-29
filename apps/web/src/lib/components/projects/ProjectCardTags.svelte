@@ -41,7 +41,7 @@
         <label class="sr-only" for={`project-tags-${project.id}`}> Tags </label>
         <input
           id={`project-tags-${project.id}`}
-          class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
           type="text"
           aria-describedby={actions.tagErrors[project.id]
             ? `project-tags-help-${project.id} project-tags-error-${project.id}`
@@ -59,7 +59,7 @@
       </div>
       <button
         type="button"
-        class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-medium text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={actions.savingTagsProjectId === project.id}
         onclick={() => actions.onSaveTags(project)}
       >

@@ -18,7 +18,7 @@
   <label class="block font-medium text-slate-900" for="rotation-notes">Notes</label>
   <textarea
     id="rotation-notes"
-    class="min-h-20 w-full rounded-xl border border-slate-300 px-3 py-3"
+    class="min-h-20 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
     bind:value={form.notes}
     aria-describedby="rotation-notes-help"></textarea>
   <FormHelpText id="rotation-notes-help" kind="text" /><InjectionPoint

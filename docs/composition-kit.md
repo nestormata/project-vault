@@ -375,8 +375,13 @@ text is `role="alert"`. A button is `type="button"` and as wide as its content u
 
 The control border (D-10) is `#64748b` (above the 3:1 of WCAG 1.4.11; the old `#cbd5e1` is 1.48:1 on white). It is
 read from the M6 `--color-border-strong` token with `#64748b` as the fallback, so a theme skins it and the 72-2
-contrast guard holds the theme's own value to 3:1. Story 72-3 adopts the controls on the login page only; the other
-routes adopt them in 72-4, each in a class-only, oracle-reviewed commit.
+contrast guard holds the theme's own value to 3:1. Story 72-3 adopts the controls on the login page. Story 72-4 puts
+the same border token on every other form control (input, select, textarea) and outlined button of the route families,
+by a class swap only (no element, attribute or text changes; five oracle-reviewed waves). Replacing a hand-written
+label and input by `TextField`, `Select` or `Textarea` adds the `Field` wrapper and is a structural change that is not
+part of that swap. Not touched, so no override or replacement hash lock changes: `shell/GlobalSearch.svelte`,
+`shell/ShellBrand.svelte` (both CM replacements), the CM-overridden dashboard route, and the other `shell/` controls
+(owned by the navigation stories).
 
 ### Region points of the remaining top-level uses (Epic 69, Story 69-6)
 

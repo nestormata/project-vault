@@ -41,7 +41,7 @@
       </button>
       <button
         type="button"
-        class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800"
+        class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-semibold text-slate-800"
         onclick={() => form.cancelSameValueConfirmation()}
       >
         Cancel

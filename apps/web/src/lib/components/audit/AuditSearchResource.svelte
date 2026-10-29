@@ -17,7 +17,7 @@
       id="filter-resourceId"
       name="resourceId"
       type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       value={filters?.resourceId ?? ''}
       aria-describedby="audit-resource-help"
     />
@@ -29,7 +29,7 @@
       id="filter-projectId"
       name="projectId"
       type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       value={filters?.projectId ?? ''}
       aria-describedby="audit-project-help"
     />

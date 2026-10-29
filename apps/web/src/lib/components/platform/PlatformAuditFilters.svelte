@@ -27,7 +27,7 @@
       id="filter-actionType"
       name="actionType"
       type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       value={filters?.actionType ?? ''}
       aria-describedby="platform-audit-action-help"
     />
@@ -39,7 +39,7 @@
       id="filter-operatorId"
       name="operatorId"
       type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       value={filters?.operatorId ?? ''}
       aria-describedby="platform-audit-operator-help"
     />
@@ -51,7 +51,7 @@
       id="filter-targetOrgId"
       name="targetOrgId"
       type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       value={filters?.targetOrgId ?? ''}
       aria-describedby="platform-audit-org-help"
     />
@@ -63,7 +63,7 @@
       id="filter-targetUserId"
       name="targetUserId"
       type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       value={filters?.targetUserId ?? ''}
       aria-describedby="platform-audit-user-help"
     />

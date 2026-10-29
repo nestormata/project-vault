@@ -51,7 +51,7 @@
       <input
         id="new-domain"
         type="text"
-        class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
         placeholder="acme.com"
         aria-describedby="new-domain-help"
         bind:value={newDomain}
@@ -64,7 +64,7 @@
       <input
         id="new-provider"
         type="text"
-        class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
         placeholder="e.g. test.mock-sso-extension"
         aria-describedby="new-provider-help"
         bind:value={newProvider}

@@ -29,7 +29,7 @@
     {/if}
     {#if canImport}
       <a
-        class="rounded-xl border border-slate-300 px-4 py-3 text-center font-semibold text-slate-900"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-3 text-center font-semibold text-slate-900"
         href={resolve(`/projects/${projectId}/credentials/import`)}
       >
         Import

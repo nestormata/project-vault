@@ -48,7 +48,7 @@
              ("{6}" reads as a mustache expression, producing pattern="[0-9]6" in the rendered
              DOM) — see MfaLoginForm.svelte's identical fix for the full explanation. -->
         <input
-          class="w-full rounded-xl border border-slate-300 px-3 py-2"
+          class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
           id="recovery-totp"
           inputmode="numeric"
           pattern={'[0-9]{6}'}

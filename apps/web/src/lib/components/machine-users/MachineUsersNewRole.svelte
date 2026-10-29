@@ -19,7 +19,7 @@
   <label class="block font-medium text-slate-900" for="machine-user-role">Role</label>
   <select
     id="machine-user-role"
-    class="w-full rounded-xl border border-slate-300 px-3 py-3"
+    class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
     aria-describedby="machine-user-role-help"
     bind:value={role}
   >

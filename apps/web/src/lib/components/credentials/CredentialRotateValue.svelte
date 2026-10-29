@@ -18,7 +18,7 @@
   <label class="block font-medium text-slate-900" for="rotation-new-value">New value</label>
   <textarea
     id="rotation-new-value"
-    class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3 font-mono"
+    class="min-h-24 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3 font-mono"
     bind:value={form.newValue}
     disabled={form.rotationActive}
     autocomplete="off"

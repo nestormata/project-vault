@@ -11,7 +11,7 @@
   // One spread keeps the server-rendered attribute order of the original markup (id, class), which the byte-identical render oracles pin.
   const attributes = $derived({
     id,
-    class: 'rounded-xl border border-slate-300 px-3 py-2 text-sm',
+    class: 'rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm',
   })
 </script>
 

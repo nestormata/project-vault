@@ -101,7 +101,7 @@
         </label>
         <input
           id="credential-name"
-          class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3"
+          class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
           type="text"
           name="credential-name"
           autocomplete="off"
@@ -122,7 +122,7 @@
         <div class="mt-1 flex gap-2">
           <input
             id="credential-value"
-            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
             type={revealValue ? 'text' : 'password'}
             autocomplete="new-password"
             inputmode="text"
@@ -132,7 +132,7 @@
             aria-describedby="onboarding-credential-value-help"
           />
           <button
-            class="min-h-11 min-w-11 rounded-xl border border-slate-300 px-3 text-sm"
+            class="min-h-11 min-w-11 rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 text-sm"
             type="button"
             aria-label={revealValue ? 'Hide value' : 'Show value'}
             aria-pressed={revealValue}
@@ -155,7 +155,7 @@
         </label>
         <textarea
           id="credential-description"
-          class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3"
+          class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
           rows="2"
           bind:value={description}
           aria-describedby="onboarding-credential-description-help"></textarea>
@@ -168,7 +168,7 @@
         </label>
         <input
           id="credential-tags"
-          class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3"
+          class="mt-1 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
           type="text"
           placeholder="production, api"
           bind:value={tags}
@@ -193,7 +193,7 @@
           {submitting ? 'Saving…' : 'Save Secret'}
         </button>
         <button
-          class="min-h-11 min-w-11 rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium disabled:opacity-50"
+          class="min-h-11 min-w-11 rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-3 text-sm font-medium disabled:opacity-50"
           type="button"
           disabled={!credentialSaved}
           onclick={onCredentialCreated}

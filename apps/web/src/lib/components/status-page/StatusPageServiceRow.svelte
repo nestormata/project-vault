@@ -31,7 +31,7 @@
   <div class="flex min-w-0 flex-1 items-center gap-2">
     {#if row.current}
       <input
-        class="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+        class="min-w-0 flex-1 rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-sm"
         type="text"
         placeholder="Public display name"
         value={row.current.displayName}
@@ -46,7 +46,7 @@
   <div class="flex shrink-0 items-center gap-1">
     {#if row.current && selectedCount > 1}
       <button
-        class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+        class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
         type="button"
         aria-label={`Move ${row.label} up`}
         disabled={isBusy || row.index === 0}
@@ -55,7 +55,7 @@
         ↑
       </button>
       <button
-        class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+        class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
         type="button"
         aria-label={`Move ${row.label} down`}
         disabled={isBusy || row.index === selectedCount - 1}

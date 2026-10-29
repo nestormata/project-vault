@@ -169,7 +169,7 @@
       </p>
       <div class="mt-5 flex justify-end gap-3">
         <button
-          class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
           type="button"
           onclick={cancelConfirmation}
           disabled={submitting}

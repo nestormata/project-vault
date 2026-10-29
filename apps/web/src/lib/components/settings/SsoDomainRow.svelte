@@ -42,7 +42,7 @@
   {#if editing}
     <td class="px-4 py-3">
       <input
-        class="w-full rounded-lg border border-slate-300 px-2 py-1"
+        class="w-full rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
         aria-label="Domain"
         bind:value={editDomain}
         aria-describedby={`edit-domain-help-${row.id}`}
@@ -51,7 +51,7 @@
     </td>
     <td class="px-4 py-3">
       <input
-        class="w-full rounded-lg border border-slate-300 px-2 py-1"
+        class="w-full rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
         aria-label="Provider name"
         bind:value={editProvider}
         aria-describedby={`edit-provider-help-${row.id}`}

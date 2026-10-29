@@ -20,7 +20,7 @@
   <label class="block font-medium text-slate-900" for="credential-value">Value</label>
   <input
     id="credential-value"
-    class="w-full rounded-xl border border-slate-300 px-3 py-3 font-mono"
+    class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3 font-mono"
     type="password"
     bind:value
     autocomplete="new-password"

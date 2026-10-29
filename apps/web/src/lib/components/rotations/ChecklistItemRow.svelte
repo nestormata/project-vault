@@ -220,7 +220,7 @@
         </button>
         <button
           type="button"
-          class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-60"
+          class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-medium disabled:opacity-60"
           disabled={submitting}
           onclick={startFail}
         >
@@ -229,7 +229,7 @@
       {:else if item.status === 'failed'}
         <button
           type="button"
-          class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-60"
+          class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-medium disabled:opacity-60"
           disabled={submitting}
           onclick={() => void retry()}
         >
@@ -262,7 +262,7 @@
         </label>
         <textarea
           id={`fail-reason-${item.id}`}
-          class="w-full rounded-xl border border-slate-300 px-3 py-2"
+          class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
           bind:value={failReason}
           aria-describedby={`checklist-fail-reason-help-${item.id}`}></textarea>
         <FormHelpText id={`checklist-fail-reason-help-${item.id}`} kind="text" />
@@ -274,7 +274,7 @@
         </label>
         <input
           id={`retry-at-${item.id}`}
-          class="rounded-xl border border-slate-300 px-3 py-2"
+          class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
           type="datetime-local"
           bind:value={retryScheduledAt}
           aria-describedby={`checklist-retry-at-help-${item.id}`}
@@ -291,7 +291,7 @@
           </button>
           <button
             type="button"
-            class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium"
+            class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-medium"
             onclick={cancelFail}
           >
             Cancel

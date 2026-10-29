@@ -13,7 +13,7 @@
   </label>
   <input
     id="dependency-system-name"
-    class="w-full rounded-xl border border-slate-300 px-3 py-2"
+    class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
     type="text"
     required
     bind:value={controller.depSystemName}

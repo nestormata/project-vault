@@ -46,7 +46,7 @@
   class="rounded-xl border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 {variant ===
   'danger'
     ? 'border-red-300 text-red-700'
-    : 'border-slate-300 text-slate-900'}"
+    : 'border-[color:var(--color-border-strong,#64748b)] text-slate-900'}"
   disabled={disabled || pending}
   onclick={() => void handleClick()}
 >
