@@ -11,6 +11,9 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **`app.layout.dialogs` injection point** (Epic 72 fix). The app-wide confirm dialog host added by Story 72.5 now
+  sits in an `@region app.layout.dialogs` component, so the `monolithic-region` guard (R3) passes on a composed
+  tree. One new additive point (`StandardPointProps`) on the `(app)` layout.
 - **Extension project writes get the project-role gate** (Story 69-18, `@project-vault/extension-api`
   3.37.0). An extension route under a `:projectId` segment that writes (`POST`, `PUT`, `PATCH`,
   `DELETE`), added through `apiRoutes` or re-secured with `replaceSecurity`, now refuses a project
