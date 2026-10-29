@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte'
 import { createRawSnippet } from 'svelte'
 import { setLocale } from '$lib/paraglide/runtime.js'
 
@@ -201,8 +201,37 @@ describe('AppShell.svelte', () => {
 
     expect(screen.getByText('Role: admin')).toBeTruthy()
     expect(screen.getByText('Org: Test Org')).toBeTruthy()
-    await fireEvent.click(screen.getByRole('button', { name: /search/i }))
-    expect(onsearch).toHaveBeenCalled()
+    // The nav's icon button (narrow screens) and the header field (md and up) both open it.
+    const nav = screen.getByRole('navigation', { name: 'Primary navigation' })
+    await fireEvent.click(within(nav).getByRole('button', { name: /search/i }))
+    expect(onsearch).toHaveBeenCalledTimes(1)
+    await fireEvent.click(screen.getByTestId('header-search-field'))
+    expect(onsearch).toHaveBeenCalledTimes(2)
+  })
+
+  // Story 72.6 (P3a)
+  it('has a main landmark the skip link can target, focusable by the link only', () => {
+    render(AppShell, { props: { user: baseUser(), children: childrenSnippet() } })
+
+    const main = screen.getByRole('main')
+    expect(main.id).toBe('main-content')
+    expect(main.getAttribute('tabindex')).toBe('-1')
+  })
+
+  it('shows the header search field with its Ctrl K hint, and not while onboarding', () => {
+    const { unmount } = render(AppShell, {
+      props: { user: baseUser(), children: childrenSnippet() },
+    })
+    const field = screen.getByTestId('header-search-field')
+    expect(field.textContent).toContain('Search projects and secrets')
+    expect(field.textContent).toContain('Ctrl K')
+    expect(field.getAttribute('aria-keyshortcuts')).toBe('Control+K Meta+K')
+    expect(field.getAttribute('aria-label')).toBe('Search')
+    unmount()
+    render(AppShell, {
+      props: { user: baseUser(), children: childrenSnippet(), hidePrimaryNav: true },
+    })
+    expect(screen.queryByTestId('header-search-field')).toBeNull()
   })
 
   it('signs out successfully: calls logout then redirects to login with a logged-out reason', async () => {

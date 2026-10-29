@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte'
   import OnboardingWizard from '$lib/components/onboarding/OnboardingWizard.svelte'
   import AppShell from '$lib/components/shell/AppShell.svelte'
+  import SkipLink from '$lib/components/shell/SkipLink.svelte'
   import { m } from '$lib/paraglide/messages.js'
 
   let {
@@ -48,6 +49,8 @@
 </svelte:head>
 
 <div data-theme={appliedTheme ?? undefined}>
+  <!-- Story 72.6: the first tab stop, ahead of the orphaned-theme notice's Dismiss button. -->
+  <SkipLink />
   {#if orphanedNoticeVisible}
     <div
       role="alert"

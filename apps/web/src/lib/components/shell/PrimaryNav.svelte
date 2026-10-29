@@ -144,7 +144,7 @@
         </button>
       {:else}
         <button
-          class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800"
+          class={`flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800${node.id === 'primary.search' ? ' md:hidden' : ''}`}
           type="button"
           aria-label={node.title || undefined}
           title={node.title || undefined}
