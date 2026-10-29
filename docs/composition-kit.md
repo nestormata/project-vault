@@ -356,20 +356,20 @@ resolved path like any other (M4), and each carries `@pv-stable` in its first co
 a change to them is a minor bump of `@project-vault/web-host`. No existing component is retro-stamped. The
 `component-index.json` of the pack lists them with `stability: "stable"` (generated, never typed here).
 
-| Component                 | Props                                                                                                                                                          | Events / bindings | Status |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------ |
-| `ui/Button.svelte`        | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`      | `onclick`         | stable |
-| `ui/Field.svelte`         | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                        | none              | stable |
-| `ui/TextField.svelte`     | `id`, `label`, `value`, `name`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                      | `bind:value`      | stable |
-| `ui/Textarea.svelte`      | `id`, `label`, `value`, `name`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                      | `bind:value`      | stable |
-| `ui/Select.svelte`        | `id`, `label`, `value`, `name`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                  | `bind:value`      | stable |
-| `ui/ChoiceGroup.svelte`   | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled` | `bind:value`      | stable |
-| `ui/FieldMessages.svelte` | `id`, `hint`, `helpId`, `error`                                                                                                                                | none              | stable |
-| `ui/field-ids.ts`         | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                 | none              | stable |
-| `ui/control-classes.ts`   | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                | none              | stable |
-| `ui/Dialog.svelte`        | `open` (bindable), `id` (required), `title`, `description`, `dismissible` (default true), `onclose`, `children`, `footer`                                      | `bind:open`, `onclose` | stable |
-| `ui/ConfirmDialog.svelte` | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
-| `ui/ConfirmDialogHost.svelte` | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                   | none              | stable |
+| Component                     | Props                                                                                                                                                                        | Events / bindings                    | Status |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------ |
+| `ui/Button.svelte`            | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`                    | `onclick`                            | stable |
+| `ui/Field.svelte`             | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                                      | none                                 | stable |
+| `ui/TextField.svelte`         | `id`, `label`, `value`, `name`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                                    | `bind:value`                         | stable |
+| `ui/Textarea.svelte`          | `id`, `label`, `value`, `name`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                                    | `bind:value`                         | stable |
+| `ui/Select.svelte`            | `id`, `label`, `value`, `name`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                                | `bind:value`                         | stable |
+| `ui/ChoiceGroup.svelte`       | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled`               | `bind:value`                         | stable |
+| `ui/FieldMessages.svelte`     | `id`, `hint`, `helpId`, `error`                                                                                                                                              | none                                 | stable |
+| `ui/field-ids.ts`             | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                               | none                                 | stable |
+| `ui/control-classes.ts`       | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                              | none                                 | stable |
+| `ui/Dialog.svelte`            | `open` (bindable), `id` (required), `title`, `description`, `dismissible` (default true), `onclose`, `children`, `footer`                                                    | `bind:open`, `onclose`               | stable |
+| `ui/ConfirmDialog.svelte`     | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
+| `ui/ConfirmDialogHost.svelte` | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                                      | none                                 | stable |
 
 Contract rules: `id` is required and explicit (no generated ids, so the server and the browser cannot disagree); the
 control is named by its `<label for>` (or the fieldset `legend`); `aria-describedby` (on each input of a group) lists the error id first and the
@@ -767,7 +767,7 @@ every PV item id (its surface, parent and whether it has a visibility condition)
 | `primary`                                          | the primary nav (also the mobile nav)                                               | `user`, `hasUiPanelExtension`, `pathname`, `search` |
 | `project`                                          | the project tab bar                                                                 | `projectId`, `orgRole`, `pathname`                  |
 | `shell.brand`, `shell.utility`, `shell.mfa-banner` | the header brand link, the notifications bell, the MFA banner's settings link       | `hidePrimaryNav`, `unreadCount`, `bannerMessage`    |
-| `account`                                          | the account menu (`account.sign-out` is an action)                                  | `user`                                              |
+| `account`                                          | the account menu (`account.sign-out`, `account.shortcuts` are actions)              | `user`                                              |
 | `footer`                                           | the footer links (external)                                                         | none                                                |
 | `settings.index`, `platform.index`                 | the section index cards (`label` + `description`)                                   | none                                                |
 | `platform.settings.links`, `settings.audit.links`  | sub-section link rows                                                               | none                                                |
@@ -871,6 +871,49 @@ Rules:
   access with protected paths and the API's authorization.
 - **Runtime is total (Q7).** In production an invalid op, or a CM callback that throws, costs only that
   op or item; the page renders. In dev the first render throws with every problem.
+
+### Section labels, badges, statuses and the shell controls (Epic 72, Story 72-6)
+
+`@project-vault/composition-kit/nav` (kit 0.10.0, additive) gains two optional item fields, mirrored in web-host's
+nav model (the contract test proves both shapes assignable both ways):
+
+- `badge?: NavLabel` is short text shown as a chip next to the label (a count or "New"). It is evaluated per render
+  like a label; an empty string means no badge.
+- `status?: 'info' | 'success' | 'warning' | 'danger'` is the badge's tone, or, on an item with no badge text, a small
+  dot with a screen-reader word ("Info", "OK", "Needs attention", "Problem", in `en` and `es`), so the tone is never
+  conveyed by colour alone. Any other value is a bad item (dev throws with the id, production drops the item).
+
+The primary nav, the account menu and every surface rendered through `NavEntry` (brand, utility, footer, back and
+auth links) show them; the tab bars, index cards and breadcrumbs ignore both fields. A **top-level `group`** (an item
+with children and no link of its own, directly under the primary surface root) renders as a **section label**: its
+label names a `role="group"` and its children follow it at the same level. A group nested in a section, or at any
+other depth, and any item with an `href` and children, still render as the native `<details>` disclosure of 68-7. A
+pack that relied on a top-level `group` being a disclosure gives that item an `href`, or nests it one level down.
+
+The shell gets four PV-owned controls, none of them a nav item and none a CM fork of `AppShell` (68-5 split the header
+on purpose):
+
+- **Skip link** (`shell/SkipLink.svelte`, rendered first by `AppLayoutShell`): the first tab stop of every `(app)`
+  page, ahead of the orphaned-theme notice. It targets `<main id="main-content" tabindex="-1">` of `AppShell`.
+- **Header search field** (`shell/HeaderSearchField.svelte`, between the brand and the bell, from the `md` breakpoint
+  up, hidden while onboarding): a field-shaped button with the hint `Ctrl K` that calls the same `onsearch` the nav's
+  search button calls, so it opens whichever `GlobalSearch` is mounted (PV's or a CM replacement). `primary.search`
+  keeps its id and its action and is shown below `md` only (it gains `md:hidden`).
+- **Account dropdown** (`shell/AccountMenu.svelte`, a `<details>` disclosure labelled "Account menu"): lists the
+  `account` surface. PV's items, in order: `account.account` (to `/settings`), `account.language`
+  (`/settings/language`), `account.shortcuts` (an action), `account.help` (external, PV's documentation) and
+  `account.sign-out`. Items a pack inserts `before: 'account.sign-out'` land between Help and Sign out. Escape and a
+  click outside close it; choosing an item closes it.
+- **Keyboard shortcuts dialog** (`shell/ShortcutsDialogHost.svelte`, mounted in `routes/(app)/+layout.svelte` next to
+  `ConfirmDialogHost`, state in `$lib/state/shortcuts.svelte.ts`): the PV-owned host the `account.shortcuts` action
+  opens, on the shared `Dialog`.
+
+**CM impact.** None of `GlobalSearch.svelte` or `ShellBrand.svelte` (CM's two replacements) is touched by this story, so
+neither `hostSha256` changes. The new native ids `account.account`, `account.language`, `account.shortcuts` and
+`account.help` are inherited automatically (`pv-compose` notes them). CM's own `cm.account.language` now duplicates
+`account.language`: CM drops its own insert or hides the native one. `account.sign-out` keeps its id and action. The account surface now renders inside a dropdown, so a
+Playwright step that clicked "Sign out" opens the "Account menu" first. The `AppShell` characterization and the
+`(app)/+layout.svelte` route snapshots changed (re-recorded under 72-1 D1).
 
 ### At compose time
 

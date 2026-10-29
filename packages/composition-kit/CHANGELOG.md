@@ -4,6 +4,13 @@
 
 ## 0.10.0
 
+- **Nav items may carry a `badge` and a `status`** (Story 72-6, additive). `badge` is short text shown as a chip
+  (a label: a string or a function evaluated per render); `status` (`'info' | 'success' | 'warning' | 'danger'`) is its
+  tone, or, with no badge text, a status dot with a screen-reader word. New exported type `NavStatus`. A newer web-host
+  renders them on the primary nav, the account menu and the `NavEntry` surfaces; an older one ignores both fields. In
+  the same web-host a top-level `group` of the primary nav renders as a section label instead of a disclosure (give the
+  item an `href`, or nest it, to keep a disclosure). Not a lock or CLI change. 0.10.0 is not published yet, so these
+  fields join the entry below instead of a new version.
 - **`pv-verify --only tsconfig --out <file>`: the composed `svelte-check` configuration** (Story 68-26). Writes
   a tsconfig that extends the app's `tsconfig.json` and excludes exactly the lock's `excludedPvTests` (plus
   the app tsconfig's own `exclude`, which an extending config would otherwise replace), so `svelte-check
