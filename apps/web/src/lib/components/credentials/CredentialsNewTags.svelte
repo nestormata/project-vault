@@ -17,7 +17,7 @@
   <label class="block font-medium text-slate-900" for="credential-tags">Tags</label>
   <input
     id="credential-tags"
-    class="w-full rounded-xl border border-slate-300 px-3 py-3"
+    class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3"
     type="text"
     placeholder="production, api"
     bind:value={tags}

@@ -14,7 +14,7 @@
   </label>
   <input
     id="dependency-link-url"
-    class="w-full rounded-xl border border-slate-300 px-3 py-2"
+    class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
     type="url"
     placeholder="https://…"
     aria-describedby="dependency-link-url-help dependency-link-url-security-note"

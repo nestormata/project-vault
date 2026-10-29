@@ -25,7 +25,7 @@
       </label>
       <textarea
         id="new-version-value"
-        class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm"
+        class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 font-mono text-sm"
         bind:value={controller.newVersionValue}
         aria-describedby="new-version-value-help"></textarea>
       <FormHelpText id="new-version-value-help" kind="secret" />

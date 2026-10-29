@@ -14,7 +14,7 @@
   </label>
   <select
     id="dependency-system-type"
-    class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+    class="w-full max-w-xs rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
     aria-describedby="dependency-system-type-help"
     bind:value={controller.depSystemType}
   >

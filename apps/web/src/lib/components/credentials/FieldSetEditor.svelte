@@ -23,7 +23,7 @@
   <div class="space-y-1 rounded-xl border border-slate-200 p-3">
     <div class="flex flex-wrap items-center gap-2">
       <input
-        class="flex-1 rounded-lg border border-slate-300 px-2 py-2 text-sm"
+        class="flex-1 rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-2 text-sm"
         type="text"
         placeholder="field name"
         aria-label={`Field ${index + 1} name`}
@@ -32,14 +32,14 @@
       />
       {#if multilineValue}
         <textarea
-          class="min-h-32 flex-1 rounded-lg border border-slate-300 px-2 py-2 font-mono text-sm"
+          class="min-h-32 flex-1 rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-2 font-mono text-sm"
           placeholder="value"
           aria-label={`Field ${index + 1} value`}
           aria-describedby={`credential-field-value-help-${index}`}
           bind:value={field.value}></textarea>
       {:else}
         <input
-          class="flex-1 rounded-lg border border-slate-300 px-2 py-2 font-mono text-sm"
+          class="flex-1 rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-2 font-mono text-sm"
           type={field.sensitive ? 'password' : 'text'}
           placeholder="value"
           aria-label={`Field ${index + 1} value`}
@@ -74,7 +74,7 @@
   </div>
 {/each}
 <button
-  class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium"
+  class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-medium"
   type="button"
   onclick={onAdd}
 >

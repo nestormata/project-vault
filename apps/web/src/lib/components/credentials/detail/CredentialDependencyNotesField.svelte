@@ -11,7 +11,7 @@
   <label class="block text-sm font-medium text-slate-800" for="dependency-notes"> Notes </label>
   <textarea
     id="dependency-notes"
-    class="w-full rounded-xl border border-slate-300 px-3 py-2"
+    class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
     bind:value={controller.depNotes}
     aria-describedby="dependency-notes-help"></textarea>
   <FormHelpText id="dependency-notes-help" kind="text" />

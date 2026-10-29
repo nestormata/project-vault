@@ -13,7 +13,7 @@
 >
 <input
   id="credential-search"
-  class="w-full rounded-xl border border-slate-300 px-3 py-2 sm:col-start-1 sm:row-start-2"
+  class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 sm:col-start-1 sm:row-start-2"
   type="search"
   name="q"
   value={filters.q}
@@ -30,7 +30,7 @@
 >
 <select
   id="credential-status"
-  class="rounded-xl border border-slate-300 px-3 py-2 sm:col-start-2 sm:row-start-2"
+  class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 sm:col-start-2 sm:row-start-2"
   name="status"
   value={filters.status}
   aria-describedby="credential-status-help"
@@ -50,7 +50,7 @@
 >
 <input
   id="credential-tags"
-  class="w-full rounded-xl border border-slate-300 px-3 py-2 sm:col-start-3 sm:row-start-2"
+  class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 sm:col-start-3 sm:row-start-2"
   type="text"
   name="tags"
   value={filters.tags}

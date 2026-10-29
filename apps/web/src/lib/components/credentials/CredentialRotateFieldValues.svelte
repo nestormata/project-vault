@@ -26,7 +26,7 @@
       </label>
       <textarea
         id={`rotation-value-${fieldKey}`}
-        class="min-h-16 w-full rounded-xl border border-slate-300 px-3 py-3 font-mono"
+        class="min-h-16 w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-3 font-mono"
         value={form.fieldValues.get(fieldKey) ?? ''}
         oninput={(event) =>
           form.setFieldValue(fieldKey, (event.currentTarget as HTMLTextAreaElement).value)}

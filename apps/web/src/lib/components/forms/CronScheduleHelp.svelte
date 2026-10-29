@@ -50,7 +50,7 @@
 <svelte:window onkeydown={handleWindowKeydown} />
 
 <button
-  class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-full border border-slate-300 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+  class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-full border border-[color:var(--color-border-strong,#64748b)] text-sm font-semibold text-slate-700 hover:bg-slate-100"
   type="button"
   aria-label={m.form_help_rotation_help_label()}
   aria-haspopup="dialog"

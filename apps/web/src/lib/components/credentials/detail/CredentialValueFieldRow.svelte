@@ -55,7 +55,7 @@
       >
       {#if controller.canReveal}
         <button
-          class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium"
+          class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-xs font-medium"
           type="button"
           onclick={() => controller.hideField(meta.key)}
         >
@@ -66,7 +66,7 @@
       <span class="text-slate-400" data-testid={`field-masked-${meta.key}`}>••••••••</span>
       {#if controller.canReveal}
         <button
-          class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium disabled:opacity-60"
+          class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-xs font-medium disabled:opacity-60"
           type="button"
           disabled={controller.revealingField === meta.key}
           onclick={() => void controller.revealSingleField(meta.key)}
@@ -77,7 +77,7 @@
     {/if}
     {#if controller.canReveal}
       <button
-        class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium disabled:opacity-60"
+        class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-xs font-medium disabled:opacity-60"
         type="button"
         aria-describedby={copyHelpId}
         disabled={isCopyingField}
