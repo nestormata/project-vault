@@ -90,9 +90,9 @@ const mount = (overrides: Record<string, unknown> = {}) =>
   render(Section, { props: propsFor(overrides) })
 const button = (name: string | RegExp): HTMLElement => screen.getByRole('button', { name })
 
-const SECRET = 'REVEAL-CONTRACT-FIXTURE'
+const REVEALED_TEXT = 'REVEAL-CONTRACT-FIXTURE'
 
-function revealOnce(value = SECRET) {
+function revealOnce(value = REVEALED_TEXT) {
   revealMock.mockResolvedValueOnce({ value, versionNumber: 3 })
 }
 
@@ -112,11 +112,11 @@ describe('reveal contract (72-8)', () => {
     revealOnce()
     mount()
     await fireEvent.click(button('Reveal value'))
-    await waitFor(() => expect(screen.getByText(SECRET)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(REVEALED_TEXT)).toBeTruthy())
     await vi.advanceTimersByTimeAsync(29_000)
-    expect(screen.queryByText(SECRET)).not.toBeNull()
+    expect(screen.queryByText(REVEALED_TEXT)).not.toBeNull()
     await vi.advanceTimersByTimeAsync(1_500)
-    await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull())
+    await waitFor(() => expect(screen.queryByText(REVEALED_TEXT)).toBeNull())
     expect(screen.queryByRole('button', { name: 'Extend' })).toBeNull()
   })
 
@@ -126,15 +126,15 @@ describe('reveal contract (72-8)', () => {
     revealOnce()
     mount()
     await fireEvent.click(button('Reveal value'))
-    await waitFor(() => expect(screen.getByText(SECRET)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(REVEALED_TEXT)).toBeTruthy())
     await vi.advanceTimersByTimeAsync(20_000)
     await fireEvent.click(button('Extend'))
     await waitFor(() => expect(revealMock).toHaveBeenCalledTimes(2))
     // 20 s + 20 s: past the first window, inside the second.
     await vi.advanceTimersByTimeAsync(20_000)
-    expect(screen.queryByText(SECRET)).not.toBeNull()
+    expect(screen.queryByText(REVEALED_TEXT)).not.toBeNull()
     await vi.advanceTimersByTimeAsync(11_000)
-    await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull())
+    await waitFor(() => expect(screen.queryByText(REVEALED_TEXT)).toBeNull())
   })
 
   it('a failed Extend hides the value instead of leaving it on screen', async () => {
@@ -144,10 +144,10 @@ describe('reveal contract (72-8)', () => {
     )
     mount()
     await fireEvent.click(button('Reveal value'))
-    await waitFor(() => expect(screen.getByText(SECRET)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(REVEALED_TEXT)).toBeTruthy())
     await fireEvent.click(button('Extend'))
     await waitFor(() => expect(revealMock).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull())
+    await waitFor(() => expect(screen.queryByText(REVEALED_TEXT)).toBeNull())
   })
 
   it('drops a reveal that lands after the tab was hidden', async () => {
@@ -156,31 +156,31 @@ describe('reveal contract (72-8)', () => {
     mount()
     await fireEvent.click(button('Reveal value'))
     setVisibility('hidden')
-    resolve({ value: SECRET, versionNumber: 3 })
+    resolve({ value: REVEALED_TEXT, versionNumber: 3 })
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /reveal value/i })).not.toBeNull()
     )
-    expect(screen.queryByText(SECRET)).toBeNull()
+    expect(screen.queryByText(REVEALED_TEXT)).toBeNull()
   })
 
   it('hides when the tab becomes hidden', async () => {
     revealOnce()
     mount()
     await fireEvent.click(button('Reveal value'))
-    await waitFor(() => expect(screen.getByText(SECRET)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(REVEALED_TEXT)).toBeTruthy())
     setVisibility('hidden')
-    await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull())
+    await waitFor(() => expect(screen.queryByText(REVEALED_TEXT)).toBeNull())
   })
 
   it('hides on a bfcache restore (pageshow persisted) but not on a normal pageshow', async () => {
     revealOnce()
     mount()
     await fireEvent.click(button('Reveal value'))
-    await waitFor(() => expect(screen.getByText(SECRET)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(REVEALED_TEXT)).toBeTruthy())
     window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }))
-    expect(screen.queryByText(SECRET)).not.toBeNull()
+    expect(screen.queryByText(REVEALED_TEXT)).not.toBeNull()
     window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
-    await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull())
+    await waitFor(() => expect(screen.queryByText(REVEALED_TEXT)).toBeNull())
   })
 
   it('registers a before-navigation hide and leaves nothing behind after unmount', async () => {
@@ -189,15 +189,15 @@ describe('reveal contract (72-8)', () => {
     const view = mount()
     expect(beforeNavigate).toHaveBeenCalled()
     await fireEvent.click(button('Reveal value'))
-    await waitFor(() => expect(screen.getByText(SECRET)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(REVEALED_TEXT)).toBeTruthy())
     view.unmount()
-    expect(document.body.textContent).not.toContain(SECRET)
+    expect(document.body.textContent).not.toContain(REVEALED_TEXT)
   })
 
   it('hides every revealed field together, and each field Extend re-reveals only that field', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     revealMock.mockResolvedValue({
-      fields: [{ key: 'password', value: SECRET, sensitive: true }],
+      fields: [{ key: 'password', value: REVEALED_TEXT, sensitive: true }],
       schemaVersion: 2,
       versionNumber: 3,
     })
@@ -213,12 +213,12 @@ describe('reveal contract (72-8)', () => {
   })
 
   it('copy without reveal is requested as a copy, never as a view', async () => {
-    revealMock.mockResolvedValueOnce({ value: SECRET, versionNumber: 3 })
+    revealMock.mockResolvedValueOnce({ value: REVEALED_TEXT, versionNumber: 3 })
     mount()
     await fireEvent.click(button(/copy secret value without revealing/i))
     await waitFor(() => expect(revealMock).toHaveBeenCalledTimes(1))
     expect(revealMock.mock.calls[0]?.[3]).toEqual({ purpose: 'copy' })
-    expect(screen.queryByText(SECRET)).toBeNull()
+    expect(screen.queryByText(REVEALED_TEXT)).toBeNull()
   })
 
   it('states one clipboard limit and never promises an automatic clear', async () => {

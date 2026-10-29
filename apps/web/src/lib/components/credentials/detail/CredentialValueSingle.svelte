@@ -3,6 +3,7 @@
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { m } from '$lib/paraglide/messages.js'
+  import CredentialRevealedActions from './CredentialRevealedActions.svelte'
   import type { CredentialValueRegionProps } from './credential-value-controller.svelte.js'
 
   // AC-6: legacy/single-default-field secret — the single reveal button and <pre> block, byte for
@@ -39,32 +40,7 @@
   {:else}
     <pre
       class="mt-4 overflow-x-auto rounded-xl bg-slate-950 p-4 font-mono text-sm text-white">{controller.revealedValue}</pre>
-    <div class="mt-3 flex gap-3">
-      <button
-        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium"
-        type="button"
-        aria-describedby="credential-copy-revealed-help"
-        onclick={() => void controller.copyValue()}
-      >
-        {m.credential_copy_revealed_label()}
-      </button>
-      <button
-        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium"
-        type="button"
-        onclick={() => controller.hideValue()}
-      >
-        Hide
-      </button>
-      <button
-        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium disabled:opacity-60"
-        type="button"
-        aria-describedby="credential-reveal-auto-hide-help"
-        disabled={controller.revealing}
-        onclick={() => void controller.extendValue()}
-      >
-        {m.credential_reveal_extend()}
-      </button>
-    </div>
+    <CredentialRevealedActions {controller} />
     <FormHelpText
       id="credential-reveal-auto-hide-help"
       text={m.credential_reveal_auto_hide_help()}
