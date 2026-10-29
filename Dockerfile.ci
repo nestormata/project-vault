@@ -11,7 +11,7 @@
 # (docker-compose.ci.yml) — the git-history-dependent checks (generated-spec/openapi drift and
 # other repository checks) need real repo metadata, and bind-mounting it avoids having to rebuild this image on every
 # commit just to keep `.git` current.
-FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f
+FROM node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
 
 RUN npm install -g pnpm@11.28.8 --ignore-scripts
 # g++/make/python3: argon2 (packages/crypto) native rebuild, same as apps/api/Dockerfile.
