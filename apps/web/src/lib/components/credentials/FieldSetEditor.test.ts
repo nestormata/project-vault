@@ -101,3 +101,30 @@ describe('isMainField (72-10)', () => {
     expect(isMainField({ key: 'password' })).toBe(false)
   })
 })
+
+describe('rotate form and edit round trip (72-10)', () => {
+  it('keeps a lone multiline field kind when the edit form is rebuilt from a bare reveal', async () => {
+    const { parseRevealedFields } = await import('$lib/api/credentials.js')
+    const rebuilt = parseRevealedFields([{ key: 'note', sensitive: true, kind: 'multiline' }], {
+      value: 'a\nb',
+      versionNumber: 1,
+      retrievedAt: '2026-10-29T00:00:00.000Z',
+    })
+    expect(rebuilt).toEqual([{ key: 'note', value: 'a\nb', sensitive: true, kind: 'multiline' }])
+  })
+
+  it('offers no whole-secret rotation and no totp target when a seed exists', async () => {
+    const { RotateFormController } = await import('./rotate-form.svelte.js')
+    const form = new RotateFormController(() => ({
+      projectId: 'p',
+      credentialId: 'c',
+      fieldMeta: [{ key: 'password' }, { key: 'otp', kind: 'totp' }],
+      activeRotationId: null,
+      hasTotpField: true,
+    }))
+    expect(form.showFieldSelector).toBe(true)
+    expect(form.hasTotpField).toBe(true)
+    expect(form.rotationMode).toBe('specific')
+    expect(form.fieldMeta.map((item) => item.key)).toEqual(['password'])
+  })
+})

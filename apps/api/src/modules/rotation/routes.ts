@@ -1124,6 +1124,13 @@ export function rotationRoutes(fastify: FastifyApp): Promise<void> {
           rotationId: result.rotationId,
         })
       }
+      if (result.status === 'totp_field_unsupported') {
+        return reply.status(422).send({
+          code: 'totp_rotation_unsupported' as const,
+          message:
+            'This secret has a one-time-password field; break-glass would discard its seed. Edit the fields instead.',
+        })
+      }
       if (!isCredentialFound(result)) {
         return reply.status(404).send(CREDENTIAL_NOT_FOUND)
       }

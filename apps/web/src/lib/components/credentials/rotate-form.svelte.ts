@@ -13,8 +13,10 @@ import { mapRotationMutationError } from '$lib/components/rotations/rotation-cop
 export interface RotateFormSource {
   projectId: string
   credentialId: string
-  fieldMeta: readonly { key: string }[] | null
+  fieldMeta: readonly { key: string; kind?: string | undefined }[] | null
   activeRotationId: string | null
+  // Story 72.10: computed by the page load; a strict boolean so no loose value can switch it on.
+  hasTotpField?: boolean | undefined
 }
 
 /** The message of a start-rotation failure that is neither a confirm prompt nor a conflict. */
@@ -51,16 +53,32 @@ export class RotateFormController {
   // a legacy/single-field credential renders exactly today's single-textarea form, unchanged
   // (AC-7). `fieldMeta` is null while the vault is sealed / access is denied — treated the
   // same as "no selector" since the form isn't rendered in that branch anyway.
-  get fieldMeta(): readonly { key: string }[] {
+  get allFieldMeta(): readonly { key: string; kind?: string | undefined }[] {
     return this.source().fieldMeta ?? []
   }
+  // Story 72.10: a one-time-password seed is replaced from the edit form, never rotated, so it is
+  // not offered as a target.
+  get fieldMeta(): readonly { key: string }[] {
+    return this.allFieldMeta.filter((entry) => entry.kind !== 'totp')
+  }
+  get hasTotpField(): boolean {
+    return this.source().hasTotpField === true
+  }
   get showFieldSelector(): boolean {
-    return this.fieldMeta.length > 1
+    return this.allFieldMeta.length > 1
   }
   // Default mode is whole-secret — byte-identical to pre-13.4 behavior unless the user
   // explicitly opts into field-scoping (judgment call: the safer default preserves
   // existing behavior rather than forcing an explicit choice).
-  rotationMode = $state<'whole' | 'specific'>('whole')
+  #mode = $state<'whole' | 'specific'>('whole')
+  // A whole-secret rotation would discard a one-time-password seed, so such a secret only rotates
+  // specific fields.
+  get rotationMode(): 'whole' | 'specific' {
+    return this.hasTotpField ? 'specific' : this.#mode
+  }
+  set rotationMode(next: 'whole' | 'specific') {
+    this.#mode = next
+  }
   selectedFields = $state<string[]>([])
   // Story 13.5 AC-8: once 2+ fields are checked, one labeled value input replaces the single
   // shared textarea — this map holds each field's own typed value, keyed by field KEY (not

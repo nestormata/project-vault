@@ -95,7 +95,9 @@ export class CredentialValueController extends CredentialSectionController<Crede
     try {
       const result = await generateCredentialTotp(fetch, this.projectId, this.credentialId, key)
       if (!this.#isCurrentCredential(requestKey) || generation !== this.#hideGeneration) return
-      const expiresAtMs = Date.parse(result.expiresAt)
+      // The server's remaining seconds, not its clock: a skewed client clock must not hide the code at
+      // once or keep an expired one on screen.
+      const expiresAtMs = Date.now() + result.secondsRemaining * 1000
       this.totpCodes = { ...this.totpCodes, [key]: { code: result.code, expiresAtMs } }
       this.#armAutoHide(
         totpSlot(key),

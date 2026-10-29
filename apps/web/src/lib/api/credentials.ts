@@ -340,7 +340,14 @@ export function parseRevealedFields(
     )
   }
   const only = fieldMeta[0] ?? { key: DEFAULT_FIELD_KEY, sensitive: true }
-  return [{ key: only.key, value: revealed.value, sensitive: only.sensitive }]
+  return [
+    {
+      key: only.key,
+      value: revealed.value,
+      sensitive: only.sensitive,
+      ...('kind' in only && only.kind ? { kind: only.kind } : {}),
+    },
+  ]
 }
 
 /** Story 72.10: one current code of a one-time-password field. The seed never reaches the browser. */

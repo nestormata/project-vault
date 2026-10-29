@@ -354,6 +354,29 @@ export async function rejectIfInsufficientProjectRoleForReveal(
   return true
 }
 
+/** Story 72.10: the visibility gate followed by the reveal's project-role floor, in that order, for
+ *  routes that sit on the reveal boundary (the one-time-code route). Returns true when the reply was
+ *  already sent. */
+export async function rejectUnlessCredentialRevealAllowed(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  projectId: string,
+  credentialId: string
+): Promise<boolean> {
+  if (await rejectIfProjectNotVisible(secureCtx, req, reply, projectId, CREDENTIAL_NOT_FOUND)) {
+    return true
+  }
+  return rejectIfInsufficientProjectRoleForReveal(
+    secureCtx,
+    req,
+    reply,
+    projectId,
+    credentialId,
+    'reveal'
+  )
+}
+
 /**
  * Story 4.5 AC-V4: combines the visibility gate with the existing archived-project guard for
  * mutation routes, keeping each individual handler's own branching count low.

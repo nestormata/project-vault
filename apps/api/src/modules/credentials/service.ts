@@ -369,7 +369,8 @@ async function eagerNonSensitiveFieldValues(params: {
     )
     const fields = parseFieldsFromPlaintext(params.schemaVersion, plaintext)
     const values: Record<string, string> = {}
-    for (const field of fields) {
+    // Story 72.10: a seed is never an eager value, whatever the stored metadata says.
+    for (const field of withoutTotpFields(fields)) {
       if (nonSensitiveKeys.has(field.key)) values[field.key] = field.value
     }
     return values

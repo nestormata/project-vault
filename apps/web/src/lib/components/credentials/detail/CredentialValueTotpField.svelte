@@ -34,8 +34,7 @@
 {#if shown}
   <span
     class="font-mono text-base tracking-widest text-slate-900"
-    data-testid={`field-totp-code-${meta.key}`}
-    aria-label={m.credential_totp_code_label({ field: meta.key })}>{shown.code}</span
+    data-testid={`field-totp-code-${meta.key}`}>{shown.code}</span
   >
   <span class="text-xs text-slate-600" role="status" aria-live="off"
     >{m.credential_totp_expires({ seconds: String(secondsLeft) })}</span

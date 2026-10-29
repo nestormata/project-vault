@@ -17,7 +17,7 @@ import {
   CredentialTotpResponseSchema,
   type CredentialTotpBody,
 } from './schema.js'
-import { rejectIfInsufficientProjectRoleForReveal, rejectIfProjectNotVisible } from './routes.js'
+import { rejectUnlessCredentialRevealAllowed } from './routes.js'
 import { generateCredentialTotp } from './service.js'
 
 const CREDENTIAL_NOT_FOUND = {
@@ -52,23 +52,12 @@ export function credentialTotpRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
       if (
-        await rejectIfProjectNotVisible(
+        await rejectUnlessCredentialRevealAllowed(
           secureCtx,
           req,
           reply,
           params.projectId,
-          CREDENTIAL_NOT_FOUND
-        )
-      )
-        return reply
-      if (
-        await rejectIfInsufficientProjectRoleForReveal(
-          secureCtx,
-          req,
-          reply,
-          params.projectId,
-          params.credentialId,
-          'reveal'
+          params.credentialId
         )
       )
         return reply

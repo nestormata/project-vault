@@ -307,6 +307,33 @@ describe('credential field kinds and the TOTP kind (72-10)', () => {
     })
   }, 60_000)
 
+  it('does not let a rotation replace or probe a seed: whole-secret and totp targets are refused', async () => {
+    const owner = await registerOwner(app, 'rotation-owner')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'totp-rotation')
+    const id = (await createLogin(owner.cookies, projectId)).json<{ data: { id: string } }>().data
+      .id
+    const url = `/api/v1/projects/${projectId}/credentials/${id}/rotations`
+
+    const whole = await call(owner.cookies, 'POST', url, { newValue: 'brand-new-password' })
+    expect(whole.statusCode).toBe(400)
+    expect(whole.json()).toMatchObject({ code: 'unknown_field_key' })
+
+    // Guessing the stored seed through the same-value check must answer like any unknown field.
+    const probe = await call(owner.cookies, 'POST', url, {
+      newValue: SEED,
+      targetFields: [AUTHENTICATOR],
+    })
+    expect(probe.statusCode).toBe(400)
+    expect(probe.json()).toMatchObject({ code: 'unknown_field_key' })
+    expect(probe.body).not.toContain(SEED)
+
+    const ok = await call(owner.cookies, 'POST', url, {
+      newValue: 'rotated-password-value',
+      targetFields: ['password'],
+    })
+    expect(ok.statusCode).toBe(201)
+  }, 60_000)
+
   it('has its own per-user rate-limit bucket, separate from the reveal bucket', async () => {
     const owner = await registerOwner(app, 'ratelimit-owner')
     const projectId = await createCredentialTestProject(app, owner.cookies, 'totp-ratelimit')
