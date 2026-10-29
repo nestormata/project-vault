@@ -221,6 +221,24 @@ describe('reveal contract (72-8)', () => {
     expect(screen.queryByText(REVEALED_TEXT)).toBeNull()
   })
 
+  it('survives a server render: destroy without mount touches no document or window', async () => {
+    const { CredentialValueController } = await import('./credential-value-controller.svelte.js')
+    const controller = new CredentialValueController(() => ({
+      credential: LEGACY,
+      projectId,
+      credentialId,
+      orgRole: 'member' as const,
+      project: sampleProject({ id: projectId, role: 'member' }),
+    }))
+    vi.stubGlobal('document', undefined)
+    vi.stubGlobal('window', undefined)
+    try {
+      expect(() => controller.destroy()).not.toThrow()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('states one clipboard limit and never promises an automatic clear', async () => {
     mount()
     const text = document.body.textContent ?? ''

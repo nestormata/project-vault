@@ -449,10 +449,14 @@ export class CredentialValueController extends CredentialSectionController<Crede
   }
 
   destroy(): void {
+    // The server render also runs onDestroy, where there is no document or window and nothing was
+    // mounted: only a mounted controller has listeners to remove.
+    if (this.#mounted) {
+      document.removeEventListener('visibilitychange', this.#onVisibilityChange)
+      window.removeEventListener('pageshow', this.#onPageShow)
+    }
     this.#mounted = false
     this.#copyRequestGeneration += 1
-    document.removeEventListener('visibilitychange', this.#onVisibilityChange)
-    window.removeEventListener('pageshow', this.#onPageShow)
     this.hideAllRevealed()
     for (const timeout of this.#copyStatusTimeouts.values()) clearTimeout(timeout)
     this.#copyStatusTimeouts.clear()
