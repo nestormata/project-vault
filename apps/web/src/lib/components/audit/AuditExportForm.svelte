@@ -15,7 +15,7 @@
     <input
       id="export-from"
       type="date"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       bind:value={controller.from}
       aria-describedby="audit-export-date-help"
     />
@@ -25,7 +25,7 @@
     <input
       id="export-to"
       type="date"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       bind:value={controller.to}
       aria-describedby="audit-export-date-help"
     />

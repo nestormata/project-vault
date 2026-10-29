@@ -57,7 +57,7 @@
         type="text"
         bind:value={verifyFrom}
         placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
-        class="rounded-lg border border-slate-300 px-2 py-1"
+        class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
         aria-describedby="platform-audit-verify-from-help"
       />
       <FormHelpText id="platform-audit-verify-from-help" kind="date" />
@@ -69,7 +69,7 @@
         type="text"
         bind:value={verifyTo}
         placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
-        class="rounded-lg border border-slate-300 px-2 py-1"
+        class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
         aria-describedby="platform-audit-verify-to-help"
       />
       <FormHelpText id="platform-audit-verify-to-help" kind="date" />

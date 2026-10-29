@@ -22,7 +22,7 @@
        avoids the mixed-content parse. -->
   <input
     id="mfa-security-totp"
-    class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+    class="w-full max-w-xs rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
     inputmode="numeric"
     pattern={'[0-9]{6}'}
     autocomplete="one-time-code"

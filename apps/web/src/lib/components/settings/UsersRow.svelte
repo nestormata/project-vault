@@ -42,7 +42,7 @@
             <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">owner</span>
           {:else}
             <select
-              class="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+              class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-xs"
               aria-label={`Role for ${user.email} in ${project.projectName}`}
               aria-describedby={`user-project-role-help-${user.userId}-${project.projectId}`}
               value={project.role}

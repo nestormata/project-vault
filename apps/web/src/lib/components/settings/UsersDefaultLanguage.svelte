@@ -57,7 +57,7 @@
     <label class="sr-only" for="default-locale-select">Default language for new users</label>
     <select
       id="default-locale-select"
-      class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+      class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm"
       bind:value={defaultLocaleChoice}
       aria-describedby="default-locale-help"
     >

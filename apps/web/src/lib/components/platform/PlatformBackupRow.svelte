@@ -42,7 +42,7 @@
       {#if backup.status !== 'running'}
         <button
           type="button"
-          class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+          class="rounded border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
           onclick={() => void controller.validate(backup.filename)}
         >
           Validate

@@ -15,7 +15,7 @@
     <input
       id="verify-from"
       type="date"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       bind:value={controller.from}
       aria-describedby="audit-verify-date-help"
     />
@@ -25,7 +25,7 @@
     <input
       id="verify-to"
       type="date"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       bind:value={controller.to}
       aria-describedby="audit-verify-date-help"
     />

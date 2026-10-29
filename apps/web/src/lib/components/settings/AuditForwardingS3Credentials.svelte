@@ -23,7 +23,7 @@
       id="s3-access-key"
       type="password"
       autocomplete="off"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       bind:value={accessKeyId}
       aria-describedby="s3-access-key-help"
     />
@@ -35,7 +35,7 @@
       id="s3-secret-key"
       type="password"
       autocomplete="off"
-      class="rounded-lg border border-slate-300 px-2 py-1"
+      class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
       bind:value={secretAccessKey}
       aria-describedby="s3-secret-key-help"
     />

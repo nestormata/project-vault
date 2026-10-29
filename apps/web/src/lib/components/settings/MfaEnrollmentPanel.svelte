@@ -139,7 +139,7 @@
     {#if !regenerating}
       <button
         type="button"
-        class="rounded-xl border border-slate-300 px-4 py-2 font-semibold text-slate-900"
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 font-semibold text-slate-900"
         onclick={startRegeneration}
       >
         Regenerate recovery codes
@@ -167,7 +167,7 @@
           </button>
           <button
             type="button"
-            class="rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-900"
+            class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 font-medium text-slate-900"
             onclick={cancelRegeneration}
           >
             Cancel
@@ -223,7 +223,7 @@
         </button>
         <button
           type="button"
-          class="rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-900"
+          class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 font-medium text-slate-900"
           onclick={cancelEnrollment}
         >
           Cancel

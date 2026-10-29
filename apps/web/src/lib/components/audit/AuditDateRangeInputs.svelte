@@ -21,7 +21,7 @@
     name="from"
     type="text"
     placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
-    class="rounded-lg border border-slate-300 px-2 py-1"
+    class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
     value={fromValue}
     aria-describedby="audit-date-range-help"
   />
@@ -33,7 +33,7 @@
     name="to"
     type="text"
     placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
-    class="rounded-lg border border-slate-300 px-2 py-1"
+    class="rounded-lg border border-[color:var(--color-border-strong,#64748b)] px-2 py-1"
     value={toValue}
     aria-describedby="audit-date-range-help"
   />

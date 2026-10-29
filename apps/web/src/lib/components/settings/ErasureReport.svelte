@@ -27,7 +27,7 @@
     <h2 class="text-lg font-semibold text-slate-950">Compliance Report</h2>
     <button
       type="button"
-      class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+      class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2 text-sm font-semibold text-slate-700"
       onclick={onDownloadReport}
     >
       Download compliance report

@@ -24,7 +24,7 @@
         <label class="block text-sm text-slate-700">
           Reason for restore (required)
           <textarea
-            class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm"
+            class="mt-1 w-full rounded border border-[color:var(--color-border-strong,#64748b)] px-2 py-1 text-sm"
             rows="2"
             bind:value={controller.restoreReason}
             placeholder="Enter reason for restore"
@@ -45,7 +45,7 @@
           </button>
           <button
             type="button"
-            class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+            class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-semibold text-slate-700"
             onclick={() => controller.closeRestore()}
           >
             Cancel
