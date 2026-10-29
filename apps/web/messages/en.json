@@ -244,6 +244,8 @@
   "nav_status_danger": "Problem",
   "shell_skip_to_content": "Skip to main content",
   "shell_search_field_placeholder": "Search projects and secrets",
+  "shell_more": "More",
+  "shell_search_open": "Search",
   "shell_account_menu": "Account menu",
   "nav_account": "Account",
   "nav_language": "Language",
