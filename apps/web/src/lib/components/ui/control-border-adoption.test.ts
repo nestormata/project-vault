@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest'
-import { CONTROL_BORDER } from './control-classes.js'
-
 /**
+ * @pv-not-guard a pin of PV's own shared-controls border (the ui/ constant) in PV's own components; a pack that
+ * replaces one of them is a subject change, so this test may be excluded with its subject.
+ *
  * Story 72.4 guard: the D-10 control border (`CONTROL_BORDER`) is adopted by every form control and
  * outlined button of the PV routes. A control that goes back to the old `border-slate-300` (1.48:1 on
  * white, WCAG 1.4.11) fails here. Decorative boxes (cards, dashed empty states, `kbd`, spinners) are
  * not controls and are not scanned.
  */
+import { describe, expect, it } from 'vitest'
+import { CONTROL_BORDER } from './control-classes.js'
+
 const sources = import.meta.glob('/src/**/*.svelte', {
   query: '?raw',
   import: 'default',
