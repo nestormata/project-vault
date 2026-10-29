@@ -354,7 +354,7 @@
         <input
           bind:this={inputRef}
           bind:value={query}
-          class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base"
+          class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-3 text-base"
           type="search"
           placeholder="Search secrets, projects…"
           aria-label="Search"
