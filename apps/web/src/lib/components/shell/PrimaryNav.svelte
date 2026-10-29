@@ -101,7 +101,7 @@
 </script>
 
 {#if bottom !== undefined}
-  {#if barVisible}
+  {#if barVisible && (bottom.bar.length > 0 || bottom.more.length > 0)}
     <nav
       aria-label="Primary navigation"
       data-testid="bottom-bar"
@@ -113,7 +113,10 @@
             <a
               class={barCell(node.active)}
               href={node.href}
-              aria-current={node.active ? 'page' : undefined}>{node.mobileLabel}</a
+              aria-current={node.active ? 'page' : undefined}
+              >{node.mobileLabel}{#if node.badge !== undefined || node.status !== undefined}<NavBadge
+                  {node}
+                />{/if}</a
             >
           </li>
         {/each}
@@ -131,7 +134,10 @@
                   <a
                     class={itemClass}
                     href={node.href}
-                    aria-current={node.active ? 'page' : undefined}>{node.label}</a
+                    aria-current={node.active ? 'page' : undefined}
+                    >{node.label}{#if node.badge !== undefined || node.status !== undefined}<NavBadge
+                        {node}
+                      />{/if}</a
                   >
                 {:else}
                   <NavEntry {node} class={itemClass} />

@@ -56,7 +56,7 @@
 
 <div
   class={barSpace
-    ? 'min-h-screen bg-slate-50 pb-16 text-slate-950 md:pb-0'
+    ? 'min-h-screen bg-slate-50 pb-[calc(4rem+env(safe-area-inset-bottom))] text-slate-950 md:pb-0'
     : 'min-h-screen bg-slate-50 text-slate-950'}
 >
   <header class="border-b border-slate-200 bg-white">
@@ -113,7 +113,7 @@
   {#if rail}
     <!-- Story 72.7: the rail holds the primary nav from `md`; below it the bottom bar takes over. -->
     <div class="mx-auto flex max-w-7xl gap-6 px-4">
-      <aside class="hidden w-56 shrink-0 py-6 md:block" data-testid="nav-rail">
+      <div class="hidden w-56 shrink-0 py-6 md:block" data-testid="nav-rail">
         <PrimaryNav
           variant="rail"
           {onsearch}
@@ -122,7 +122,7 @@
           {hasUiPanelExtension}
           {extensionNavItems}
         />
-      </aside>
+      </div>
       {@render mainRegion()}
     </div>
     <PrimaryNav

@@ -38,22 +38,38 @@ describe('isTaskPage', () => {
     '/settings/security',
   ])('%s is not', (path) => expect(isTaskPage(path)).toBe(false))
 
-  // Every route directory in the app whose last segment names a task must be a task page, and no
-  // other route may be: a new `.../new` or `.../import` route is picked up (or this fails).
-  it('classifies the real route tree', () => {
-    const pages = Object.keys(import.meta.glob('/src/routes/**/+page.svelte')).filter((file) =>
-      file.startsWith('/src/routes/(app)/')
-    )
+  // The hand-kept classification of every (app) route: a new route fails this test until someone
+  // decides whether it is a task page (a form or flow, no bottom bar) or a browse page.
+  const TASK_ROUTES = [
+    '/credentials/import',
+    '/projects/import',
+    '/projects/new',
+    '/projects/x/certificates/new',
+    '/projects/x/credentials/import',
+    '/projects/x/credentials/new',
+    '/projects/x/credentials/x/rotate',
+    '/projects/x/domains/new',
+    '/projects/x/machine-users/new',
+    '/projects/x/service-endpoints/new',
+    '/projects/x/services/new',
+  ]
+  it('classifies the real route tree against the hand-kept task list', () => {
+    const pages = Object.keys(import.meta.glob('/src/routes/**/+page.svelte'))
+      .filter((file) => file.startsWith('/src/routes/(app)/'))
+      .map((file) =>
+        file
+          .replace('/src/routes/(app)', '')
+          .replace('/+page.svelte', '')
+          .replaceAll(/\[\.{0,3}[^\]]+\]/g, 'x')
+      )
     expect(pages.length).toBeGreaterThan(30)
-    for (const file of pages) {
-      const route = file
-        .replace('/src/routes/(app)', '')
-        .replace('/+page.svelte', '')
-        .replaceAll(/\[\.{0,3}[^\]]+\]/g, 'x')
-      const last = route.split('/').filter(Boolean).pop()
-      const expected = last === 'new' || last === 'import' || last === 'rotate'
-      expect(isTaskPage(route), route).toBe(expected)
-    }
+    const tasks = pages.filter((route) => isTaskPage(route)).sort()
+    expect(tasks).toEqual([...TASK_ROUTES].sort())
+    // A route named like an action but not listed above is a decision someone must make.
+    const actionish = pages.filter((route) =>
+      /\/(edit|setup|create|add|transfer|enroll|invite)(\/|$)/.test(route)
+    )
+    expect(actionish).toEqual([])
   })
 })
 

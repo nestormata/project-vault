@@ -244,6 +244,7 @@
   "shell_skip_to_content": "Saltar al contenido principal",
   "shell_search_field_placeholder": "Buscar proyectos y secretos",
   "shell_more": "Más",
+  "shell_more_current": "la página actual está dentro",
   "shell_search_open": "Buscar",
   "shell_account_menu": "Menú de la cuenta",
   "nav_account": "Cuenta",

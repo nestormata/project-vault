@@ -57,18 +57,20 @@
   Story 68.7 AC-3: a tab with children is a disclosure tab (native <details>/<summary>) whose panel
   lists them, at any depth; its summary is marked active while any descendant is.
 -->
-{#snippet tab(node: NavNode)}
+{#snippet tab(node: NavNode, inMore: boolean = false)}
   {#if node.children.length > 0}
     <details class="relative">
       <summary class={`cursor-pointer list-none ${tabClass(node.current)}`}>{node.label}</summary>
       <div
-        class="flex flex-col gap-1 py-1 md:absolute md:z-10 md:min-w-40 md:rounded-xl md:border md:border-slate-200 md:bg-white md:p-1 md:shadow-lg"
+        class={inMore
+          ? 'flex flex-col gap-1 py-1 pl-3'
+          : 'flex flex-col gap-1 py-1 md:absolute md:z-10 md:min-w-40 md:rounded-xl md:border md:border-slate-200 md:bg-white md:p-1 md:shadow-lg'}
       >
         {#if node.href !== undefined || node.external !== undefined}
-          {@render tab({ ...node, children: [] })}
+          {@render tab({ ...node, children: [] }, inMore)}
         {/if}
         {#each node.children as child (child.id)}
-          {@render tab(child)}
+          {@render tab(child, inMore)}
         {/each}
       </div>
     </details>
@@ -102,7 +104,7 @@
       testid="project-nav-more"
     >
       {#each overflowNodes as node (node.id)}
-        {@render tab(node)}
+        {@render tab(node, true)}
       {/each}
     </MoreMenu>{/if}<InjectionPoint name="project.layout.nav" props={{ project }} {data} />
 </nav>

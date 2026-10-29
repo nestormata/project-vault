@@ -49,7 +49,9 @@ describe('AppShell variant="rail"', () => {
     expect(document.getElementById('main-content')?.textContent).toContain('page body')
     expect(document.getElementById('main-content')?.className).toContain('flex-1')
     // Room under the page for the fixed bar, below md only.
-    expect(document.querySelector('.pb-16.md\\:pb-0')).not.toBeNull()
+    expect(
+      document.querySelector('[class*="safe-area-inset-bottom"][class*="md:pb-0"]')
+    ).not.toBeNull()
   })
 
   it('has no bottom bar and no bar spacing on a task page', () => {
@@ -57,7 +59,7 @@ describe('AppShell variant="rail"', () => {
     shell()
     expect(screen.queryByTestId('bottom-bar')).toBeNull()
     expect(screen.getByTestId('nav-rail')).toBeTruthy()
-    expect(document.querySelector('.pb-16')).toBeNull()
+    expect(document.querySelector('[class*="safe-area-inset-bottom"][class*="md:pb-0"]')).toBeNull()
   })
 
   it('has neither rail nor bottom bar while the nav is hidden (onboarding)', () => {

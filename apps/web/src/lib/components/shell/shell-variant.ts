@@ -43,5 +43,5 @@ export function isTextEntry(element: Element | null): boolean {
       element.type
     )
   }
-  return element.closest('[contenteditable=""], [contenteditable="true"]') !== null
+  return element.closest('[contenteditable]:not([contenteditable="false"])') !== null
 }

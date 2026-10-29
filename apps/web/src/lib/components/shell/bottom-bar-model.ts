@@ -1,7 +1,7 @@
 // Story 72.7 (P3b): the bottom bar's model. The bar renders the SAME `primary` nav data as the
 // header and the rail: this function only decides which entries sit in the bar and which move into
 // "More". It reads no nav ids, so a host's nav delta (hide, move, insert) reshapes the bar by itself.
-import type { ResolvedPathname } from '$app/types'
+import { resolve } from '$app/paths'
 import type { PrimaryNavItem } from './nav-model.js'
 import { isActiveNavItem } from './nav-model.js'
 import { BOTTOM_BAR_LINKS } from './shell-variant.js'
@@ -38,8 +38,9 @@ export function legacyNavNodes(items: PrimaryNavItem[], pathname: string): NavNo
       description: '',
       title: '',
       // Runtime strings validated by NAV_ITEM_HREF_PATTERN at registration, not members of the
-      // generated Pathname union (same provenance as the cast-free `resolve()` calls in PrimaryNav).
-      href: item.href as ResolvedPathname,
+      // generated Pathname union, so the literal type is only a cast for `resolve()`'s signature
+      // (the header and the rail resolve the same hrefs the same way).
+      href: resolve(item.href as '/'),
       query: '',
       active,
       current: active || children.some((child) => child.current),

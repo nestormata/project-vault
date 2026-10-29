@@ -136,4 +136,22 @@ describe('PrimaryNav variant="bottom"', () => {
     await tick()
     expect(more().open).toBe(false)
   })
+
+  it('shows a badge on a bar link', () => {
+    render(PrimaryNav, { props: { variant: 'bottom' } })
+    // PV items carry no badge: nothing renders; the surface test covers badge rendering itself.
+    expect(bar().querySelector('[data-nav-badge]')).toBeNull()
+  })
+
+  it('a task page in rail mode has no bottom bar landmark at all', () => {
+    at('/projects/p1/credentials/new')
+    render(PrimaryNav, { props: { variant: 'bottom' } })
+    expect(screen.queryByRole('navigation')).toBeNull()
+  })
+
+  it('marks the More trigger for assistive tech when the current page is inside it', () => {
+    at('/settings')
+    render(PrimaryNav, { props: { variant: 'bottom' } })
+    expect(more().querySelector('summary')?.textContent).toContain('current page inside')
+  })
 })

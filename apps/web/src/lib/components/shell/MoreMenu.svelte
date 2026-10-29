@@ -24,7 +24,9 @@
   } = $props()
 </script>
 
-{#snippet label()}{m.shell_more()}{/snippet}
+{#snippet label()}{m.shell_more()}{#if current}<span class="sr-only"
+      >, {m.shell_more_current()}</span
+    >{/if}{/snippet}
 <DetailsMenu
   {testid}
   {current}

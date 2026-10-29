@@ -245,6 +245,7 @@
   "shell_skip_to_content": "Skip to main content",
   "shell_search_field_placeholder": "Search projects and secrets",
   "shell_more": "More",
+  "shell_more_current": "current page inside",
   "shell_search_open": "Search",
   "shell_account_menu": "Account menu",
   "nav_account": "Account",

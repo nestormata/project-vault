@@ -371,8 +371,6 @@ a change to them is a minor bump of `@project-vault/web-host`. No existing compo
 | `ui/ConfirmDialog.svelte`             | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
 | `ui/ConfirmDialogHost.svelte`         | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                                      | none                                 | stable |
 | `shell/ShortcutsDialogHost.svelte`    | none (mounted once in the `(app)` layout; the keyboard shortcuts dialog the account menu opens; renders a closed `<dialog>` until asked)                                     |
-| `shell/MoreMenu.svelte`               | `current`, `placement` (`up` / `down`), `summaryClass`, `panelClass`, `testid`, `children` (the "More" overflow menu of the bottom bar and the project tabs)                 | none                                 |
-| `shell/PrimaryNav.svelte` (`variant`) | `variant` (`bar` default, `rail`, `bottom`) joins the existing props; `bottom` is the phone bottom bar                                                                       | none                                 |
 
 Contract rules: `id` is required and explicit (no generated ids, so the server and the browser cannot disagree); the
 control is named by its `<label for>` (or the fieldset `legend`); `aria-describedby` (on each input of a group) lists the error id first and the
@@ -919,8 +917,6 @@ neither `hostSha256` changes. The new native ids `account.account`, `account.lan
 Playwright step that clicked "Sign out" opens the "Account menu" first. The `AppShell` characterization and the
 `(app)/+layout.svelte` route snapshots changed (re-recorded under 72-1 D1).
 
-### At compose time
-
 ### Rail and bottom-bar shell variant, project tab overflow (Epic 72, Story 72-7)
 
 PV's shell has two layouts over the SAME nav data (the `primary` surface with the active delta applied, plus the frozen
@@ -935,8 +931,8 @@ extension `navItems`). Nothing in the nav model changes: no new kit field, no ki
   (hide, move, insert) reshapes it; nested groups are flattened into the bar or More so no item is unreachable.
   The bar is **not rendered on task pages** (a page whose last path segment is `new`, `import` or `rotate`, i.e. a form
   or flow; `shell/shell-variant.ts`, with a test that walks the real route tree) **and while a text field has focus**
-  (CM D-09, F-23), so only one fixed element is on screen. It is rendered by the server and hides itself after hydration.
-  Onboarding (`hidePrimaryNav`) has neither rail nor bar.
+  (CM D-09, F-23), so only one fixed element is on screen. The server omits it on task pages; the focus rule applies after hydration.
+  Onboarding (`hidePrimaryNav`) has neither rail nor bar. `MoreMenu`, `DetailsMenu` and the `PrimaryNav` `variant` prop are not `@pv-stable`: their props may change in a web-host minor.
 
 Choosing the variant is the operator's: set `WEB_SHELL_VARIANT=rail` on the web service (see `docs/configuration.md`).
 Unset, empty or any other value is `header`. The `(app)` layout load returns it as `data.shellVariant`; `AppLayoutShell`

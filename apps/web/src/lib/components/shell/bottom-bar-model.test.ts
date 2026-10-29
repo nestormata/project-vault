@@ -61,6 +61,11 @@ describe('buildBottomBarModel', () => {
     expect(buildBottomBarModel(nodes).moreCurrent).toBe(true)
   })
 
+  it('an empty nav gives an empty model', () => {
+    const model = buildBottomBarModel([])
+    expect(model).toEqual({ bar: [], more: [], moreCurrent: false })
+  })
+
   it('drops an empty group', () => {
     const empty = node('empty', { kind: 'group', href: undefined })
     expect(buildBottomBarModel([empty, node('a')]).bar.map((n) => n.id)).toEqual(['a'])
