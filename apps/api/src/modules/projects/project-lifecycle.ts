@@ -103,6 +103,21 @@ export function revokeProjectShares(tx: Tx, projectId: string): Promise<RevokedS
     })
 }
 
+/** Revokes every invitation that was neither accepted nor revoked, so a token cannot join the
+ * project later (after a restore). */
+export async function revokePendingInvitations(tx: Tx, projectId: string): Promise<void> {
+  await tx
+    .update(projectInvitations)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(projectInvitations.projectId, projectId),
+        isNull(projectInvitations.revokedAt),
+        isNull(projectInvitations.acceptedAt)
+      )
+    )
+}
+
 export type SoftDeleteResult = {
   id: string
   name: string

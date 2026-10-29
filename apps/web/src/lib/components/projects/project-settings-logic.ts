@@ -74,9 +74,10 @@ export function deleteErrorOf(error: unknown): string {
 
 /** The scheme and the rest of an absolute URL, so a link can be built the way the nav builds its
  * external ones (the router's `resolve()` only knows this app's own routes). */
-export function externalUrlParts(url: string): { scheme: string; rest: string } {
-  const separator = url.indexOf('://')
-  return separator < 0
-    ? { scheme: 'https', rest: url }
-    : { scheme: url.slice(0, separator), rest: url.slice(separator + 3) }
+export function externalUrlParts(url: string): { scheme: 'http' | 'https'; rest: string } | null {
+  // Only http(s) is ever linked, whatever the stored value is.
+  const match = /^(https?):\/\/(.+)$/i.exec(url)
+  if (!match) return null
+  const scheme = match[1]?.toLowerCase() === 'http' ? 'http' : 'https'
+  return { scheme, rest: match[2] ?? '' }
 }

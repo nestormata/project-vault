@@ -123,7 +123,14 @@ describe('ProjectUrlsSchema (72-9)', () => {
     expect(ProjectUrlsSchema.parse([])).toEqual([])
     expect(
       ProjectUrlsSchema.parse(['  https://example.com/a?b=1  ', 'http://localhost:3000'])
-    ).toEqual(['https://example.com/a?b=1', 'http://localhost:3000'])
+    ).toEqual(['https://example.com/a?b=1', 'http://localhost:3000/'])
+  })
+
+  it('stores the parsed form, so a scheme-relative oddity cannot hide a bad link', () => {
+    expect(ProjectUrlsSchema.parse(['http:example.com'])).toEqual(['http://example.com/'])
+    expect(
+      ProjectUrlsSchema.safeParse(['https://example.com/a', 'HTTPS://EXAMPLE.COM/a']).success
+    ).toBe(false)
   })
 
   it.each([

@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
@@ -166,7 +166,16 @@ async function findMachineUserById(
   const rows = await tx
     .select()
     .from(machineUsers)
-    .where(eq(machineUsers.id, machineUserId))
+    .where(
+      and(
+        eq(machineUsers.id, machineUserId),
+        // Story 72-9: these routes have no :projectId, so the deleted-project gate cannot see them.
+        inArray(
+          machineUsers.projectId,
+          tx.select({ id: projects.id }).from(projects).where(isNull(projects.deletedAt))
+        )
+      )
+    )
     .limit(1)
   return rows[0]
 }

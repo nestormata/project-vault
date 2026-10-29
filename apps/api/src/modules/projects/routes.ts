@@ -70,6 +70,7 @@ import {
   listDeletedProjects,
   markProjectDeleted,
   markProjectRestored,
+  revokePendingInvitations,
   revokeProjectShares,
 } from './project-lifecycle.js'
 import { forEachSequential } from '../../lib/for-each-sequential.js'
@@ -189,7 +190,12 @@ type ArchiveTogglePreflight =
       ok: true
       params: { projectId: string }
       secureCtx: SecureRouteContext
-      project: { id: string; archivedAt: Date | null; deletedAt: Date | null }
+      project: {
+        id: string
+        archivedAt: Date | null
+        deletedAt: Date | null
+        purgedAt: Date | null
+      }
       authorizedVia: ArchiveAuthority
     }
   | { ok: false }
@@ -220,7 +226,12 @@ async function loadOwnedProjectForArchiveToggle(
   }
 
   const [project] = await secureCtx.tx
-    .select({ id: projects.id, archivedAt: projects.archivedAt, deletedAt: projects.deletedAt })
+    .select({
+      id: projects.id,
+      archivedAt: projects.archivedAt,
+      deletedAt: projects.deletedAt,
+      purgedAt: projects.purgedAt,
+    })
     .from(projects)
     .where(eq(projects.id, params.projectId))
     .for('update')
@@ -384,6 +395,8 @@ async function findReplayedProject(
     .where(eq(projects.creationRequestId, creationRequestId))
     .limit(1)
   if (!replayed) return undefined
+  // Story 72-9: a replay must not hand back a project that was soft-deleted since.
+  if (replayed.deletedAt !== null) return { error: CREATION_REQUEST_CONFLICT }
   if (replayed.orgId !== secureCtx.auth.orgId || replayed.createdBy !== secureCtx.auth.userId) {
     return { error: CREATION_REQUEST_CONFLICT }
   }
@@ -1524,6 +1537,8 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       const revokedShares = await revokeProjectShares(secureCtx.tx, params.projectId)
+      // A pending invitation token must not join the project after a restore.
+      await revokePendingInvitations(secureCtx.tx, params.projectId)
       await forEachSequential(revokedShares, (share) =>
         writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
           resourceType: 'credential_share',
@@ -1597,6 +1612,8 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
       const preflight = await loadOwnedProjectForArchiveToggle(ctx, req, reply, 'restore')
       if (!preflight.ok) return reply
       const { params, secureCtx, project, authorizedVia } = preflight
+      // A purged tombstone is gone for good: answer like a missing project, not "not deleted".
+      if (project.purgedAt !== null) return reply.status(404).send(PROJECT_NOT_FOUND)
       if (project.deletedAt === null) {
         return reply.status(409).send({ code: 'not_deleted', message: 'Project is not deleted' })
       }

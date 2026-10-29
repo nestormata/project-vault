@@ -37,6 +37,8 @@ export const ProjectUrlsSchema = z
       .min(1)
       .max(PROJECT_URL_MAX_LENGTH)
       .refine(isAllowedProjectUrl, 'Must be an absolute http or https URL without credentials')
+      // Stored in its parsed form (`http:example.com` becomes `http://example.com/`).
+      .transform((value) => new URL(value).href)
   )
   .max(PROJECT_URLS_MAX)
   .refine(

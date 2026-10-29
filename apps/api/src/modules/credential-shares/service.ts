@@ -7,6 +7,7 @@ import { env } from '../../config/env.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import { isCredentialArchived } from '../credentials/archive-guards.js'
+import { isProjectDeleted } from '../projects/project-lifecycle.js'
 import {
   attributeKeys as declaredAdapterAttributeKeys,
   formatBoundedRevealValue,
@@ -357,6 +358,10 @@ export async function preflightCredentialForShareCreation(
     projectId: input.projectId,
   })
   if (!exists) return { status: 'credential_not_found' }
+
+  // Story 72-9: a soft-deleted project takes no new shares (an extension host call has no
+  // :projectId route, so the secureRoute gate never sees it).
+  if (await isProjectDeleted(tx, input.projectId)) return { status: 'credential_not_found' }
 
   if (await isCredentialArchived(tx, input.credentialId)) return { status: 'credential_archived' }
 

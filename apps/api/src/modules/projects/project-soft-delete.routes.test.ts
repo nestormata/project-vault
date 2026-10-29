@@ -6,6 +6,7 @@ import {
   credentials,
   credentialShares,
   machineUsers,
+  projectInvitations,
   projects,
   serviceEndpoints,
 } from '@project-vault/db/schema'
@@ -20,6 +21,7 @@ import {
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createCredentialViaApi } from '../credentials/credential-route-test-helpers.js'
 import { runProjectPurgeJob } from '../../workers/project-purge.js'
+import { preflightCredentialForShareCreation } from '../credential-shares/service.js'
 import { PROJECT_DELETE_GRACE_DAYS } from './project-lifecycle.js'
 import { bootProjectRouteTestApp } from './project-route-test-bootstrap.js'
 
@@ -92,7 +94,7 @@ describe('project edit, soft delete and restore (72-9)', () => {
       expect(res.statusCode).toBe(200)
       expect(res.json<{ data: { name: string; urls: string[] } }>().data).toMatchObject({
         name: 'Renamed',
-        urls: ['https://example.com/wiki', 'http://localhost:3000'],
+        urls: ['https://example.com/wiki', 'http://localhost:3000/'],
       })
 
       const overview = await call(app, 'GET', `/${projectId}`, owner.cookies)
@@ -400,6 +402,81 @@ describe('project edit, soft delete and restore (72-9)', () => {
       const listed = await call(app, 'GET', '/deleted', member.cookies)
       expect(listed.statusCode).toBe(200)
       expect(listed.json<{ data: { items: unknown[] } }>().data.items).toEqual([])
+    })
+  })
+
+  describe('review hardening (72-9)', () => {
+    it('refuses new shares, flat machine-user reads and create replays for a deleted project', async () => {
+      const label = 'del-hardening'
+      const owner = await registerOwner(app, label)
+      const projectId = await createProject(app, owner.cookies, label)
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      const machineUser = await app.inject({
+        method: 'POST',
+        url: `${PROJECTS_URL}/${projectId}/machine-users`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { name: 'hardening-bot', role: 'member' },
+      })
+      const machineUserId = machineUser.json<{ data: { id: string } }>().data.id
+      const detailUrl = `/api/v1/machine-users/${machineUserId}`
+      const readDetail = () =>
+        app.inject({
+          method: 'GET',
+          url: detailUrl,
+          headers: { cookie: cookieHeader(owner.cookies) },
+        })
+      expect((await readDetail()).statusCode).toBe(200)
+
+      const preflight = () =>
+        withOrg(owner.orgId, (tx) =>
+          preflightCredentialForShareCreation(tx, { credentialId: credential.id, projectId })
+        )
+      expect(await preflight()).toEqual({ status: 'ok' })
+
+      await call(app, 'DELETE', `/${projectId}`, owner.cookies)
+
+      expect(await preflight()).toEqual({ status: 'credential_not_found' })
+      expect((await readDetail()).statusCode).toBe(404)
+      const replay = await call(app, 'POST', '', owner.cookies, {
+        name: label,
+        creationRequestId: (await projectRow(owner.orgId, projectId))?.creationRequestId,
+      })
+      expect(replay.statusCode).toBeGreaterThanOrEqual(400)
+      expect(replay.json()).toMatchObject({ code: 'creation_request_conflict' })
+    })
+
+    it('revokes pending invitations at delete time', async () => {
+      const owner = await registerOwner(app, 'del-invites')
+      const projectId = await createProject(app, owner.cookies, 'del-invites')
+      const invite = await app.inject({
+        method: 'POST',
+        url: `${PROJECTS_URL}/${projectId}/invitations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { email: `invitee-${randomUUID()}@example.com`, role: 'member' },
+      })
+      expect(invite.statusCode).toBe(201)
+      await call(app, 'DELETE', `/${projectId}`, owner.cookies)
+      const rows = await withOrg(owner.orgId, (tx) =>
+        tx.select().from(projectInvitations).where(eq(projectInvitations.projectId, projectId))
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.revokedAt).not.toBeNull()
+    })
+
+    it('answers 404, not not_deleted, when restoring a purged tombstone', async () => {
+      const owner = await registerOwner(app, 'del-tomb')
+      const projectId = await createProject(app, owner.cookies, 'del-tomb')
+      await call(app, 'DELETE', `/${projectId}`, owner.cookies)
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(projects)
+          .set({ purgeAfter: new Date(Date.now() - 1000) })
+          .where(eq(projects.id, projectId))
+      )
+      await runProjectPurgeJob()
+      const res = await call(app, 'POST', `/${projectId}/restore`, owner.cookies)
+      expect(res.statusCode).toBe(404)
+      expect(res.json()).toMatchObject({ code: 'project_not_found' })
     })
   })
 

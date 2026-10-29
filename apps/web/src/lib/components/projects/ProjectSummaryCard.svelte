@@ -43,14 +43,16 @@
     <ul class="mt-3 space-y-1 text-sm">
       {#each project.urls as url (url)}
         {@const parts = externalUrlParts(url)}
-        <li>
-          <a
-            class="break-all font-medium text-slate-800 underline"
-            href={`${parts.scheme}://${parts.rest}`}
-            target="_blank"
-            rel="noopener noreferrer">{url}</a
-          >
-        </li>
+        {#if parts}
+          <li>
+            <a
+              class="break-all font-medium text-slate-800 underline"
+              href={`${parts.scheme}://${parts.rest}`}
+              target="_blank"
+              rel="noopener noreferrer">{url}</a
+            >
+          </li>
+        {/if}
       {/each}
     </ul>
   {/if}<InjectionPoint name="project.detail.summary" props={{ project }} {data} />

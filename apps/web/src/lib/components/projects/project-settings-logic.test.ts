@@ -78,11 +78,17 @@ describe('deleteErrorOf', () => {
 })
 
 describe('externalUrlParts', () => {
-  it('splits scheme and rest, and treats a bare address as https', () => {
+  it('links only http and https, whatever the stored value is', () => {
+    expect(externalUrlParts('javascript://%0Aalert(1)')).toBeNull()
+    expect(externalUrlParts('HTTP://Example.com')).toEqual({ scheme: 'http', rest: 'Example.com' })
+    expect(externalUrlParts('ftp://x')).toBeNull()
+  })
+
+  it('splits scheme and rest', () => {
     expect(externalUrlParts('https://wiki.example/a?b=1')).toEqual({
       scheme: 'https',
       rest: 'wiki.example/a?b=1',
     })
-    expect(externalUrlParts('wiki.example')).toEqual({ scheme: 'https', rest: 'wiki.example' })
+    expect(externalUrlParts('wiki.example')).toBeNull()
   })
 })
