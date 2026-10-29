@@ -96,7 +96,13 @@ const SHELL = [
     id: 'account',
     file: 'src/lib/components/shell/ShellAccount.svelte',
     contextKeys: ['user'],
-    items: [{ id: 'account.sign-out' }],
+    items: [
+      { id: 'account.account' },
+      { id: 'account.language' },
+      { id: 'account.shortcuts' },
+      { id: 'account.help' },
+      { id: 'account.sign-out' },
+    ],
   },
   {
     id: 'footer',

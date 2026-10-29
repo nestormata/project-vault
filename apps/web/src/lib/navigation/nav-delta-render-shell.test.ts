@@ -43,13 +43,14 @@ describe('the shell surfaces render a CM delta (Story 68.7 AC-2/AC-3)', () => {
       ],
       footer: [{ op: 'insert', parent: 'footer', item: subtree('cm.f', 6, '/about') }],
     })
-    for (const [component, props] of [
-      [ShellAccount, { user: testAuthUser() }],
-      [NotificationsLink, { unreadCount: 2 }],
-      [Footer, {}],
+    // The account menu is itself a disclosure (Story 72.6), one more than the pack's five levels.
+    for (const [component, props, disclosures] of [
+      [ShellAccount, { user: testAuthUser() }, 6],
+      [NotificationsLink, { unreadCount: 2 }, 5],
+      [Footer, {}, 5],
     ] as const) {
       const { container, unmount } = render(component as never, { props } as never)
-      expect(container.querySelectorAll('details')).toHaveLength(5)
+      expect(container.querySelectorAll('details')).toHaveLength(disclosures)
       expect(within(container).getByRole('link', { name: 'L6' })).toBeTruthy()
       unmount()
     }
