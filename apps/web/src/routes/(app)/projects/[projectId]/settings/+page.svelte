@@ -5,11 +5,13 @@
   import ProjectSettingsNotFound from '$lib/components/projects/ProjectSettingsNotFound.svelte'
   import ProjectSettingsForm from '$lib/components/projects/ProjectSettingsForm.svelte'
   import ProjectSettingsHeader from '$lib/components/projects/ProjectSettingsHeader.svelte'
-  import { canArchiveInProject } from '$lib/projects/project-write-access.js'
+  import { canArchiveInProject, canEditProject } from '$lib/projects/project-write-access.js'
 
   let { data } = $props()
 
-  // The same rule as the API (project owner or org owner); it only decides which controls show.
+  // The same rules as the API; they only decide which controls show. Edit: project owner, org owner
+  // or org admin. Delete: project owner or org owner.
+  const canEdit = $derived(canEditProject(data.orgRole, data.project))
   const canManage = $derived(canArchiveInProject(data.orgRole, data.project))
 </script>
 
@@ -32,16 +34,18 @@
   {:else}
     {@const project = data.project}
     <!-- @region project.settings.header -->
-    <ProjectSettingsHeader projectId={project.id} name={project.name} {canManage}>
+    <ProjectSettingsHeader projectId={project.id} name={project.name} {canEdit} {canManage}>
       <InjectionPoint name="project.settings.header" data={data.__inject} />
     </ProjectSettingsHeader>
 
-    {#if canManage}
+    {#if canEdit}
       <!-- @region project.settings.form -->
       <ProjectSettingsForm {project} data={data.__inject}>
         <InjectionPoint name="project.settings.form" data={data.__inject} />
       </ProjectSettingsForm>
+    {/if}
 
+    {#if canManage}
       <!-- @region project.settings.delete -->
       <ProjectDeleteZone {project} graceDays={PROJECT_DELETE_GRACE_DAYS}>
         <InjectionPoint name="project.settings.delete" data={data.__inject} />

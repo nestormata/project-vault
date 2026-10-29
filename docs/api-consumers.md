@@ -405,13 +405,14 @@ versionNumber, retrievedAt } }` with `Cache-Control: no-store`. The code is vali
 Story 72-9. **Edit.** `PATCH /api/v1/projects/{projectId}` takes `name`, `description` and, new, `urls`
 (an array that replaces the whole list; `[]` clears it). Each URL is trimmed, absolute `http` or `https`,
 at most 2048 characters, without `user:password@`; at most 10, no case-insensitive duplicates. The overview
-(`GET .../{projectId}`) and the PATCH response return `urls`. **Who may edit changed:** the same rule as archive
-(an organization floor of `member`, then the project `owner` row or the organization `owner`), checked **before**
-the body is validated and before any archived or missing state is read, so a caller without it gets `403
-insufficient_role` whatever they send. Before this story an organization `admin` could edit; an org `admin`
-without the owner row now gets `403`. An archived project still answers `410`. The audit row is `project.updated`
-(it already existed) and its payload is now `{ authorizedVia, changedFields }`: the **names** of the fields whose
-stored value differs (`name`, `description`, `urls`), never the values.
+(`GET .../{projectId}`) and the PATCH response return `urls`. **Who may edit:** an organization floor of `member`, then the project `owner` row, the organization `owner` or
+an organization `admin` (the archive rule plus the org admin; `projectEditAuthority` in `@project-vault/shared`),
+checked **before** the body is validated and before any archived or missing state is read, so a caller without
+it gets `403 insufficient_role` whatever they send. A project member who does not own the project, and an org
+viewer, get `403`. Delete and restore stay narrower (below). An archived project still answers `410`. The audit
+row is `project.updated` (it already existed) and its payload is now `{ authorizedVia, changedFields }`, with
+`authorizedVia` one of `project_owner`, `org_owner` or `org_admin`, and `changedFields` the **names** of the
+fields whose stored value differs (`name`, `description`, `urls`), never the values.
 
 **Delete.** `DELETE /api/v1/projects/{projectId}` (project owner or organization owner, MFA, 10 per minute)
 is a soft delete with a **30-day grace period** (`PROJECT_DELETE_GRACE_DAYS` in `@project-vault/shared`).
@@ -438,7 +439,7 @@ writes `project.purged` in the same transaction as the erase. Audit rows are nev
 cannot be restored.
 
 Consumers: a CentralizeMe `openapi.composed.json` needs the new `urls` field, the `DELETE`, `restore` and `deleted`
-routes and the narrower PATCH authority. Project export (`.../export`) does not carry `urls`, and a deleted project
+routes. The edit authority is not part of the OpenAPI document. Project export (`.../export`) does not carry `urls`, and a deleted project
 cannot be exported (`404`).
 
 ## See also

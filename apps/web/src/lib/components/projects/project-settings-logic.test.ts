@@ -27,9 +27,7 @@ describe('url lines', () => {
 describe('settingsErrorOf', () => {
   it('explains an archived project (410) and a missing authority (403)', () => {
     expect(settingsErrorOf(fail(410, null)).message).toMatch(/archived and read-only/)
-    expect(settingsErrorOf(fail(403, null)).message).toMatch(
-      /project owner or an organization owner/
-    )
+    expect(settingsErrorOf(fail(403, null)).message).toMatch(/or an organization admin can edit/)
   })
 
   it('maps validation details to the field that failed', () => {

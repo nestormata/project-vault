@@ -7,6 +7,8 @@ import {
   ActiveSharesErrorSchema,
   archiveAuthority,
   type ArchiveAuthority,
+  projectEditAuthority,
+  type ProjectEditAuthority,
   AuditEvent,
   OperationalEvent,
   type ProjectRole,
@@ -171,6 +173,15 @@ export async function callerArchiveAuthorization(
   return archiveAuthority(orgRoleOrDeny(secureCtx.auth), callerRole)
 }
 
+// Story 72-9: the edit rule is the archive rule plus the org admin.
+async function callerEditAuthorization(
+  secureCtx: SecureRouteContext,
+  projectId: string
+): Promise<ProjectEditAuthority | null> {
+  const callerRole = await callerProjectRole(secureCtx, projectId)
+  return projectEditAuthority(orgRoleOrDeny(secureCtx.auth), callerRole)
+}
+
 // 4.4 AC-12 "Audit gap (denied/blocked attempts)": SecureRoute's same-tx audit writer only fires
 // on the success path, so 403/409 rejections on this high-impact, MFA-gated lifecycle action are
 // never written to the audit log. Emit a structured application log line instead so security
@@ -196,7 +207,7 @@ type ArchiveTogglePreflight =
         deletedAt: Date | null
         purgedAt: Date | null
       }
-      authorizedVia: ArchiveAuthority
+      authorizedVia: ProjectEditAuthority
     }
   | { ok: false }
 
@@ -246,7 +257,10 @@ async function loadOwnedProjectForArchiveToggle(
     return { ok: false }
   }
 
-  const authorizedVia = await callerArchiveAuthorization(secureCtx, params.projectId)
+  const authorizedVia =
+    actionVerb === 'edit'
+      ? await callerEditAuthorization(secureCtx, params.projectId)
+      : await callerArchiveAuthorization(secureCtx, params.projectId)
   if (!authorizedVia) {
     logArchiveDenied(req, {
       projectId: params.projectId,
@@ -255,7 +269,10 @@ async function loadOwnedProjectForArchiveToggle(
     })
     reply.status(403).send({
       code: 'insufficient_role',
-      message: `Only the project owner can ${actionVerb} a project`,
+      message:
+        actionVerb === 'edit'
+          ? 'Only the project owner, an organization owner or an organization admin can edit a project'
+          : `Only the project owner can ${actionVerb} a project`,
     })
     return { ok: false }
   }
@@ -848,8 +865,8 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  // Story 72-9: edit name, description and URLs. Authority is the archive rule (project owner or
-  // org owner), checked BEFORE the body is validated or any state is read back, so a caller
+  // Story 72-9: edit name, description and URLs. Authority is the project owner row, the org owner
+  // or an org admin (projectEditAuthority()), checked BEFORE the body is validated or any state is read back, so a caller
   // without it learns nothing from a 422 or a 410. The audit row records the changed field NAMES
   // only (never values).
   secureRoute(fastify, {
@@ -866,7 +883,7 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'member', // broad floor; the in-handler archiveAuthority() rule decides.
+      minimumRole: 'member', // broad floor; the in-handler projectEditAuthority() rule decides.
       requireMfa: false,
       writeAuditEvent: false,
     },

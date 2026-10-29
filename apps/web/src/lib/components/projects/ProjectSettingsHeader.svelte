@@ -6,9 +6,16 @@
   let {
     projectId,
     name,
+    canEdit,
     canManage,
     children,
-  }: { projectId: string; name: string; canManage: boolean; children?: Snippet } = $props()
+  }: {
+    projectId: string
+    name: string
+    canEdit: boolean
+    canManage: boolean
+    children?: Snippet
+  } = $props()
 </script>
 
 <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -20,9 +27,14 @@
       Back to the project
     </a>
   </p>
-  {#if !canManage}
+  {#if !canEdit}
     <p class="mt-3 text-slate-700">
-      Only the project owner or an organization owner can edit or delete this project.
+      Only the project owner, an organization owner or an organization admin can edit this project.
+      Only the project owner or an organization owner can delete it.
+    </p>
+  {:else if !canManage}
+    <p class="mt-3 text-slate-700">
+      Only the project owner or an organization owner can delete this project.
     </p>
   {/if}
   {@render children?.()}

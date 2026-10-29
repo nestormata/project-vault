@@ -23,3 +23,20 @@ export function archiveAuthority(
   if (orgRole === 'owner') return 'org_owner'
   return null
 }
+
+/** Which path lets a caller edit a project's name, description and links (recorded on the audit row). */
+export type ProjectEditAuthority = ArchiveAuthority | 'org_admin'
+
+/**
+ * Story 72-9: who may edit a project (PATCH). Wider than `archiveAuthority` by one rule: an org
+ * admin may edit without holding the owner row. Delete and restore keep `archiveAuthority`.
+ * An org viewer (or an unknown role) is refused, as everywhere else.
+ */
+export function projectEditAuthority(
+  orgRole: string | null | undefined,
+  projectRole: string | null | undefined
+): ProjectEditAuthority | null {
+  const viaArchiveRule = archiveAuthority(orgRole, projectRole)
+  if (viaArchiveRule !== null) return viaArchiveRule
+  return orgRole === 'admin' ? 'org_admin' : null
+}
