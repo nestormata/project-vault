@@ -2,6 +2,7 @@ import { goto, invalidateAll } from '$app/navigation'
 import { resolve } from '$app/paths'
 import { ApiClientError } from '$lib/api/client.js'
 import { createErasureRequest, pseudonymizeUser } from '$lib/api/compliance.js'
+import { requestConfirm } from '$lib/state/confirm.svelte.js'
 import {
   changeProjectRole,
   deactivateOrgUser,
@@ -133,9 +134,12 @@ export class UsersActions {
     if (this.erasureSaving) return
     // AC-15: destructive actions require a confirmation naming the specific user/action, matching
     // the existing onDeactivateOrgUser/onRemoveOrgUser pattern's specificity.
-    const confirmed = confirm(
-      `Request erasure for ${user.email}? This starts an irreversible data-erasure workflow for this user.`
-    )
+    const confirmed = await requestConfirm({
+      title: 'Request erasure?',
+      message: `Request erasure for ${user.email}? This starts an irreversible data-erasure workflow for this user.`,
+      confirmLabel: 'Request erasure',
+      variant: 'danger',
+    })
     if (!confirmed) return
     this.erasureSaving = true
     this.erasureError = null
@@ -212,17 +216,23 @@ export class UsersActions {
   }
   async onRemoveOrgUser(user: OrgUser) {
     if (this.busyKey) return
-    const confirmed = confirm(
-      `Remove ${user.email} from the organization? This removes them from every project and signs out their sessions immediately.`
-    )
+    const confirmed = await requestConfirm({
+      title: 'Remove user?',
+      message: `Remove ${user.email} from the organization? This removes them from every project and signs out their sessions immediately.`,
+      confirmLabel: 'Remove',
+      variant: 'danger',
+    })
     if (!confirmed) return
     await this.runRemoval(user)
   }
   async onAbandonRotationsAndRemove(user: OrgUser) {
     if (this.busyKey) return
-    const confirmed = confirm(
-      `Abandon ${user.email}'s unfinished rotations and remove ${user.email} from the organization? Staged and stale rotations will be abandoned (their new values discarded, the previous values stay current). Promoted rotations are kept as they are, for an admin to retire later.`
-    )
+    const confirmed = await requestConfirm({
+      title: 'Abandon rotations and remove user?',
+      message: `Abandon ${user.email}'s unfinished rotations and remove ${user.email} from the organization? Staged and stale rotations will be abandoned (their new values discarded, the previous values stay current). Promoted rotations are kept as they are, for an admin to retire later.`,
+      confirmLabel: 'Abandon and remove',
+      variant: 'danger',
+    })
     if (!confirmed) return
     await this.runRemoval(user, { rotationHandling: 'abandon' })
   }
@@ -246,17 +256,23 @@ export class UsersActions {
   }
   async onDeactivateOrgUser(user: OrgUser) {
     if (this.busyKey) return
-    const confirmed = confirm(
-      `Deactivate ${user.email}? ${user.email} will be signed out of every session immediately and can no longer log in. Pending invitations ${user.email} sent will be revoked.`
-    )
+    const confirmed = await requestConfirm({
+      title: 'Deactivate user?',
+      message: `Deactivate ${user.email}? ${user.email} will be signed out of every session immediately and can no longer log in. Pending invitations ${user.email} sent will be revoked.`,
+      confirmLabel: 'Deactivate',
+      variant: 'danger',
+    })
     if (!confirmed) return
     await this.runDeactivation(user)
   }
   async onAbandonRotationsAndDeactivate(user: OrgUser) {
     if (this.busyKey) return
-    const confirmed = confirm(
-      `Abandon ${user.email}'s unfinished rotations and deactivate ${user.email}? Staged and stale rotations will be abandoned (their new values discarded, the previous values stay current). Promoted rotations are kept as they are, for an admin to retire later.`
-    )
+    const confirmed = await requestConfirm({
+      title: 'Abandon rotations and deactivate user?',
+      message: `Abandon ${user.email}'s unfinished rotations and deactivate ${user.email}? Staged and stale rotations will be abandoned (their new values discarded, the previous values stay current). Promoted rotations are kept as they are, for an admin to retire later.`,
+      confirmLabel: 'Abandon and deactivate',
+      variant: 'danger',
+    })
     if (!confirmed) return
     await this.runDeactivation(user, { rotationHandling: 'abandon' })
   }
@@ -321,7 +337,11 @@ export class UsersActions {
   recoveryLinkSentFor = $state<string | null>(null)
   async onSendRecoveryLink(user: OrgUser) {
     if (this.busyKey) return
-    const confirmed = confirm(`Send ${user.email} a password recovery link?`)
+    const confirmed = await requestConfirm({
+      title: 'Send recovery link?',
+      message: `Send ${user.email} a password recovery link?`,
+      confirmLabel: 'Send link',
+    })
     if (!confirmed) return
     this.busyKey = user.userId
     this.errorMessage = null

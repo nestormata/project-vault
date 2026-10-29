@@ -4,6 +4,7 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
   import AppLayoutSearch from '$lib/components/shell/AppLayoutSearch.svelte'
+  import ConfirmDialogHost from '$lib/components/ui/ConfirmDialogHost.svelte'
 
   import { invalidateAll } from '$app/navigation'
   import { setInitialUnreadCount, getUnreadCount } from '$lib/state/notifications.svelte.js'
@@ -110,4 +111,5 @@
 >
   <InjectionPoint name="app.layout.shell" data={data?.__inject} />
 </AppLayoutShell>
+<ConfirmDialogHost />
 <InjectionPoint name="app.layout.after" data={data?.__inject} />

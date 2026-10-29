@@ -687,13 +687,18 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
       render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
       await fireEvent.click(screen.getByRole('button', { name: /remove from organization/i }))
       // Story 43-15 AC-9: no rotationHandling on a plain removal (the default FR102 block).
-      expect(removeOrgUserMock).toHaveBeenCalledWith(
-        expect.anything(),
-        memberUser.userId,
-        undefined
+      // The confirmation is awaited (Story 72.5), so the call follows a microtask.
+      await vi.waitFor(() =>
+        expect(removeOrgUserMock).toHaveBeenCalledWith(
+          expect.anything(),
+          memberUser.userId,
+          undefined
+        )
       )
       await fireEvent.click(screen.getByRole('button', { name: /send recovery link/i }))
-      expect(sendRecoveryLinkMock).toHaveBeenCalledWith(expect.anything(), memberUser.userId)
+      await vi.waitFor(() =>
+        expect(sendRecoveryLinkMock).toHaveBeenCalledWith(expect.anything(), memberUser.userId)
+      )
       expect(await screen.findByText(/recovery link sent/i)).toBeTruthy()
     })
 

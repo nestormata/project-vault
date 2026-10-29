@@ -9,7 +9,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 vi.mock('$app/state', () => ({
   page: { route: { id: '/(app)/notifications' }, params: {} },
 }))
-const submitHandlers = vi.hoisted(() => new Map<string, (input: { cancel: () => void }) => void>())
+const submitHandlers = vi.hoisted(
+  () => new Map<string, (input: { cancel: () => void }) => void | Promise<void>>()
+)
 vi.mock('$app/forms', () => ({
   enhance: (
     form: HTMLFormElement,
@@ -100,26 +102,26 @@ describe('MachineDormancyAlerts sub-regions (probe order)', () => {
 })
 
 describe('MachineDormancyAlerts actions (interaction)', () => {
-  it('asks for a confirmation before the revoke and cancels the submit when declined', () => {
+  it('asks for a confirmation before the revoke and cancels the submit when declined', async () => {
     mount()
     const confirmMock = vi.fn(() => false)
     vi.stubGlobal('confirm', confirmMock)
     const cancel = vi.fn()
-    submitHandlers.get('?/revokeDormantKey')?.({ cancel })
+    await submitHandlers.get('?/revokeDormantKey')?.({ cancel })
     expect(confirmMock).toHaveBeenCalledWith(
       'Revoke the key "CI key" for Deploy bot? This cannot be undone.'
     )
     expect(cancel).toHaveBeenCalledTimes(1)
   })
 
-  it('lets the revoke through once confirmed', () => {
+  it('lets the revoke through once confirmed', async () => {
     mount()
     vi.stubGlobal(
       'confirm',
       vi.fn(() => true)
     )
     const cancel = vi.fn()
-    submitHandlers.get('?/revokeDormantKey')?.({ cancel })
+    await submitHandlers.get('?/revokeDormantKey')?.({ cancel })
     expect(cancel).not.toHaveBeenCalled()
   })
 

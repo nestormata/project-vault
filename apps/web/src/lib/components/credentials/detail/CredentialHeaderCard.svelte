@@ -18,6 +18,7 @@
   import CredentialLifecycleForm from './CredentialLifecycleForm.svelte'
   import CredentialMetadataTiles from './CredentialMetadataTiles.svelte'
   import CredentialSummary from './CredentialSummary.svelte'
+  import { requestConfirm } from '$lib/state/confirm.svelte.js'
   import RotationRecommendedNudges from './RotationRecommendedNudges.svelte'
 
   // Story 69.2: the header card of the credential page. It owns what its regions share: the
@@ -68,10 +69,13 @@
 
   async function onArchiveCredential(): Promise<void> {
     if (archiveBusy) return
-    const confirmed = confirm(
-      `Archive "${credential.name}"? Its versions, dependent-system records, rotation ` +
-        'history, and past shares are all preserved. You can unarchive it later.'
-    )
+    const confirmed = await requestConfirm({
+      title: 'Archive secret?',
+      message:
+        `Archive "${credential.name}"? Its versions, dependent-system records, rotation ` +
+        'history, and past shares are all preserved. You can unarchive it later.',
+      confirmLabel: 'Archive',
+    })
     if (!confirmed) return
     archiveBusy = true
     archiveError = null

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requestConfirm } from '$lib/state/confirm.svelte.js'
   import { invalidateAll } from '$app/navigation'
   import { unlinkExternalIdentity, type ExternalIdentity } from '$lib/api/external-identities.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -23,9 +24,12 @@
   let unlinkError = $state<string | null>(null)
   async function onUnlink(row: ExternalIdentity) {
     if (busyKey) return
-    const confirmed = confirm(
-      `Unlink ${row.email}'s ${row.providerName} identity? They will no longer be able to sign in via this SSO provider.`
-    )
+    const confirmed = await requestConfirm({
+      title: 'Unlink identity?',
+      message: `Unlink ${row.email}'s ${row.providerName} identity? They will no longer be able to sign in via this SSO provider.`,
+      confirmLabel: 'Unlink',
+      variant: 'danger',
+    })
     if (!confirmed) return
     busyKey = row.id
     unlinkError = null
