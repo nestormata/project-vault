@@ -24,7 +24,9 @@ const REDIRECT_AWAY_ROTATION_STATUSES = new Set(['in_progress', 'stale_recovery'
 // that would just 409 (AC-6), rather than only surfacing the conflict after a failed POST.
 const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'staged', 'promoted', 'stale_recovery'])
 
-const ownLoad = (async ({ params, fetch, locals }) => {
+const ownLoad = (async ({ params, fetch, locals, setHeaders }) => {
+  // Story 72.8 (P11): this form takes a new secret value, so the page is never stored.
+  setHeaders({ 'cache-control': 'no-store' })
   const orgRole = requireUser(locals).orgRole
 
   // AC-6: a member/viewer never triggers any fetch here — the page renders AccessNotice only,

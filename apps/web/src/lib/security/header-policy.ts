@@ -331,6 +331,8 @@ export function headerPolicyDeltaNotes(delta: HeaderPolicyDelta): string[] {
   ]
 }
 
+const NO_STORE_HEADER = 'cache-control'
+
 /** PV's own policy (byte-identical to `main`'s `securityHeadersFor`, minus the frozen panel branch
  * which stays outside the policy, see the file comment). */
 export const PV_HEADER_POLICY: HeaderPolicy = validateHeaderPolicy({
@@ -340,12 +342,20 @@ export const PV_HEADER_POLICY: HeaderPolicy = validateHeaderPolicy({
     {
       routeId: '/(app)/shares/[token]',
       match: { startsWith: '/shares/' },
-      names: ['referrer-policy'],
+      names: ['referrer-policy', NO_STORE_HEADER],
     },
     {
       routeId: '/external-shares/[token]',
       match: { startsWith: '/external-shares/' },
-      names: ['referrer-policy'],
+      names: ['referrer-policy', NO_STORE_HEADER],
     },
+    // Story 72.8 (P11): value-bearing pages set `cache-control: no-store` in their load (withNoStore).
+    ...[
+      '/(app)/projects/[projectId]/credentials/[credentialId]',
+      '/(app)/projects/[projectId]/credentials/[credentialId]/rotate',
+      '/(app)/projects/[projectId]/credentials/new',
+      '/(app)/projects/[projectId]/credentials/import',
+      '/(app)/projects/[projectId]/machine-users/[machineUserId]',
+    ].map((routeId) => ({ routeId, match: { routeId }, names: [NO_STORE_HEADER] })),
   ],
 })

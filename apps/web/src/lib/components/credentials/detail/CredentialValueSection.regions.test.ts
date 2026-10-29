@@ -17,7 +17,10 @@ vi.mock('$app/state', () => ({
     params: {},
   },
 }))
-vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn(async () => undefined) }))
+vi.mock('$app/navigation', () => ({
+  beforeNavigate: vi.fn(),
+  invalidateAll: vi.fn(async () => undefined),
+}))
 vi.mock('$lib/api/credentials.js', async () => {
   const actual =
     await vi.importActual<typeof import('$lib/api/credentials.js')>('$lib/api/credentials.js')

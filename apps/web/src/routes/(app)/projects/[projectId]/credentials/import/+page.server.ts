@@ -2,7 +2,9 @@ import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
-const ownLoad = (({ params, locals }) => {
+const ownLoad = (({ params, locals, setHeaders }) => {
+  // Story 72.8 (P11): this page carries imported secret values, so it is never stored.
+  setHeaders({ 'cache-control': 'no-store' })
   const orgRole = requireUser(locals).orgRole
   return {
     projectId: params.projectId,

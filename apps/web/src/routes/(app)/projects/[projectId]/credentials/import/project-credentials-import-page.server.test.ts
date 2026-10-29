@@ -13,6 +13,7 @@ function makeEvent(orgRole: string) {
   return {
     params: { projectId },
     locals: { user: { orgRole } },
+    setHeaders: vi.fn(),
   } as unknown as Parameters<typeof load>[0]
 }
 

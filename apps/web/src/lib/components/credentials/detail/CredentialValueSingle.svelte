@@ -55,7 +55,20 @@
       >
         Hide
       </button>
+      <button
+        class="rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium disabled:opacity-60"
+        type="button"
+        aria-describedby="credential-reveal-auto-hide-help"
+        disabled={controller.revealing}
+        onclick={() => void controller.extendValue()}
+      >
+        {m.credential_reveal_extend()}
+      </button>
     </div>
+    <FormHelpText
+      id="credential-reveal-auto-hide-help"
+      text={m.credential_reveal_auto_hide_help()}
+    />
     {#if controller.revealVersion !== null}
       <p class="mt-2 text-sm text-slate-600">Version {controller.revealVersion}</p>
     {/if}

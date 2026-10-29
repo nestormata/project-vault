@@ -1,6 +1,8 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import { m } from '$lib/paraglide/messages.js'
   import type { CredentialValueRegionProps } from './credential-value-controller.svelte.js'
   import CredentialValueFieldRow from './CredentialValueFieldRow.svelte'
 
@@ -20,6 +22,11 @@
     {/each}
   </ul>
   {#if controller.canReveal}
+    <FormHelpText id="credential-reveal-fields-help" text={m.credential_reveal_auto_hide_help()} />
+    <FormHelpText
+      id="credential-copy-fields-clipboard-note"
+      text={m.credential_copy_fields_clipboard_note()}
+    />
     <button
       class="mt-3 rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium disabled:opacity-60"
       type="button"

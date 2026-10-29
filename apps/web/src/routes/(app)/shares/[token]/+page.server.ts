@@ -19,7 +19,7 @@ const ownLoad = (async ({ params, fetch, locals, setHeaders }) => {
   // AC-17: this page's own URL carries the raw bearer token — the document response itself
   // (not just its internal API calls, already covered by access-routes.ts) must not leak it via
   // Referer on any outbound navigation/sub-resource request from this page.
-  setHeaders({ 'Referrer-Policy': 'no-referrer' })
+  setHeaders({ 'Referrer-Policy': 'no-referrer', 'cache-control': 'no-store' })
 
   try {
     const metadata = await getShareMetadata(fetch, params.token)

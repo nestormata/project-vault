@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
+  import { beforeNavigate } from '$app/navigation'
   import type { CredentialDetail } from '@project-vault/shared'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import type { CredentialPointExtras } from '$lib/credentials/credential-detail-helpers.js'
@@ -40,6 +41,9 @@
     orgRole,
     project,
   }))
+
+  // Story 72.8: a revealed value does not survive leaving the page it was revealed on.
+  beforeNavigate(() => controller.hideAllRevealed())
 
   onMount(() => controller.mount())
   onDestroy(() => controller.destroy())

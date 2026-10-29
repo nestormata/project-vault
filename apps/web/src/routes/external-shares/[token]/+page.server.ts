@@ -18,7 +18,7 @@ const ownLoad = (async ({ params, fetch, setHeaders }) => {
   // AC-10/PR #251 lesson: this page's own document response — the URL that actually carries the
   // raw bearer token in the browser — must set Referrer-Policy itself, not just the API JSON
   // responses (which access-routes.ts already sets). Set from this route's first commit.
-  setHeaders({ 'Referrer-Policy': 'no-referrer' })
+  setHeaders({ 'Referrer-Policy': 'no-referrer', 'cache-control': 'no-store' })
 
   try {
     const metadata = await getExternalShareMetadata(fetch, params.token)

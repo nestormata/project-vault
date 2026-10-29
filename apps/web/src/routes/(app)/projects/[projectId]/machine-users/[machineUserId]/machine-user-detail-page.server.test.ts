@@ -24,6 +24,7 @@ function makeEvent() {
     params: { projectId, machineUserId },
     fetch: vi.fn(),
     locals: { user: { orgRole: 'admin' } },
+    setHeaders: vi.fn(),
   } as unknown as Parameters<typeof load>[0]
 }
 
