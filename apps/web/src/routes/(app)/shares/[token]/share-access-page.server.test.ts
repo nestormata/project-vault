@@ -90,6 +90,9 @@ describe('/shares/[token] +page.server.ts', () => {
 
     await load(event)
 
-    expect(event.setHeaders).toHaveBeenCalledWith({ 'Referrer-Policy': 'no-referrer' })
+    expect(event.setHeaders).toHaveBeenCalledWith({
+      'Referrer-Policy': 'no-referrer',
+      'cache-control': 'no-store',
+    })
   })
 })

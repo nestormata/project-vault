@@ -195,3 +195,17 @@ export function computeFieldDelta(
   }
   return { addedFields: added, removedFields: removed, renamedFields: [] }
 }
+
+/** Story 72.8 (P6): the keys present in BOTH field sets (after normalization) whose value differs,
+ *  for the `changedFields` entry of the `credential.version_created` audit payload. The server
+ *  compares in memory and returns key names only: neither value is stored, logged or returned.
+ *  A key that was added, removed or renamed is reported by `computeFieldDelta`, not here. */
+export function computeChangedFields(oldFields: Field[], newFields: Field[]): string[] {
+  const oldValues = new Map(oldFields.map((item) => [normalizeFieldKey(item.key), item.value]))
+  return newFields
+    .filter((item) => {
+      const before = oldValues.get(normalizeFieldKey(item.key))
+      return before !== undefined && before !== item.value
+    })
+    .map((item) => item.key)
+}

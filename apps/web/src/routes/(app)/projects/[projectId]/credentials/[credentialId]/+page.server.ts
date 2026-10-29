@@ -128,7 +128,9 @@ function parseSharesQuery(url: URL): { status: string | undefined; page: number 
   }
 }
 
-const ownLoad = (async ({ params, fetch, locals, url }) => {
+const ownLoad = (async ({ params, fetch, locals, url, setHeaders }) => {
+  // Story 72.8 (P11): a page that can show a secret value is never stored by a browser or cache.
+  setHeaders({ 'cache-control': 'no-store' })
   const user = requireUser(locals)
   const orgRole = user.orgRole
   const origin = resolveTrustedOrigin(url)

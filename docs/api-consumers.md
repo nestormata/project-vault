@@ -324,6 +324,31 @@ be appended in later versions. Provider and subject are neutralised against spre
 `=`, `+`, `-` or `@` gets a `'` prefix) and RFC 4180 quoted. The integrity verification that precedes every
 export is unchanged.
 
+## Audit log: secret fields, copies and reveals (no new event types)
+
+Story 72-8 decided how history names what happened to a secret's fields. **Decision: field-key detail on the
+existing events, not new verbs.** `secret.field_added`, `secret.field_changed`, `secret.totp_generated` and
+`secret.copied` are **not** event types, and nothing in this section changes `event_type` values, the
+`GET /api/v1/org/audit/events` rows or the CSV export (still format version 2, same columns): an event type a
+reader or export consumer has never seen would be a breaking change for them, a payload key is not.
+
+What the server writes (all in the event `payload`, key names only, **never a value**):
+
+| Event                        | Payload                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `credential.version_created` | `versionNumber`, `template`, `addedFields`, `removedFields`, `renamedFields` (`{ from, to }`, when exactly one key left and one arrived) and, new, `changedFields`: keys kept whose value differs from the previous version. `changedFieldsUnknown: true` replaces it if the previous version could not be read. |
+| `credential.value_revealed`  | `versionNumber` and, new, `purpose: "copy"` when the value was fetched to be copied without being shown (`GET .../value?purpose=copy`). An absent `purpose` means a view reveal, so rows written before this change read the same way.                                                                           |
+
+A copy row records that **the server released the value to the copy action**, not that the clipboard was
+written (the server cannot see the clipboard). `purpose` is asserted by the caller: it labels the request,
+it is not proof of what the client then did with the value. A TOTP code will be audited as a `credential.value_revealed`
+with `purpose: "totp"` when the TOTP field kind exists (story 72-10); the `purpose` enum is additive.
+
+**Consumers never synthesize events.** A client (CentralizeMe included) must not invent history rows or labels
+for "copied" or "field changed" from its own UI actions: show only what the audit log returns. Reveal and
+TOTP generation are rate-limited **per user** (a bucket per signed-in user, not per IP), and a refused reveal
+is indistinguishable from a missing credential for a caller who cannot see the project.
+
 ## See also
 
 - [`machine-users.md`](machine-users.md) — machine users, API keys, and the CI/CD retrieval flow.

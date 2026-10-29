@@ -49,10 +49,10 @@ vi.mock('$app/state', () => ({
   updated: { current: false },
 }))
 vi.mock('$app/navigation', () => ({
+  beforeNavigate: vi.fn(),
   goto: vi.fn(),
   invalidate: vi.fn(),
   invalidateAll: vi.fn(),
-  beforeNavigate: vi.fn(),
   afterNavigate: vi.fn(),
   onNavigate: vi.fn(),
   pushState: vi.fn(),

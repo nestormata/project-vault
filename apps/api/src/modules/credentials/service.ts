@@ -19,6 +19,7 @@ import {
 import {
   assertLegacyShapeSafe,
   buildFieldMeta,
+  computeChangedFields,
   computeFieldDelta,
   fieldMetaForResponse,
   isFieldSetBody,
@@ -529,6 +530,10 @@ export type AddCredentialVersionResult = {
     addedFields: string[]
     removedFields: string[]
     renamedFields: Array<{ from: string; to: string }>
+    // Story 72.8: retained keys whose value changed (names only), or `changedFieldsUnknown: true`
+    // when the previous version could not be read.
+    changedFields?: string[]
+    changedFieldsUnknown?: true
   }
 }
 
@@ -578,6 +583,23 @@ async function currentFieldKeys(tx: Tx, credentialId: string): Promise<string[]>
   return fieldMetaForResponse(row?.schemaVersion ?? 1, row?.fieldMeta).map((f) => f.key)
 }
 
+// Story 72.8 (P6): the current version's decrypted fields, held in memory only to name which
+// retained keys change value in the new version. Returns null when they cannot be read (no live
+// version, or a corrupted envelope): a new version must still be writable, so the audit payload
+// then says `changedFieldsUnknown` instead of failing the write.
+async function currentFieldsForDiff(tx: Tx, credentialId: string): Promise<Field[] | null> {
+  const row = await selectCurrentVersionMeta(tx, credentialId)
+  if (!row?.encryptedValue) return null
+  try {
+    const plaintext = await withSecret(row.encryptedValue, (buf) =>
+      Promise.resolve(buf.toString('utf8'))
+    )
+    return parseFieldsFromPlaintext(row.schemaVersion, plaintext)
+  } catch {
+    return null
+  }
+}
+
 export async function addCredentialVersion(
   tx: Tx,
   input: {
@@ -597,6 +619,7 @@ export async function addCredentialVersion(
   // Current version's field keys → the "before" side of the AC-9 audit delta, and also used to
   // guard the legacy `{ value }` shape below.
   const oldKeys = await currentFieldKeys(tx, input.credentialId)
+  const oldFields = await currentFieldsForDiff(tx, input.credentialId)
 
   // A legacy `{ value }` body must never be usable to silently collapse an already-multi-field
   // secret down to one field (data loss) — it exists purely for backward compatibility with
@@ -647,6 +670,9 @@ export async function addCredentialVersion(
         addedFields: delta.addedFields,
         removedFields: delta.removedFields,
         renamedFields: delta.renamedFields,
+        ...(oldFields
+          ? { changedFields: computeChangedFields(oldFields, resolved.fields) }
+          : { changedFieldsUnknown: true as const }),
       },
     }
   } catch (error) {

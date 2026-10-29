@@ -32,6 +32,13 @@ export type CopyStatus = { id: number; kind: 'success' | 'failure'; message: str
 
 const COPY_STATUS_MS = 3000
 
+// Story 72.8 (P11) reveal contract: a revealed value hides itself after this long. "Extend" is not a
+// timer reset: it is a NEW server reveal, so it re-authorizes and writes a new audit row. The value
+// also hides when the tab is hidden, on a route change and on a bfcache restore.
+export const REVEAL_AUTO_HIDE_MS = 30_000
+const WHOLE_SLOT = ''
+const fieldSlot = (key: string) => `field:${key}`
+
 // Story 69-14: the one owner of the Secret value section's state (reveal, per-field reveal, copy
 // without reveal, add version, field-set editor). The section creates it and hands it to its
 // sub-regions as a prop. Everything display-once (the revealed value, the revealed fields, the
@@ -67,6 +74,60 @@ export class CredentialValueController extends CredentialSectionController<Crede
   revealAllLoading = $state(false)
   revealAllError = $state<string | null>(null)
 
+  // Story 72.8: one auto-hide timer per revealed value (the whole secret, or one field).
+  readonly #hideTimers = new SvelteMap<string, ReturnType<typeof setTimeout>>()
+
+  #armAutoHide(slot: string, hide: () => void): void {
+    this.#clearAutoHide(slot)
+    const armedFor = this.credentialKey
+    this.#hideTimers.set(
+      slot,
+      setTimeout(() => {
+        this.#hideTimers.delete(slot)
+        // A timer armed for another credential must not hide this one's value.
+        if (armedFor === this.credentialKey) hide()
+      }, REVEAL_AUTO_HIDE_MS)
+    )
+  }
+
+  #clearAutoHide(slot: string): void {
+    const timer = this.#hideTimers.get(slot)
+    if (timer === undefined) return
+    clearTimeout(timer)
+    this.#hideTimers.delete(slot)
+  }
+
+  // Bumped by every hide-all: a reveal already in flight when the value had to hide (tab hidden,
+  // navigation, bfcache restore) is dropped when it lands instead of showing the value.
+  #hideGeneration = 0
+
+  /** Hides every revealed value at once (tab hidden, route change, bfcache restore, unmount). */
+  hideAllRevealed(): void {
+    this.#hideGeneration += 1
+    for (const timer of this.#hideTimers.values()) clearTimeout(timer)
+    this.#hideTimers.clear()
+    this.revealedValue = null
+    this.revealVersion = null
+    this.revealedFields = {}
+  }
+
+  /** "Extend": a NEW server reveal (re-authorizes, re-audits), never a client-side timer reset. */
+  extendValue(): Promise<void> {
+    return this.revealValue()
+  }
+
+  extendField(key: string): Promise<void> {
+    return this.revealSingleField(key)
+  }
+
+  readonly #onVisibilityChange = (): void => {
+    if (document.visibilityState === 'hidden') this.hideAllRevealed()
+  }
+
+  readonly #onPageShow = (event: PageTransitionEvent): void => {
+    if (event.persisted) this.hideAllRevealed()
+  }
+
   // Story 13.3 AC-4 — reveal exactly one field. `GET .../value?field=<key>` is called; only that
   // field's value comes back and only that field is written to `revealedFields`.
   async revealSingleField(key: string): Promise<void> {
@@ -74,15 +135,19 @@ export class CredentialValueController extends CredentialSectionController<Crede
     this.revealingField = key
     this.fieldRevealError = { ...this.fieldRevealError, [key]: '' }
     const requestKey = this.credentialKey
+    const generation = this.#hideGeneration
     try {
       const result = await revealCredentialValue(fetch, this.projectId, this.credentialId, {
         field: key,
       })
-      if (!this.#isCurrentCredential(requestKey)) return
+      if (!this.#isCurrentCredential(requestKey) || generation !== this.#hideGeneration) return
       const value = isFieldsValue(result) ? (result.fields[0]?.value ?? '') : result.value
       this.revealedFields = { ...this.revealedFields, [key]: value }
+      this.#armAutoHide(fieldSlot(key), () => this.hideField(key))
     } catch (error) {
       if (!this.#isCurrentCredential(requestKey)) return
+      // A failed re-authorization (Extend) must not leave the old value on screen.
+      this.hideField(key)
       // AC-7/Subtask 3.5 — surface `unknown_field_key` inline near the affected row (e.g. a stale
       // field list after a concurrent rename) rather than as a generic top-level banner.
       this.fieldRevealError = {
@@ -97,10 +162,12 @@ export class CredentialValueController extends CredentialSectionController<Crede
   // Story 13.3 Subtask 3.4 — clears the field's in-memory revealed value only; no API call, same
   // convention as the existing whole-secret `revealedValue = null` "Hide".
   hideField(key: string): void {
+    this.#clearAutoHide(fieldSlot(key))
     this.revealedFields = omitKey(this.revealedFields, key)
   }
 
   hideValue(): void {
+    this.#clearAutoHide(WHOLE_SLOT)
     this.revealedValue = null
     this.revealVersion = null
   }
@@ -112,16 +179,11 @@ export class CredentialValueController extends CredentialSectionController<Crede
     this.revealAllLoading = true
     this.revealAllError = null
     const requestKey = this.credentialKey
+    const generation = this.#hideGeneration
     try {
       const result = await revealCredentialValue(fetch, this.projectId, this.credentialId)
-      if (!this.#isCurrentCredential(requestKey)) return
-      if (isFieldsValue(result)) {
-        const updates: Record<string, string> = {}
-        for (const field of result.fields) {
-          if (field.sensitive) updates[field.key] = field.value
-        }
-        this.revealedFields = { ...this.revealedFields, ...updates }
-      }
+      if (!this.#isCurrentCredential(requestKey) || generation !== this.#hideGeneration) return
+      if (isFieldsValue(result)) this.#showSensitiveFields(result.fields)
     } catch (error) {
       if (!this.#isCurrentCredential(requestKey)) return
       this.revealAllError = error instanceof Error ? error.message : 'Could not reveal all fields.'
@@ -130,18 +192,31 @@ export class CredentialValueController extends CredentialSectionController<Crede
     }
   }
 
+  #showSensitiveFields(fields: Array<{ key: string; value: string; sensitive: boolean }>): void {
+    const updates: Record<string, string> = {}
+    for (const field of fields) {
+      if (field.sensitive) updates[field.key] = field.value
+    }
+    this.revealedFields = { ...this.revealedFields, ...updates }
+    for (const key of Object.keys(updates)) {
+      this.#armAutoHide(fieldSlot(key), () => this.hideField(key))
+    }
+  }
+
   async revealValue(): Promise<void> {
     if (this.revealing || !this.canReveal) return
     this.revealing = true
     this.revealError = null
     const requestKey = this.credentialKey
+    const generation = this.#hideGeneration
     try {
       const result = await revealCredentialValue(fetch, this.projectId, this.credentialId)
-      if (!this.#isCurrentCredential(requestKey)) return
+      if (!this.#isCurrentCredential(requestKey) || generation !== this.#hideGeneration) return
       // A single-field secret's reveal returns `{ value }`; narrow on the response union the same
       // way revealSingleField() does.
       this.revealedValue = isFieldsValue(result) ? (result.fields[0]?.value ?? '') : result.value
       this.revealVersion = result.versionNumber
+      this.#armAutoHide(WHOLE_SLOT, () => this.hideValue())
     } catch (error) {
       if (!this.#isCurrentCredential(requestKey)) return
       this.revealedValue = null
@@ -211,8 +286,13 @@ export class CredentialValueController extends CredentialSectionController<Crede
       // held only in this function long enough for the clipboard write; it never enters reveal
       // state or the rendered DOM.
       const result = field
-        ? await revealCredentialValue(fetch, this.projectId, this.credentialId, { field })
-        : await revealCredentialValue(fetch, this.projectId, this.credentialId)
+        ? await revealCredentialValue(fetch, this.projectId, this.credentialId, {
+            field,
+            purpose: 'copy',
+          })
+        : await revealCredentialValue(fetch, this.projectId, this.credentialId, {
+            purpose: 'copy',
+          })
       const value = copyableValue(result, field)
       if (this.#isStaleCopy(requestGeneration, requestProjectId, requestCredentialId)) return
 
@@ -364,14 +444,20 @@ export class CredentialValueController extends CredentialSectionController<Crede
 
   mount(): void {
     this.#mounted = true
+    document.addEventListener('visibilitychange', this.#onVisibilityChange)
+    window.addEventListener('pageshow', this.#onPageShow)
   }
 
   destroy(): void {
+    // The server render also runs onDestroy, where there is no document or window and nothing was
+    // mounted: only a mounted controller has listeners to remove.
+    if (this.#mounted) {
+      document.removeEventListener('visibilitychange', this.#onVisibilityChange)
+      window.removeEventListener('pageshow', this.#onPageShow)
+    }
     this.#mounted = false
     this.#copyRequestGeneration += 1
-    this.revealedValue = null
-    this.revealVersion = null
-    this.revealedFields = {}
+    this.hideAllRevealed()
     for (const timeout of this.#copyStatusTimeouts.values()) clearTimeout(timeout)
     this.#copyStatusTimeouts.clear()
   }

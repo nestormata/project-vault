@@ -32,7 +32,10 @@ const addCredentialDependencyMock = vi.hoisted(() => vi.fn())
 const archiveCredentialDependencyMock = vi.hoisted(() => vi.fn())
 const confirmChecklistItemMock = vi.hoisted(() => vi.fn())
 
-vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn(async () => {}) }))
+vi.mock('$app/navigation', () => ({
+  beforeNavigate: vi.fn(),
+  invalidateAll: vi.fn(async () => {}),
+}))
 vi.mock('$lib/api/credential-shares.js', () => ({
   createCredentialShare: createCredentialShareMock,
   createExternalCredentialShare: createExternalCredentialShareMock,

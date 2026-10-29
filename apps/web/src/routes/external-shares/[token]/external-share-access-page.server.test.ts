@@ -40,7 +40,10 @@ describe('/external-shares/[token] +page.server.ts', () => {
 
     await load(event)
 
-    expect(setHeaders).toHaveBeenCalledWith({ 'Referrer-Policy': 'no-referrer' })
+    expect(setHeaders).toHaveBeenCalledWith({
+      'Referrer-Policy': 'no-referrer',
+      'cache-control': 'no-store',
+    })
   })
 
   it('AC-9: returns share metadata (never a secret value) on a valid token, requiring no session at all', async () => {

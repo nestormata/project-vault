@@ -11,6 +11,7 @@ describe('project new-credential +page.server.ts', () => {
     const result = await load({
       params: { projectId: 'proj-1' },
       locals: { user: { orgRole: 'admin' } },
+      setHeaders: vi.fn(),
     } as never)
 
     expect(result).toEqual({ projectId: 'proj-1', orgRole: 'admin' })

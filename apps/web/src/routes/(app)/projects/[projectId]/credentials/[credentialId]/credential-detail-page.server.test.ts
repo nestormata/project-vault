@@ -48,6 +48,7 @@ function makeEvent(
     params: { projectId, credentialId },
     fetch: vi.fn(),
     locals: { user: { orgRole: 'admin' } },
+    setHeaders: vi.fn(),
     url: new URL(url),
   } as unknown as Parameters<typeof load>[0]
 }
@@ -67,6 +68,27 @@ describe('credential detail +page.server.ts rotation section', () => {
     listCredentialSharesMock.mockResolvedValue({ items: [], total: 0 })
     listRotationRecommendedNudgesMock.mockResolvedValue({ items: [] })
     listOrgUsersMock.mockResolvedValue([])
+  })
+
+  // Story 72.8 (P11): the page is never stored, and no secret value reaches the page data. The
+  // value only ever arrives through the audited reveal call made by the browser.
+  it('Story 72.8: sends cache-control no-store and returns no secret value in the page data', async () => {
+    getCredentialMock.mockResolvedValue({
+      id: credentialId,
+      name: 'Stripe Secret Key',
+      fields: [{ key: 'password', sensitive: true }],
+    })
+    listRotationsMock.mockResolvedValue({ items: [], page: 1, limit: 1, total: 0, hasMore: false })
+    const event = makeEvent()
+
+    const result = expectLoaded(await load(event))
+
+    expect(event.setHeaders).toHaveBeenCalledWith({ 'cache-control': 'no-store' })
+    // The detail contract never carries a sensitive value (API test 'the credential value never
+    // appears in any non-reveal response body'); the load makes no reveal call (the reveal client is
+    // not even mocked here, so a call would throw) and adds no value-shaped key of its own.
+    expect(result).not.toHaveProperty('value')
+    expect(result).not.toHaveProperty('revealedValue')
   })
 
   // Story 17.3 AC-11: +page.server.ts's load calls listRotationRecommendedNudges alongside the

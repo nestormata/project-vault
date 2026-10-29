@@ -19,7 +19,7 @@ const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const archiveCredentialMock = vi.hoisted(() => vi.fn())
 const unarchiveCredentialMock = vi.hoisted(() => vi.fn())
 
-vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
+vi.mock('$app/navigation', () => ({ beforeNavigate: vi.fn(), invalidateAll: invalidateAllMock }))
 
 vi.mock('$lib/api/credential-shares.js', () => ({
   createCredentialShare: createCredentialShareMock,
@@ -559,10 +559,12 @@ describe('credential detail +page.svelte', () => {
 
     await fireEvent.click(copyButton)
 
+    // Story 72.8: a copy is audited as a copy, not as a view.
     expect(revealCredentialValueMock).toHaveBeenCalledWith(
       expect.anything(),
       projectId,
-      credentialId
+      credentialId,
+      { purpose: 'copy' }
     )
     expect(writeText).toHaveBeenCalledWith('sk_live_copy_only')
     expect(screen.queryByText('sk_live_copy_only')).toBeNull()
@@ -600,7 +602,7 @@ describe('credential detail +page.svelte', () => {
       expect.anything(),
       projectId,
       credentialId,
-      { field: 'password' }
+      { field: 'password', purpose: 'copy' }
     )
     expect(writeText).toHaveBeenCalledWith('field_copy_only')
     expect(screen.getByTestId('field-masked-password')).toBeTruthy()
@@ -769,7 +771,7 @@ describe('credential detail +page.svelte', () => {
       expect.anything(),
       projectId,
       credentialId,
-      { field: 'toString' }
+      { field: 'toString', purpose: 'copy' }
     )
     expect(writeText).toHaveBeenCalledWith('special-field-copy')
   })

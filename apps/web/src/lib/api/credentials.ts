@@ -132,9 +132,14 @@ export function revealCredentialValue(
   fetchFn: typeof fetch,
   projectId: string,
   credentialId: string,
-  options: { field?: string } = {}
+  options: { field?: string; purpose?: 'view' | 'copy' } = {}
 ) {
-  const query = options.field ? `?field=${encodeURIComponent(options.field)}` : ''
+  // Story 72.8: `purpose=copy` makes the audit row say the value was fetched to be copied.
+  const parts = [
+    options.field ? `field=${encodeURIComponent(options.field)}` : '',
+    options.purpose ? `purpose=${options.purpose}` : '',
+  ].filter(Boolean)
+  const query = parts.length > 0 ? `?${parts.join('&')}` : ''
   return apiFetch<CredentialValue | CredentialFieldsValue>(
     fetchFn,
     `/api/v1/projects/${projectId}/credentials/${credentialId}/value${query}`

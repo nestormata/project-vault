@@ -17,6 +17,7 @@ const archiveCredentialDependencyMock = vi.hoisted(() => vi.fn())
 const addCredentialVersionMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$app/navigation', () => ({
+  beforeNavigate: vi.fn(),
   goto: gotoMock,
   invalidateAll: invalidateAllMock,
 }))

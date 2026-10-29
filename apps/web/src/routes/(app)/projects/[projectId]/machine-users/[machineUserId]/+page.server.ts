@@ -14,8 +14,10 @@ type LoadResult = {
   notFound: boolean
 }
 
-const ownLoad = (({ params, fetch, locals }) =>
-  loadOr404WithOrgRole<LoadResult>(
+const ownLoad = (({ params, fetch, locals, setHeaders }) => {
+  // Story 72.8 (P11): this page reveals a new API key once, so it is never stored.
+  setHeaders({ 'cache-control': 'no-store' })
+  return loadOr404WithOrgRole<LoadResult>(
     locals,
     async (orgRole) => {
       const [machineUser, apiKeys] = await Promise.all([
@@ -40,7 +42,8 @@ const ownLoad = (({ params, fetch, locals }) =>
       apiKeys: { items: [], total: 0 },
       notFound: true,
     })
-  )) satisfies PageServerLoad
+  )
+}) satisfies PageServerLoad
 
 export const load: PageServerLoad = withInjectedLoad(
   ownLoad,
