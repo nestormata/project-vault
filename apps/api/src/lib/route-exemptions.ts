@@ -720,6 +720,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'credential.share_nudge_dismissed',
     sameTransactionAuditService: 'writeShareAuditEntry',
   },
+  // Story 72-11 V13: the shares index lists share metadata (never a value or a token).
+  'GET /api/v1/shares': {
+    action: 'read',
+    auditOmissionReason:
+      'Shares index metadata (credential name, recipient, status) never exposes a credential value or a share token.',
+    reviewer: SECURITY_OWNER,
+  },
   'GET /api/v1/shares/access/:token': {
     action: SENSITIVE_READ,
     auditOmissionReason:
@@ -752,6 +759,22 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SENSITIVE_READ,
     auditOmissionReason:
       "AC-11: this route IS audited (writeSystemAuditEntryOrFailClosed, actorType: 'system', since there is no authenticated actor to attribute a human/machine audit row to for an unauthenticated external recipient) — but requireAuth:false means there is no secureCtx.tx to delegate through, so it cannot use the sameTransactionAuditService pattern this scanner checks for. The audit write runs inside external-service.ts's revealExternalShare, in the SAME withOrg-scoped transaction as the atomic single-use claim (not a separate later transaction) — an audit-write failure rolls back the claim too, rather than burning the recipient's one-time access without ever returning the value.",
+    reviewer: SECURITY_OWNER,
+  },
+  // Story 72-11 V5/V7: the guest verification routes of a native external share. Like the two
+  // routes above they are requireAuth:false (no secureCtx.tx to delegate an audit write through),
+  // and neither returns a secret value: the send answers a masked address, the confirm a one-time
+  // proof the reveal (audited above) still requires.
+  'POST /api/v1/external-shares/access/:token/verification': {
+    action: SENSITIVE_READ,
+    auditOmissionReason:
+      'Story 72-11 V5: the send route answers one identical body for every token class and never returns a secret; it only queues a verification-code email after the response for a live gated share. Auditing each request would make an unknown token distinguishable from a real one and let any link holder flood the audit log; the verified access is recorded on the credential.share_viewed row of the reveal (recipientVerified), and the lockout on credential.share_revoked.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/external-shares/access/:token/verification/confirm': {
+    action: SENSITIVE_READ,
+    auditOmissionReason:
+      "Story 72-11 V4/V8: a confirm never returns a secret value, only a one-time proof the reveal still requires. The security-relevant outcomes are audited inside external-verification-service.ts in the same withOrg transaction as the attempt write: the fifth failure writes credential.share_revoked (reason verification_attempts_exhausted, actorType 'system'), and the access the proof enables is recorded on the reveal's credential.share_viewed row (recipientVerified). requireAuth:false means there is no secureCtx.tx for the sameTransactionAuditService pattern.",
     reviewer: SECURITY_OWNER,
   },
   'GET /api/v1/projects/:projectId/rotations/upcoming': {

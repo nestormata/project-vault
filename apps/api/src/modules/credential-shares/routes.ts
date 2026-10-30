@@ -1,5 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { AuditEvent, normalizeFieldKey } from '@project-vault/shared'
+import {
+  AuditEvent,
+  deriveShareDisplayStatus,
+  normalizeFieldKey,
+  ShareApiErrorSchema,
+} from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import {
@@ -17,6 +22,7 @@ import {
 } from '../credentials/routes.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import { CREDENTIAL_ARCHIVED_ERROR } from '../credentials/archive-guards.js'
+import { shareErrorBody } from './share-errors.js'
 import {
   createOrgAdminNotificationEntries,
   dispatchDirectEmailNotification,
@@ -101,29 +107,48 @@ async function rejectIfExternalShareStepUpFails(
     totpCode: body.totpCode,
   })
   if (stepUp.status === 'ok') return false
-  reply.status(401).send({
-    code: 'step_up_required',
-    message:
-      stepUp.status === 'missing_factor'
-        ? 'A password or TOTP code is required to create an external share.'
-        : 'The supplied password or TOTP code is incorrect.',
-  })
+  reply
+    .status(401)
+    .send(
+      shareErrorBody(
+        'step_up_required',
+        stepUp.status === 'missing_factor'
+          ? 'A password or TOTP code is required to create an external share.'
+          : 'The supplied password or TOTP code is incorrect.'
+      )
+    )
   return true
 }
 
-function rejectInvalidExternalShareRequest(
+/** AC-5 then AC-3, in that order, after the authorization gates: returns `true` (reply sent) when
+ *  the caller must stop. */
+async function rejectIfExternalShareChecksFail(
+  tx: SecureRouteContext['tx'],
+  body: Pick<CreateExternalCredentialShareBody, 'singleUse' | 'password' | 'totpCode'>,
   userId: string,
-  body: CreateExternalCredentialShareBody,
+  reply: FastifyReply
+): Promise<boolean> {
+  if (rejectIfExternalShareNotSingleUse(body, reply)) return true
+  return rejectIfExternalShareStepUpFails(tx, body, userId, reply)
+}
+
+/** AC-5: an explicit `singleUse: false` is a distinct 400. Runs AFTER the authorization and
+ *  visibility gates (Story 72-11 V12), so the typed reason is never sent to an actor who cannot
+ *  see the credential. */
+function rejectIfExternalShareNotSingleUse(
+  body: Pick<CreateExternalCredentialShareBody, 'singleUse'>,
   reply: FastifyReply
 ): boolean {
-  if (body.singleUse === false) {
-    reply.status(400).send({
-      code: 'external_share_must_be_single_use',
-      message: 'External shares must be single-use; singleUse: false is not supported.',
-    })
-    return true
-  }
-  return !enforceShareRecipientEmailRateLimit(userId, body.recipientEmail, reply)
+  if (body.singleUse !== false) return false
+  reply
+    .status(400)
+    .send(
+      shareErrorBody(
+        'must_be_single_use',
+        'External shares must be single-use; singleUse: false is not supported.'
+      )
+    )
+  return true
 }
 
 export function serializeShare(share: CredentialShareRow) {
@@ -140,6 +165,9 @@ export function serializeShare(share: CredentialShareRow) {
     firstViewedAt: share.firstViewedAt?.toISOString() ?? null,
     viewCount: share.viewCount,
     status: share.status,
+    displayStatus: deriveShareDisplayStatus(share),
+    lockedAt: share.lockedAt?.toISOString() ?? null,
+    verificationRequired: share.verificationRequired,
   }
 }
 
@@ -155,22 +183,25 @@ function shareScopeErrorResponse(
     | { status: 'too_many_attribute_keys' }
 ): unknown {
   if (result.status === 'unknown_field_key') {
-    return reply.status(400).send({
-      code: 'unknown_field_key',
-      message: `Unknown field key: '${result.field}'`,
-      field: result.field,
-    })
+    return reply.status(400).send(
+      shareErrorBody('field_unknown', `Unknown field key: '${result.field}'`, {
+        field: result.field,
+      })
+    )
   }
   if (result.status === 'too_many_attribute_keys') {
-    return reply.status(400).send({
-      code: 'too_many_attribute_keys',
-      message: `attributeKeys must name at most ${MAX_ATTRIBUTE_KEYS} distinct fields.`,
-    })
+    return reply
+      .status(400)
+      .send(
+        shareErrorBody(
+          'scope_too_broad',
+          `attributeKeys must name at most ${MAX_ATTRIBUTE_KEYS} distinct fields.`
+        )
+      )
   }
-  return reply.status(400).send({
-    code: 'ambiguous_share_scope',
-    message: 'Specify at most one of fieldKey or attributeKeys.',
-  })
+  return reply
+    .status(400)
+    .send(shareErrorBody('scope_ambiguous', 'Specify at most one of fieldKey or attributeKeys.'))
 }
 
 type CommonCredentialShareErrorResult =
@@ -205,9 +236,17 @@ function commonCredentialShareErrorResponse(
     return reply.status(404).send(CREDENTIAL_NOT_FOUND)
   }
   if (result.status === 'credential_archived') {
-    return reply.status(410).send(CREDENTIAL_ARCHIVED_ERROR)
+    return reply
+      .status(410)
+      .send(shareErrorBody('credential_archived', CREDENTIAL_ARCHIVED_ERROR.message))
   }
   return shareScopeErrorResponse(reply, result)
+}
+
+function expiryErrorBody(reason: 'past' | 'too_far_in_future', tooLateMessage: string) {
+  return reason === 'past'
+    ? shareErrorBody('expiry_in_past', 'expiresAt must be in the future.')
+    : shareErrorBody('expiry_too_late', tooLateMessage)
 }
 
 function createShareErrorResponse(
@@ -218,27 +257,21 @@ function createShareErrorResponse(
     return commonCredentialShareErrorResponse(reply, result)
   }
   if (result.status === 'self_share') {
-    return reply
-      .status(400)
-      .send({ code: 'self_share', message: 'You cannot share with yourself.' })
+    return reply.status(400).send(shareErrorBody('self_share', 'You cannot share with yourself.'))
   }
   if (result.status === 'recipient_not_found') {
     return reply
       .status(400)
-      .send({ code: 'recipient_not_found', message: 'Recipient must be a member of this org.' })
+      .send(shareErrorBody('recipient_unknown', 'Recipient must be a member of this org.'))
   }
   if (result.status === 'recipient_inactive') {
     return reply
       .status(400)
-      .send({ code: 'recipient_inactive', message: 'Recipient is a deactivated org user.' })
+      .send(shareErrorBody('recipient_inactive', 'Recipient is a deactivated org user.'))
   }
-  return reply.status(400).send({
-    code: 'expires_at_invalid',
-    message:
-      result.reason === 'past'
-        ? 'expiresAt must be in the future.'
-        : 'expiresAt exceeds the maximum allowed share duration.',
-  })
+  return reply
+    .status(400)
+    .send(expiryErrorBody(result.reason, 'expiresAt exceeds the maximum allowed share duration.'))
 }
 
 function createExternalShareErrorResponse(
@@ -249,19 +282,23 @@ function createExternalShareErrorResponse(
     return commonCredentialShareErrorResponse(reply, result)
   }
   if (result.status === 'cap_exceeded') {
-    return reply.status(429).send({
-      code: 'external_share_cap_exceeded',
-      message:
-        'Too many pending external shares for this credential/field. Revoke or wait for one to expire.',
-    })
+    return reply
+      .status(429)
+      .send(
+        shareErrorBody(
+          'external_cap_reached',
+          'Too many pending external shares for this credential/field. Revoke or wait for one to expire.'
+        )
+      )
   }
-  return reply.status(400).send({
-    code: 'expires_at_invalid',
-    message:
-      result.reason === 'past'
-        ? 'expiresAt must be in the future.'
-        : 'expiresAt exceeds the maximum allowed external share duration (72h).',
-  })
+  return reply
+    .status(400)
+    .send(
+      expiryErrorBody(
+        result.reason,
+        'expiresAt exceeds the maximum allowed external share duration (72h).'
+      )
+    )
 }
 
 type BossFastify = FastifyApp & { boss?: BossService }
@@ -430,11 +467,11 @@ export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         201: CreateCredentialShareResponseSchema,
-        400: ApiErrorSchema,
-        401: ApiErrorSchema,
+        400: ShareApiErrorSchema,
+        401: ShareApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        410: ApiErrorSchema,
+        410: ShareApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -543,13 +580,13 @@ export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         201: CreateExternalCredentialShareResponseSchema,
-        400: ApiErrorSchema,
-        401: ApiErrorSchema,
+        400: ShareApiErrorSchema,
+        401: ShareApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        410: ApiErrorSchema,
+        410: ShareApiErrorSchema,
         422: ApiErrorSchema,
-        429: ApiErrorSchema,
+        429: ShareApiErrorSchema,
       },
     },
     security: {
@@ -575,10 +612,14 @@ export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
 
-      // AC-5: external shares are always single-use — the body may omit `singleUse` or pass
-      // `true`, but an explicit `false` is a distinct, documented 400. The same helper applies
       // Story 18.6's per-sharer/recipient email limit.
-      if (rejectInvalidExternalShareRequest(secureCtx.auth.userId, parsed.data, reply)) {
+      if (
+        !enforceShareRecipientEmailRateLimit(
+          secureCtx.auth.userId,
+          parsed.data.recipientEmail,
+          reply
+        )
+      ) {
         return reply
       }
 
@@ -596,10 +637,9 @@ export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
         return reply
       }
 
-      // AC-3: step-up re-authentication BEFORE any mutation. A missing/incorrect factor returns
-      // 401 step_up_required with no share created and no partial side effects.
+      // AC-5 (always single-use) then AC-3 (step-up re-authentication), both BEFORE any mutation.
       if (
-        await rejectIfExternalShareStepUpFails(
+        await rejectIfExternalShareChecksFail(
           secureCtx.tx,
           parsed.data,
           secureCtx.auth.userId,
@@ -720,6 +760,7 @@ export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
         credentialId: params.credentialId,
         sharedByUserId: isAdmin ? undefined : secureCtx.auth.userId,
         status: query.status,
+        displayStatus: query.displayStatus,
         limit,
         offset,
       }
@@ -738,7 +779,7 @@ export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         200: RevokeCredentialShareResponseSchema,
         401: ApiErrorSchema,
-        403: ApiErrorSchema,
+        403: ShareApiErrorSchema,
         404: ApiErrorSchema,
       },
     },
@@ -780,10 +821,14 @@ export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
         effectiveSharerOf(target) !== secureCtx.auth.userId &&
         roleRank(orgRoleOrDeny(secureCtx.auth)) < roleRank('admin')
       ) {
-        return reply.status(403).send({
-          code: 'insufficient_role',
-          message: 'Only the sharer or an org admin can revoke this share.',
-        })
+        return reply
+          .status(403)
+          .send(
+            shareErrorBody(
+              'revoke_forbidden',
+              'Only the sharer or an org admin can revoke this share.'
+            )
+          )
       }
 
       const existing = await revokeShare(secureCtx.tx, {

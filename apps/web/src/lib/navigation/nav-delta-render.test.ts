@@ -87,6 +87,7 @@ describe('primary nav with a CM delta (Story 68.7 AC-3)', () => {
       '/projects',
       '/credentials',
       '/notifications',
+      '/shares',
     ])
     expect(nav.querySelector('button')).toBeNull()
   })

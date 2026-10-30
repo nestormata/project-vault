@@ -106,6 +106,8 @@ describe('AppShell characterization (AC-10)', () => {
       </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/notifications"> <span class="hidden sm:inline">Notifications</span> <span class="sm:hidden">Notifications</span>
       </a>
+      <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/shares"> <span class="hidden sm:inline">Shares</span> <span class="sm:hidden">Shares</span>
+      </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/health"> <span class="hidden sm:inline">Health</span> <span class="sm:hidden">Health</span>
       </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
@@ -180,6 +182,8 @@ describe('AppShell characterization (AC-10)', () => {
       </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/notifications"> <span class="hidden sm:inline">Notifications</span> <span class="sm:hidden">Notifications</span>
       </a>
+      <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/shares"> <span class="hidden sm:inline">Shares</span> <span class="sm:hidden">Shares</span>
+      </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/health"> <span class="hidden sm:inline">Health</span> <span class="sm:hidden">Health</span>
       </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
@@ -229,6 +233,8 @@ describe('AppShell characterization (AC-10)', () => {
       </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/notifications"> <span class="hidden sm:inline">Notifications</span> <span class="sm:hidden">Notifications</span>
       </a>
+      <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/shares"> <span class="hidden sm:inline">Shares</span> <span class="sm:hidden">Shares</span>
+      </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/health"> <span class="hidden sm:inline">Health</span> <span class="sm:hidden">Health</span>
       </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/settings"> <span class="hidden sm:inline">Settings</span> <span class="sm:hidden">Settings</span>
@@ -277,6 +283,8 @@ describe('AppShell characterization (AC-10)', () => {
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/credentials"> <span class="hidden sm:inline">Secrets</span> <span class="sm:hidden">Secrets</span>
       </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/notifications"> <span class="hidden sm:inline">Notifications</span> <span class="sm:hidden">Notifications</span>
+      </a>
+      <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/shares"> <span class="hidden sm:inline">Shares</span> <span class="sm:hidden">Shares</span>
       </a>
       <a class="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100" href="/health"> <span class="hidden sm:inline">Health</span> <span class="sm:hidden">Health</span>
       </a>

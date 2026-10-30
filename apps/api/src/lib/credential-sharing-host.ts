@@ -660,7 +660,11 @@ export function buildCredentialSharingHost(
             EXTERNAL_SHARE_MISS_FLOOR_MS,
             async () => {
               const result = await findExternalShareByTokenHash(rawToken)
-              if (result.status !== 'ok') return { status: 'not_found' as const }
+              // Story 72-11 V2: a gated (natively created) share needs the recipient's proof,
+              // which this method cannot carry, so the host sees it as unknown.
+              if (result.status !== 'ok' || result.metadata.share.verificationRequired) {
+                return { status: 'not_found' as const }
+              }
 
               setOrganizationId(result.metadata.share.orgId)
               if (chargesOrgBudget(result.metadata.share)) {
@@ -698,6 +702,11 @@ export function buildCredentialSharingHost(
             // query unconditionally" timing-safety discipline (never an early return before
             // this lookup runs).
             const lookup = await findExternalShareByTokenHash(rawToken)
+            // Story 72-11 V2: the link alone must not open a gated share, and the host cannot
+            // supply a proof. Answered as unknown before the reveal, so no attempt is counted.
+            if (lookup.status === 'ok' && lookup.metadata.share.verificationRequired) {
+              return { status: 'not_found' as const }
+            }
             if (lookup.status === 'ok') {
               setOrganizationId(lookup.metadata.share.orgId)
               if (chargesOrgBudget(lookup.metadata.share)) {

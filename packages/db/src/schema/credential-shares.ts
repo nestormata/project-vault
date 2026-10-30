@@ -83,6 +83,26 @@ export const credentialShares = pgTable(
     // migration" note predates AC-22, which was added by a later review pass and genuinely needs
     // persisted, cross-request state. Unused (always 0) for `recipient_type = 'user'` rows.
     revealAttemptCount: integer('reveal_attempt_count').notNull().default(0),
+    // Story 72-11 V1: guest recipient verification for native external shares. Only rows created
+    // through PV's native external-share route are gated (V2); host-created and pre-existing rows
+    // stay false and keep link-only access.
+    verificationRequired: boolean('verification_required').notNull().default(false),
+    // V3: HMAC-SHA256 keyed by the raw share token over `shareId:code`. The key (the token) is
+    // never stored, so a leaked row cannot be brute-forced offline. NULL once used or never sent.
+    verificationCodeHash: text('verification_code_hash'),
+    verificationCodeExpiresAt: timestamp('verification_code_expires_at', { withTimezone: true }),
+    // V4: failed confirm attempts per share across codes (reserved atomically before the compare).
+    verificationAttemptCount: integer('verification_attempt_count').notNull().default(0),
+    // V5: codes sent per share and the last send time (60 s cooldown, 5 sends per share).
+    verificationSendCount: integer('verification_send_count').notNull().default(0),
+    verificationSentAt: timestamp('verification_sent_at', { withTimezone: true }),
+    // V8: SHA-256 of the one-time proof returned by a successful confirm (valid 15 min from
+    // `verified_at`). The reveal of a gated share requires it.
+    verificationProofHash: text('verification_proof_hash'),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    // V10: set when an attempt cap (verification or reveal) closed the share. Display precedence
+    // locked > opened > status; the persisted `status` stays `revoked`.
+    lockedAt: timestamp('locked_at', { withTimezone: true }),
   },
   (t) => ({
     // AC-19: defense-in-depth against an implementation ever colliding two live tokens.

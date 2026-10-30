@@ -1,3 +1,4 @@
+import type { ShareDisplayStatus } from '@project-vault/shared'
 import { apiFetch, buildQuery } from './client.js'
 
 export type CredentialShareStatus = 'active' | 'viewed' | 'revoked' | 'expired' | 'superseded'
@@ -26,6 +27,11 @@ export type CredentialShareSummary = {
   firstViewedAt: string | null
   viewCount: number
   status: CredentialShareStatus
+  // Story 72.11: derived status (locked > opened > persisted status), the lock time and whether
+  // the recipient must verify the emailed address.
+  displayStatus: ShareDisplayStatus
+  lockedAt: string | null
+  verificationRequired: boolean
 }
 
 export type CreatedCredentialShare = CredentialShareSummary & { token: string }
@@ -71,6 +77,7 @@ function shareUrl(projectId: string, credentialId: string, suffix = ''): string 
 // existing scoping — additive query params, and the response now also carries `total`.
 export type ListCredentialSharesQuery = {
   status?: CredentialShareStatus
+  displayStatus?: ShareDisplayStatus
   limit?: number
   offset?: number
 }
@@ -160,24 +167,78 @@ export function createExternalCredentialShare(
 // Story 17.2 AC-9: metadata for the public, unauthenticated consent page — no sharedByEmail (the
 // external API never returns it), a display name instead.
 export type ExternalShareMetadata = {
-  credentialId: string
+  // Story 72.11: a share that needs recipient verification hides the credential id, the scope and
+  // the action until the proof is held, so those are absent for it.
+  credentialId?: string
   credentialName: string
   sharedByDisplayName: string
-  fieldKey: string | null
-  attributeKeys: string[] | null
-  action: ShareAction
+  fieldKey?: string | null
+  attributeKeys?: string[] | null
+  action?: ShareAction
   expiresAt: string
   status: CredentialShareStatus
+  verificationRequired?: boolean
+  maskedRecipient?: string
 }
 
 export function getExternalShareMetadata(fetchFn: typeof fetch, token: string) {
   return apiFetch<ExternalShareMetadata>(fetchFn, `/api/v1/external-shares/access/${token}`)
 }
 
-export function revealExternalCredentialShare(fetchFn: typeof fetch, token: string) {
+// Story 72.11 V8: the proof of a verified gated share travels in the body, never the URL.
+export function revealExternalCredentialShare(
+  fetchFn: typeof fetch,
+  token: string,
+  proof?: string
+) {
   return apiFetch<ShareRevealResult>(fetchFn, `/api/v1/external-shares/access/${token}/reveal`, {
     method: 'POST',
+    ...(proof === undefined ? {} : { body: JSON.stringify({ proof }) }),
   })
+}
+
+export type ExternalShareVerificationSend = { maskedRecipient: string; cooldownSeconds: number }
+
+// Story 72.11 V5: always answers 200 with the same shape, whatever the share's state.
+export function sendExternalShareVerification(fetchFn: typeof fetch, token: string) {
+  return apiFetch<ExternalShareVerificationSend>(
+    fetchFn,
+    `/api/v1/external-shares/access/${token}/verification`,
+    { method: 'POST' }
+  )
+}
+
+// Story 72.11 V7: 200 with a one-time proof, or one generic 422 `verification_failed`.
+export function confirmExternalShareVerification(
+  fetchFn: typeof fetch,
+  token: string,
+  code: string
+) {
+  return apiFetch<{ proof: string }>(
+    fetchFn,
+    `/api/v1/external-shares/access/${token}/verification/confirm`,
+    { method: 'POST', body: JSON.stringify({ code }) }
+  )
+}
+
+// Story 72.11 V13: the shares index across credentials and projects.
+export type ShareIndexItem = CredentialShareSummary & {
+  credentialName: string
+  projectId: string
+  projectName: string
+}
+
+export type ListSharesIndexQuery = {
+  displayStatus?: ShareDisplayStatus
+  limit?: number
+  offset?: number
+}
+
+export function listSharesIndex(fetchFn: typeof fetch, query: ListSharesIndexQuery = {}) {
+  return apiFetch<{ items: ShareIndexItem[]; total: number }>(
+    fetchFn,
+    `/api/v1/shares${buildQuery(query)}`
+  )
 }
 
 // Story 17.3 AC-11/AC-15/FR125: the "shared — rotation recommended" nudge, computed per

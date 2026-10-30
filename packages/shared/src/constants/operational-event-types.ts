@@ -152,6 +152,9 @@ export const OperationalEvent = {
   // The response was already sent unchanged, so this is log-only; the fields carry the redacted
   // error and nothing that names the token, share, org or miss class.
   CREDENTIAL_SHARE_LOSING_ATTEMPT_WRITE_FAILED: 'credential_share.losing_attempt_write_failed',
+  // Story 72-11 V5: the deferred (post-response) verification-code send of an external share
+  // threw. Log-only like the losing-attempt write above: no token, share, org, recipient or code.
+  CREDENTIAL_SHARE_VERIFICATION_SEND_FAILED: 'credential_share.verification_send_failed',
   ROTATION_RESUME_SUCCESS: 'rotation.resume.success',
   ROTATION_RESUME_NOT_STALE: 'rotation.resume.not_stale',
   ROTATION_RESUME_CONCURRENT_MODIFICATION: 'rotation.resume.concurrent_modification',

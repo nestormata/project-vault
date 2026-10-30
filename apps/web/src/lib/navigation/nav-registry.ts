@@ -49,6 +49,7 @@ const PRIMARY = {
     { id: 'primary.projects' },
     { id: 'primary.secrets' },
     { id: 'primary.notifications' },
+    { id: 'primary.shares' },
     { id: 'primary.health' },
     { id: 'primary.settings' },
     { id: 'primary.platform', conditional: true },

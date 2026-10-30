@@ -198,6 +198,7 @@ export interface InjectionPointProps {
   'credential.detail.nudges': CredentialPointProps
   'credential.detail.rotation': CredentialPointProps
   'credential.detail.shares': CredentialPointProps
+  'credential.detail.shares.field-help': CredentialPointProps
   'credential.detail.summary': CredentialPointProps
   'credential.detail.value': CredentialPointProps
   'credential.detail.value-add-version': CredentialPointProps
@@ -433,6 +434,9 @@ export interface InjectionPointProps {
   'shares.detail.after': StandardPointProps
   'shares.detail.before': StandardPointProps
   'shares.detail.header.actions': StandardPointProps
+  'shares.home.after': StandardPointProps
+  'shares.home.before': StandardPointProps
+  'shares.home.header.actions': StandardPointProps
   'shell.body.end': StandardPointProps
   'shell.head': StandardPointProps
   'shell.header.end': StandardPointProps
@@ -486,6 +490,12 @@ export interface InjectionPointProps {
   'app.layout.shell': StandardPointProps
   'credentials.home.header': StandardPointProps
   'credentials.home.projects': StandardPointProps
+  'shares.home.header': StandardPointProps
+  'shares.home.list': StandardPointProps
+  'shares.home.filter': StandardPointProps
+  'shares.home.items': StandardPointProps
+  'shares.home.pagination': StandardPointProps
+  'shares.home.empty': StandardPointProps
   'credentials.import.header': StandardPointProps
   'credentials.import.projects': StandardPointProps
   'extensions.panels-detail.content': StandardPointProps
@@ -840,6 +850,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'credential.detail.nudges',
       'credential.detail.rotation',
       'credential.detail.shares',
+      'credential.detail.shares.field-help',
       'credential.detail.summary',
       'credential.detail.value',
       'credential.detail.value-fields',
@@ -1024,6 +1035,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     'root.home',
     'root.layout',
     'shares.detail',
+    'shares.home',
     'status.detail',
     'vault.home',
   ]),
@@ -1111,6 +1123,18 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     'StandardPointProps',
     ['/(app)/credentials#page'],
     ['credentials.home.header', 'credentials.home.projects']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/shares#page'],
+    [
+      'shares.home.header',
+      'shares.home.list',
+      'shares.home.filter',
+      'shares.home.items',
+      'shares.home.pagination',
+      'shares.home.empty',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',

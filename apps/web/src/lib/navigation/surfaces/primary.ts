@@ -41,6 +41,12 @@ export const primaryItems: SurfaceBuilder<'primary'> = () => [
     href: () => resolve('/notifications'),
   },
   {
+    id: 'primary.shares',
+    label: () => m.nav_shares(),
+    mobileLabel: () => m.nav_shares(),
+    href: () => resolve('/shares'),
+  },
+  {
     id: 'primary.health',
     label: () => m.nav_health(),
     mobileLabel: () => m.nav_health(),

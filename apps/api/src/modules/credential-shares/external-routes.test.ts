@@ -19,6 +19,8 @@ import {
   createSharingMultiFieldFixture,
 } from '../credentials/credential-route-test-helpers.js'
 import * as dispatcher from '../../notifications/dispatcher.js'
+import { flushPendingLosingAttempts } from './external-service.js'
+import { verifyExternalShareForTest } from './external-share-test-helpers.js'
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
@@ -53,6 +55,7 @@ describe('external credential-shares routes', () => {
   })
 
   afterAll(async () => {
+    await flushPendingLosingAttempts()
     await app.close()
     await resetVaultForTest()
   })
@@ -96,6 +99,30 @@ describe('external credential-shares routes', () => {
       },
     })
   }
+
+  /** Story 72-11: a native external share is gated, so a reveal carries the proof of the guest's
+   *  verification step (run here through the real send and confirm routes). */
+  async function revealPayload(orgId: string, token: string) {
+    const proof = await verifyExternalShareForTest(app, {
+      orgId,
+      token,
+      recipientEmail: DEFAULT_RECIPIENT_EMAIL,
+    })
+    return { proof }
+  }
+
+  it('Story 72-11 V2: a native external share requires recipient verification', async () => {
+    const { sharer, projectId, credentialId } = await createFixture('gated')
+    const create = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {})
+    const { id: shareId, token } = create.json<{ data: { id: string; token: string } }>().data
+    const [row] = await withOrg(sharer.orgId, (tx) =>
+      tx.select().from(credentialShares).where(eq(credentialShares.id, shareId))
+    )
+    expect(row?.verificationRequired).toBe(true)
+    const linkOnly = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    expect(linkOnly.statusCode).toBe(404)
+    expect(linkOnly.json<{ code: string }>().code).toBe('share_not_found')
+  })
 
   it('AC-1/AC-5/AC-11: creates an external share with recipient_type=external, singleUse hard-coded true, and audits creation', async () => {
     const { sharer, projectId, credentialId } = await createFixture('happy')
@@ -185,7 +212,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(401)
-    expect(response.json<{ code: string }>().code).toBe('step_up_required')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'step_up_required',
+      reason: 'step_up_required',
+    })
 
     const shares = await withOrg(sharer.orgId, (tx) =>
       tx.select().from(credentialShares).where(eq(credentialShares.credentialId, credentialId))
@@ -201,7 +231,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(401)
-    expect(response.json<{ code: string }>().code).toBe('step_up_required')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'step_up_required',
+      reason: 'step_up_required',
+    })
 
     const shares = await withOrg(sharer.orgId, (tx) =>
       tx.select().from(credentialShares).where(eq(credentialShares.credentialId, credentialId))
@@ -217,7 +250,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('expires_at_invalid')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'expires_at_invalid',
+      reason: 'expiry_too_late',
+    })
   })
 
   it('AC-5: rejects singleUse: false with a dedicated 400 external_share_must_be_single_use', async () => {
@@ -236,7 +272,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('external_share_must_be_single_use')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'external_share_must_be_single_use',
+      reason: 'must_be_single_use',
+    })
   })
 
   it('AC-5: accepts an explicit singleUse: true (still hard-coded true server-side)', async () => {
@@ -273,7 +312,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(sixth.statusCode).toBe(429)
-    expect(sixth.json<{ code: string }>().code).toBe('external_share_cap_exceeded')
+    expect(sixth.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'external_share_cap_exceeded',
+      reason: 'external_cap_reached',
+    })
   })
 
   it('AC-16/Story 20.5 (dev-auto review): the per-field cap buckets by attributeKeys, not just the legacy fieldKey — disjoint attribute sets get their own buckets, but re-naming the same set (any order) reuses the same one', async () => {
@@ -346,7 +388,10 @@ describe('external credential-shares routes', () => {
     )
 
     expect(sixthOtherShape.statusCode).toBe(429)
-    expect(sixthOtherShape.json<{ code: string }>().code).toBe('external_share_cap_exceeded')
+    expect(sixthOtherShape.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'external_share_cap_exceeded',
+      reason: 'external_cap_reached',
+    })
   })
 
   it("AC-16: a share past its expiresAt but not yet lazily swept doesn't count toward the cap", async () => {
@@ -389,13 +434,22 @@ describe('external credential-shares routes', () => {
       const get = await app.inject({ method: 'GET', url: accessUrl(token) })
       expect(get.statusCode).toBe(200)
       expect(get.headers['referrer-policy']).toBe('no-referrer')
-      const body = get.json<{ data: { credentialName: string; sharedByDisplayName: string } }>()
+      const body = get.json<{
+        data: { credentialName: string; sharedByDisplayName: string; maskedRecipient?: string }
+      }>()
       expect(body.data.credentialName).toEqual(expect.any(String))
-      // AC-9: sharer email is never leaked to an unauthenticated party.
-      expect(JSON.stringify(body)).not.toContain('@')
+      // AC-9: sharer email is never leaked to an unauthenticated party. Story 72-11 V6: the one
+      // `@` allowed is the masked RECIPIENT address, which carries one letter on each side.
+      const { maskedRecipient, ...rest } = body.data
+      expect(JSON.stringify(rest)).not.toContain('@')
+      expect(maskedRecipient).toMatch(/^.\*\*\*@.\*\*\*$/)
     }
 
-    const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    const reveal = await app.inject({
+      method: 'POST',
+      url: accessUrl(token, '/reveal'),
+      payload: await revealPayload(sharer.orgId, token),
+    })
     expect(reveal.statusCode).toBe(200)
   })
 
@@ -404,7 +458,8 @@ describe('external credential-shares routes', () => {
     const create = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {})
     const { token } = create.json<{ data: { token: string } }>().data
 
-    const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    const payload = await revealPayload(sharer.orgId, token)
+    const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal'), payload })
     expect(reveal.statusCode).toBe(200)
     expect(reveal.headers['cache-control']).toBe('no-store')
     expect(reveal.headers['referrer-policy']).toBe('no-referrer')
@@ -412,7 +467,7 @@ describe('external credential-shares routes', () => {
     expect(body.data.value).toEqual(expect.any(String))
     expect(body.data.valueFormat).toBe('fields')
 
-    const second = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    const second = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal'), payload })
     expect(second.statusCode).toBe(410)
     expect(second.json<{ code: string }>().code).toBe('share_already_viewed')
   })
@@ -448,7 +503,11 @@ describe('external credential-shares routes', () => {
       )
     ).toBe(true)
 
-    await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    await app.inject({
+      method: 'POST',
+      url: accessUrl(token, '/reveal'),
+      payload: await revealPayload(sharer.orgId, token),
+    })
     expect(
       dispatchSpy.mock.calls.some(
         (call) => call[0].template.templateId === 'credential.external_share_viewed'
@@ -475,6 +534,8 @@ describe('external credential-shares routes', () => {
     const create = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {})
     const { id: shareId, token } = create.json<{ data: { id: string; token: string } }>().data
 
+    // Story 72-11: verified first, so the attempts below reach the status check with a valid proof.
+    const payload = await revealPayload(sharer.orgId, token)
     // Force the share into a losing-attempt state (already viewed) so every subsequent reveal
     // POST resolves to a real row but loses — exactly what AC-22 counts against the cap.
     await withOrg(sharer.orgId, (tx) =>
@@ -483,7 +544,7 @@ describe('external credential-shares routes', () => {
 
     let lastResponse
     for (let i = 0; i < 6; i += 1) {
-      lastResponse = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+      lastResponse = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal'), payload })
       expect(lastResponse.statusCode).toBe(410)
       const responseText = JSON.stringify(lastResponse.json())
       expect(responseText).not.toMatch(/attempt/i)
@@ -503,6 +564,7 @@ describe('external credential-shares routes', () => {
     })
     expect(create.statusCode).toBe(201)
     const { id: shareId, token } = create.json<{ data: { id: string; token: string } }>().data
+    const payload = await revealPayload(sharer.orgId, token)
 
     // Simulate the field being renamed/removed by pointing the share at a fieldKey that no
     // longer resolves via fieldMetaForResponse — mirrors PR #251's regression scenario without
@@ -514,7 +576,7 @@ describe('external credential-shares routes', () => {
         .where(eq(credentialShares.id, shareId))
     )
 
-    const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal'), payload })
     expect(reveal.statusCode).toBe(410)
     expect(reveal.json<{ code: string }>().code).toBe('share_expired')
 
@@ -562,7 +624,11 @@ describe('external credential-shares routes', () => {
     expect(create.statusCode).toBe(201)
     const { token } = create.json<{ data: { token: string } }>().data
 
-    const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    const reveal = await app.inject({
+      method: 'POST',
+      url: accessUrl(token, '/reveal'),
+      payload: await revealPayload(sharer.orgId, token),
+    })
     expect(reveal.statusCode).toBe(200)
     const { value, valueFormat } = reveal.json<{ data: { value: string; valueFormat: string } }>()
       .data
@@ -587,7 +653,11 @@ describe('external credential-shares routes', () => {
     ])
     const { token } = create.json<{ data: { token: string } }>().data
 
-    const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    const reveal = await app.inject({
+      method: 'POST',
+      url: accessUrl(token, '/reveal'),
+      payload: await revealPayload(sharer.orgId, token),
+    })
     expect(reveal.statusCode).toBe(200)
     const { value } = reveal.json<{ data: { value: string } }>().data
     const fields = JSON.parse(value) as Array<{ key: string; value: string; sensitive: boolean }>

@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { SHARE_DISPLAY_STATUSES } from '@project-vault/shared'
 
 // Story 17.1 AC-4: default 24h, cap 7 days — a deliberate judgment call,
 // informed by the sensitivity of secret material (no other product guidance existed at dev time).
@@ -28,6 +29,15 @@ export const EXTERNAL_SHARE_MAX_REVEAL_ATTEMPTS = 5
 // un-floored miss class had a p99 of about 15 ms on the dev host, so 100 ms is more than 6x
 // headroom while staying far below the 250 ms ceiling. A floor cannot hide a tail that exceeds it.
 export const EXTERNAL_SHARE_MISS_FLOOR_MS = 100
+
+// Story 72-11 (guest recipient verification, decisions V4/V5/V8): a native external share asks the
+// recipient for a 6-digit code emailed to the shared address before the reveal. The code space is
+// only 10^6, so the attempt budget is per share across codes and reserved before every compare.
+export const EXTERNAL_SHARE_VERIFICATION_CODE_TTL_MS = 10 * 60 * 1000
+export const EXTERNAL_SHARE_VERIFICATION_MAX_ATTEMPTS = 5
+export const EXTERNAL_SHARE_VERIFICATION_RESEND_COOLDOWN_SECONDS = 60
+export const EXTERNAL_SHARE_VERIFICATION_MAX_SENDS = 5
+export const EXTERNAL_SHARE_VERIFICATION_PROOF_TTL_MS = 15 * 60 * 1000
 
 // Story 17.3 AC-2: mirrors the limit/offset (not page-based) convention the AC explicitly asks
 // for — default 25, clamp (never reject) an over-large limit to 100, matching this codebase's
@@ -113,6 +123,8 @@ export const CredentialShareStatusSchema = z.enum([
   'superseded',
 ])
 
+export const ShareDisplayStatusSchema = z.enum(SHARE_DISPLAY_STATUSES)
+
 export const CredentialShareSummarySchema = z.object({
   id: z.uuid(),
   credentialId: z.uuid(),
@@ -131,6 +143,11 @@ export const CredentialShareSummarySchema = z.object({
   firstViewedAt: z.iso.datetime().nullable(),
   viewCount: z.number().int(),
   status: CredentialShareStatusSchema,
+  // Story 72-11 AC2: additive. `displayStatus` is derived (locked > opened > status); the persisted
+  // `status` above and every extension-facing status are unchanged.
+  displayStatus: ShareDisplayStatusSchema,
+  lockedAt: z.iso.datetime().nullable(),
+  verificationRequired: z.boolean(),
 })
 
 // Story 17.2 AC-1/AC-3/AC-5: the external-recipient sibling of CreateCredentialShareBodySchema.
@@ -178,15 +195,45 @@ const boundedShareScopeResponseShape = {
 // Story 17.2 AC-9: metadata only — credential name, sharer *display name* (not email, so an
 // unauthenticated party never learns an org member's address), field if scoped, expiry. No
 // `sharedByEmail` field at all (unlike 17.1's authenticated-recipient metadata response).
+//
+// Story 72-11 AC7: for a share that requires recipient verification the metadata is exactly
+// credential name, sharer display name, expiry and status, plus `verificationRequired: true` and
+// the masked recipient address; `credentialId` and the scope fields are omitted (optional here).
+// A link-only share keeps the full shape above plus `verificationRequired: false`.
 export const ExternalShareMetadataResponseSchema = z.object({
   data: z.object({
-    credentialId: z.uuid(),
+    credentialId: z.uuid().optional(),
     credentialName: z.string(),
     sharedByDisplayName: z.string(),
-    ...boundedShareScopeResponseShape,
+    fieldKey: boundedShareScopeResponseShape.fieldKey.optional(),
+    attributeKeys: boundedShareScopeResponseShape.attributeKeys.optional(),
+    action: boundedShareScopeResponseShape.action.optional(),
     expiresAt: z.iso.datetime(),
     status: CredentialShareStatusSchema,
+    verificationRequired: z.boolean(),
+    maskedRecipient: z.string().optional(),
   }),
+})
+
+// Story 72-11 V5: the send route's single answer for every token class.
+export const ExternalShareVerificationRequestResponseSchema = z.object({
+  data: z.object({ maskedRecipient: z.string(), cooldownSeconds: z.number().int() }),
+})
+
+// Story 72-11 V7/V8: a successful confirm returns the one-time proof the reveal requires.
+export const ExternalShareVerificationConfirmResponseSchema = z.object({
+  data: z.object({ proof: z.string() }),
+})
+
+// Story 72-11: request bodies of the verification confirm and the reveal. They are parsed inside
+// the floor-held handler (never by Fastify), so a malformed body answers exactly like a wrong code
+// or a missing proof instead of an early, distinguishable validation error.
+export const ExternalShareVerificationConfirmBodySchema = z.object({
+  code: z.string().trim().max(32),
+})
+
+export const ExternalShareRevealBodySchema = z.object({
+  proof: z.string().min(1).max(128).optional(),
 })
 
 export type CreateExternalCredentialShareBody = z.infer<
@@ -211,6 +258,7 @@ export const CreateCredentialShareResponseSchema = z.object({
 // would 422 instead of clamp, the wrong behavior per AC-2's edge case.
 export const ListCredentialSharesQuerySchema = z.object({
   status: CredentialShareStatusSchema.optional(),
+  displayStatus: ShareDisplayStatusSchema.optional(),
   limit: z.coerce.number().int().min(1).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 })
@@ -218,6 +266,19 @@ export type ListCredentialSharesQuery = z.infer<typeof ListCredentialSharesQuery
 
 export const ListCredentialSharesResponseSchema = z.object({
   data: z.object({ items: z.array(CredentialShareSummarySchema), total: z.number().int() }),
+})
+
+// Story 72-11 V13: the cross-credential shares index (`GET /api/v1/shares`). Same filters and
+// limit/offset clamp as the per-credential list; each item adds the credential and project names
+// the viewer may already see.
+export const ListSharesIndexQuerySchema = ListCredentialSharesQuerySchema
+export const SharesIndexItemSchema = CredentialShareSummarySchema.extend({
+  credentialName: z.string(),
+  projectId: z.uuid(),
+  projectName: z.string(),
+})
+export const ListSharesIndexResponseSchema = z.object({
+  data: z.object({ items: z.array(SharesIndexItemSchema), total: z.number().int() }),
 })
 
 export const RevokeCredentialShareResponseSchema = z.object({

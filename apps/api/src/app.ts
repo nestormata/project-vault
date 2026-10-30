@@ -33,6 +33,7 @@ import { credentialRoutes } from './modules/credentials/routes.js'
 import { credentialTotpRoutes } from './modules/credentials/totp-routes.js'
 import { rotationRoutes } from './modules/rotation/routes.js'
 import { credentialSharesRoutes } from './modules/credential-shares/routes.js'
+import { sharesIndexRoutes } from './modules/credential-shares/shares-index-routes.js'
 import { credentialShareAccessRoutes } from './modules/credential-shares/access-routes.js'
 import { externalCredentialShareAccessRoutes } from './modules/credential-shares/external-access-routes.js'
 import { monitoringRoutes } from './modules/monitoring/routes.js'
@@ -614,6 +615,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(rotationRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(credentialSharesRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(credentialShareAccessRoutes, { prefix: '/api/v1/shares' })
+  await fastify.register(sharesIndexRoutes, { prefix: '/api/v1/shares' })
   await fastify.register(externalCredentialShareAccessRoutes, {
     prefix: '/api/v1/external-shares',
   })

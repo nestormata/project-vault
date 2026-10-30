@@ -64,6 +64,29 @@ describe('/external-shares/[token] +page.server.ts', () => {
     expect(getExternalShareMetadataMock).toHaveBeenCalledWith(expect.anything(), token)
   })
 
+  it('Story 72.11: a verification-required share passes through with no credential id and keeps no-referrer and no-store', async () => {
+    getExternalShareMetadataMock.mockResolvedValue({
+      credentialName: 'Stripe Secret Key',
+      sharedByDisplayName: 'morgan',
+      expiresAt: '2026-08-01T00:00:00.000Z',
+      status: 'active',
+      verificationRequired: true,
+      maskedRecipient: 'v***@e***',
+    })
+    const { event, setHeaders } = makeEvent()
+
+    const result = expectLoaded(await load(event))
+
+    expect(result.metadata?.verificationRequired).toBe(true)
+    expect(result.metadata?.maskedRecipient).toBe('v***@e***')
+    expect(result.metadata).not.toHaveProperty('credentialId')
+    expect(JSON.stringify(result)).not.toContain('proof')
+    expect(setHeaders).toHaveBeenCalledWith({
+      'Referrer-Policy': 'no-referrer',
+      'cache-control': 'no-store',
+    })
+  })
+
   it.each([
     [404, 'not_found'],
     [429, 'unavailable'],

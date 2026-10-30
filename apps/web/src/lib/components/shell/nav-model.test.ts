@@ -34,6 +34,7 @@ describe('Story 28.4 AC1/AC2: nav item labels route through m.nav_*() and transl
       m.nav_projects(),
       m.nav_secrets(),
       m.nav_notifications(),
+      m.nav_shares(),
       m.nav_health(),
       m.nav_settings(),
     ])
@@ -56,7 +57,7 @@ describe('Story 28.4 AC1/AC2: nav item labels route through m.nav_*() and transl
 describe('Story 29.3 AC10: manifest-declared extensionNavItems merge', () => {
   it('does not add any items when extensionNavItems is omitted', () => {
     const items = getPrimaryNavItems()
-    expect(items).toHaveLength(6)
+    expect(items).toHaveLength(7)
   })
 
   it('does not add any items when extensionNavItems is an empty array (identical to omitted)', () => {
@@ -78,6 +79,7 @@ describe('Story 29.3 AC10: manifest-declared extensionNavItems merge', () => {
       '/projects',
       '/credentials',
       '/notifications',
+      '/shares',
       '/health',
       '/settings',
       '/ext/settings',

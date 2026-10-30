@@ -28,6 +28,7 @@ const REGIONS = [
   'credential.detail.nudges',
   'credential.detail.rotation',
   'credential.detail.shares',
+  'credential.detail.shares.field-help',
   'credential.detail.summary',
   'credential.detail.value',
   'credential.detail.value-add-version',

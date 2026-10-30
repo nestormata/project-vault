@@ -9,23 +9,84 @@ import {
   type NotificationQueueJob,
 } from '../../notifications/dispatcher.js'
 import type { BossService } from '../../lib/boss.js'
+import type { FastifyReply, FastifyRequest } from 'fastify'
 import { noReferrerHeaders, shareRevealFailureBody } from './reveal-response.js'
 import {
   ExternalShareAccessParamsSchema,
   ExternalShareMetadataResponseSchema,
+  ExternalShareRevealBodySchema,
   ExternalShareRevealResponseSchema,
+  ExternalShareVerificationConfirmBodySchema,
+  ExternalShareVerificationConfirmResponseSchema,
+  ExternalShareVerificationRequestResponseSchema,
 } from './schema.js'
 import {
   findExternalShareWithMissFloor,
   revealExternalShareWithMissFloor,
+  type ExternalShareMetadata,
 } from './external-service.js'
+import {
+  confirmExternalShareVerificationWithFloor,
+  requestExternalShareVerificationWithFloor,
+} from './external-verification-service.js'
+import { maskRecipientEmail } from './verification.js'
 
 // AC-17: every not-found/expired/revoked/malformed case collapses to this identical shape — no
 // distinguishing "the hash matched a row that turned out to be expired" from "the hash matched
 // nothing at all" via response shape or status code.
 const SHARE_NOT_FOUND = { code: 'share_not_found', message: 'Share not found' } as const
 
+// Story 72-11 V7: every non-success of the confirm route is this one body (wrong, expired, no code
+// requested, unknown token, dead share, locked, over the attempt cap, malformed body).
+const VERIFICATION_FAILED = {
+  code: 'verification_failed',
+  message: 'The code could not be verified. Request a new code and try again.',
+} as const
+
 type BossFastify = FastifyApp & { boss?: BossService }
+
+/** The token-bearing guest routes never leak the URL via Referer and are never cached. */
+function guestResponseHeaders(reply: FastifyReply): void {
+  noReferrerHeaders(reply)
+  reply.header('Cache-Control', 'no-store')
+}
+
+/** Reads one optional string field from a body that may be absent or malformed. A body that does
+ *  not parse is treated as one without the field, so it answers like a missing value. */
+function optionalBodyField<T>(
+  req: FastifyRequest,
+  schema: { safeParse: (value: unknown) => { success: boolean; data?: T } }
+): T | undefined {
+  const parsed = schema.safeParse(req.body ?? {})
+  return parsed.success ? parsed.data : undefined
+}
+
+/** Story 72-11 AC7: the metadata answer. A gated share shows only what the guest needs before the
+ *  code step; a link-only share keeps its pre-72-11 shape. */
+function externalShareMetadataBody(metadata: ExternalShareMetadata) {
+  const { share, credentialName, sharedByDisplayName } = metadata
+  const common = {
+    credentialName,
+    sharedByDisplayName,
+    expiresAt: share.expiresAt.toISOString(),
+    status: share.status as 'active' | 'viewed' | 'revoked' | 'expired' | 'superseded',
+  }
+  if (share.verificationRequired) {
+    return {
+      ...common,
+      verificationRequired: true,
+      maskedRecipient: maskRecipientEmail(share.recipientEmail ?? ''),
+    }
+  }
+  return {
+    ...common,
+    credentialId: share.credentialId,
+    fieldKey: share.fieldKey,
+    attributeKeys: share.attributeKeys,
+    action: share.action,
+    verificationRequired: false,
+  }
+}
 
 /** AC-12: admin notification on first successful view (never again — AC-5 hard-codes singleUse). */
 function notifyAdminsOfView(
@@ -75,8 +136,7 @@ export function externalCredentialShareAccessRoutes(fastify: FastifyApp): Promis
     handler: async (_ctx, req, reply) => {
       const params = parseParams(ExternalShareAccessParamsSchema, req, reply)
       if (!params) return reply
-      noReferrerHeaders(reply)
-      reply.header('Cache-Control', 'no-store')
+      guestResponseHeaders(reply)
 
       // AC-9/AC-22: provably inert — no status transition (beyond lazy expiry, applied inside
       // findExternalShareByTokenHash the same way it always has been), no view_count increment,
@@ -85,19 +145,75 @@ export function externalCredentialShareAccessRoutes(fastify: FastifyApp): Promis
       const found = await findExternalShareWithMissFloor(params.token)
       if (found.status === 'not_found') return reply.status(404).send(SHARE_NOT_FOUND)
 
-      const { share, credentialName, sharedByDisplayName } = found.metadata
-      return {
-        data: {
-          credentialId: share.credentialId,
-          credentialName,
-          sharedByDisplayName,
-          fieldKey: share.fieldKey,
-          attributeKeys: share.attributeKeys,
-          action: share.action,
-          expiresAt: share.expiresAt.toISOString(),
-          status: share.status,
-        },
-      }
+      return { data: externalShareMetadataBody(found.metadata) }
+    },
+  })
+
+  // Story 72-11 V5: request a verification code. Always the same 200 body; the work (code, hash,
+  // queued email) happens after the response for a live, unthrottled gated share only.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/access/:token/verification',
+    schema: {
+      response: {
+        200: ExternalShareVerificationRequestResponseSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: {
+      requireAuth: false,
+      writeAuditEvent: false,
+      // A class-independent, IP-scoped backstop (not held to the floor, like 65-4's route limits);
+      // the per-share send cap and cooldown are the real mail-bomb bound.
+      rateLimit: {
+        max: 10,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/external-shares/access/:token/verification',
+      },
+    },
+    handler: async (_ctx, req, reply) => {
+      const params = parseParams(ExternalShareAccessParamsSchema, req, reply)
+      if (!params) return reply
+      guestResponseHeaders(reply)
+      const boss = (fastify as BossFastify).boss
+      const result = await requestExternalShareVerificationWithFloor(params.token, {
+        logger: req.log,
+        dispatch: (jobs) => dispatchPendingJobs(boss, req, jobs, 'external share verification'),
+      })
+      return { data: result }
+    },
+  })
+
+  // Story 72-11 V4/V7/V8: confirm a verification code for a one-time proof.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/access/:token/verification/confirm',
+    schema: {
+      response: {
+        200: ExternalShareVerificationConfirmResponseSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: {
+      requireAuth: false,
+      writeAuditEvent: false,
+      // The per-share budget (5 failures, reserved before every compare) is the real defense;
+      // this IP-scoped limit is a class-independent backstop.
+      rateLimit: {
+        max: 20,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/external-shares/access/:token/verification/confirm',
+      },
+    },
+    handler: async (_ctx, req, reply) => {
+      const params = parseParams(ExternalShareAccessParamsSchema, req, reply)
+      if (!params) return reply
+      guestResponseHeaders(reply)
+      const code = optionalBodyField(req, ExternalShareVerificationConfirmBodySchema)?.code ?? ''
+      const result = await confirmExternalShareVerificationWithFloor(params.token, code)
+      if (result.status !== 'ok') return reply.status(422).send(VERIFICATION_FAILED)
+      return { data: { proof: result.proof } }
     },
   })
 
@@ -126,10 +242,12 @@ export function externalCredentialShareAccessRoutes(fastify: FastifyApp): Promis
     handler: async (_ctx, req, reply) => {
       const params = parseParams(ExternalShareAccessParamsSchema, req, reply)
       if (!params) return reply
-      noReferrerHeaders(reply)
-      reply.header('Cache-Control', 'no-store')
+      guestResponseHeaders(reply)
 
-      const result = await revealExternalShareWithMissFloor(params.token, req.log)
+      // Story 72-11 V8: a gated share requires the proof of a successful verification confirm; a
+      // missing, malformed or wrong proof answers the plain 404 below (same as an unknown token).
+      const proof = optionalBodyField(req, ExternalShareRevealBodySchema)?.proof
+      const result = await revealExternalShareWithMissFloor(params.token, req.log, { proof })
 
       if (result.status === 'not_found') return reply.status(404).send(SHARE_NOT_FOUND)
       if (

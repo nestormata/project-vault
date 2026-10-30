@@ -21,7 +21,7 @@ function walk(nodes: readonly NavNode[]): NavNode[] {
 }
 
 describe('buildSurface (Story 68.7 AC-1)', () => {
-  it('primary: nine items in main order for an operator with a ui-panel extension', () => {
+  it('primary: ten items in main order for an operator with a ui-panel extension', () => {
     const built = buildSurface('primary', primaryCtx(), {})
     expect(ids(built.visible)).toEqual([
       'primary.search',
@@ -29,6 +29,7 @@ describe('buildSurface (Story 68.7 AC-1)', () => {
       'primary.projects',
       'primary.secrets',
       'primary.notifications',
+      'primary.shares',
       'primary.health',
       'primary.settings',
       'primary.platform',
@@ -204,7 +205,7 @@ describe('renderSurface (Story 68.7 AC-2/AC-4/AC-7)', () => {
     expect(ids(renderSurface('primary', primaryCtx(), { delta, strict: false }))).not.toContain(
       'cm.boom'
     )
-    expect(renderSurface('primary', primaryCtx(), { delta, strict: false })).toHaveLength(9)
+    expect(renderSurface('primary', primaryCtx(), { delta, strict: false })).toHaveLength(10)
     expect(() => renderSurface('primary', primaryCtx(), { delta, strict: true })).toThrow(
       'nav item "cm.boom": label exploded'
     )

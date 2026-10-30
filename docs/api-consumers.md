@@ -442,6 +442,56 @@ Consumers: a CentralizeMe `openapi.composed.json` needs the new `urls` field, th
 routes. The edit authority is not part of the OpenAPI document. Project export (`.../export`) does not carry `urls`, and a deleted project
 cannot be exported (`404`).
 
+## Shares index, display status and typed share errors
+
+Story 72-11 (additive; no breaking change).
+
+**Shares index.** `GET /api/v1/shares` (session, organization floor `member`) lists shares across credentials,
+newest first. A `member` sees the shares they are the **effective sharer** of (`COALESCE(acting_user_id, shared_by)`,
+so a host-created share counts for the human who acted); an organization `admin` or `owner` sees every share of the
+organization. A share whose credential sits in a project the caller cannot see (no project membership; org
+admin/owner see all projects) is omitted, so its credential name is never disclosed, and shares of a soft-deleted
+project are not listed. Query: `status` (`active|viewed|revoked|expired|superseded`), `displayStatus` (below),
+`limit` (default 25, clamped to 100, never rejected) and `offset`; an unknown filter value is `422`. Response:
+`{ data: { items, total } }`; each item is the share summary plus `credentialName`, `projectId`, `projectName`.
+The per-credential list (`GET .../credentials/{credentialId}/shares`) accepts the same `displayStatus` filter.
+
+**Share summary, new fields** (list, create member share, create external share, revoke, index): `displayStatus`,
+`lockedAt` (ISO time or `null`), `verificationRequired` (boolean). The persisted `status` is unchanged, and so is
+every status an extension sees.
+
+| `displayStatus`                   | Meaning (precedence top to bottom)                                                                               |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `locked`                          | `lockedAt` is set: an attempt cap (guest verification or reveal attempts) closed the share. Wins over `revoked`. |
+| `opened`                          | The secret was revealed: `status = viewed`, or an active multi-view share with `viewCount > 0`.                  |
+| `active`, `expired`, `superseded` | The persisted status.                                                                                            |
+| `revoked`                         | Any other persisted status.                                                                                      |
+
+**Typed reasons.** Sharer-side share errors (create member share, create external share, revoke) carry an additive
+`reason` next to the unchanged `code`, from one closed list (`SHARE_ERROR_REASONS` in `@project-vault/shared`).
+A reason is sent only **after** authorization and visibility: a caller who cannot see the project or credential
+still gets the plain `404`/`403` body with no `reason`. Branch on `reason` when present, else on `code`.
+
+| `reason`               | HTTP                                                                  | `code`                                                                       |
+| ---------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `credential_archived`  | 410                                                                   | `credential_archived`                                                        |
+| `field_unknown`        | 400                                                                   | `unknown_field_key` (plus `field`)                                           |
+| `scope_ambiguous`      | 400                                                                   | `ambiguous_share_scope`                                                      |
+| `scope_too_broad`      | 400                                                                   | `too_many_attribute_keys`                                                    |
+| `expiry_in_past`       | 400                                                                   | `expires_at_invalid`                                                         |
+| `expiry_too_late`      | 400                                                                   | `expires_at_invalid`                                                         |
+| `recipient_unknown`    | 400                                                                   | `recipient_not_found`                                                        |
+| `recipient_inactive`   | 400                                                                   | `recipient_inactive`                                                         |
+| `self_share`           | 400                                                                   | `self_share`                                                                 |
+| `must_be_single_use`   | 400                                                                   | `external_share_must_be_single_use` (now answered after the visibility gate) |
+| `step_up_required`     | 401                                                                   | `step_up_required`                                                           |
+| `external_cap_reached` | 429                                                                   | `external_share_cap_exceeded`                                                |
+| `revoke_forbidden`     | 403                                                                   | `insufficient_role`                                                          |
+| `already_closed`       | none emitted today: revoking a closed share stays an idempotent `200` |
+
+Consumers: a CentralizeMe `openapi.composed.json` needs the `GET /api/v1/shares` route, the three summary fields,
+the `displayStatus` query parameter and the `reason` property on the share error bodies (`ShareApiError`).
+
 ## See also
 
 - [`machine-users.md`](machine-users.md) — machine users, API keys, and the CI/CD retrieval flow.
