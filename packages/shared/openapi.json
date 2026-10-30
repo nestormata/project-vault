@@ -3020,6 +3020,49 @@
           "isRevoked"
         ]
       },
+      "ShareApiErrorInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "credential_archived",
+              "field_unknown",
+              "scope_ambiguous",
+              "scope_too_broad",
+              "expiry_in_past",
+              "expiry_too_late",
+              "recipient_unknown",
+              "recipient_inactive",
+              "self_share",
+              "must_be_single_use",
+              "step_up_required",
+              "external_cap_reached",
+              "revoke_forbidden",
+              "already_closed"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
       "CreateCredentialBodyInput": {
         "anyOf": [
           {
@@ -13582,6 +13625,50 @@
           "lastUsedAt",
           "createdAt",
           "isRevoked"
+        ],
+        "additionalProperties": false
+      },
+      "ShareApiError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "credential_archived",
+              "field_unknown",
+              "scope_ambiguous",
+              "scope_too_broad",
+              "expiry_in_past",
+              "expiry_too_late",
+              "recipient_unknown",
+              "recipient_inactive",
+              "self_share",
+              "must_be_single_use",
+              "step_up_required",
+              "external_cap_reached",
+              "revoke_forbidden",
+              "already_closed"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message"
         ],
         "additionalProperties": false
       },
@@ -33164,6 +33251,26 @@
                             "superseded"
                           ]
                         },
+                        "displayStatus": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "opened",
+                            "locked",
+                            "revoked",
+                            "expired",
+                            "superseded"
+                          ]
+                        },
+                        "lockedAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "verificationRequired": {
+                          "type": "boolean"
+                        },
                         "token": {
                           "type": "string"
                         }
@@ -33185,6 +33292,9 @@
                         "firstViewedAt",
                         "viewCount",
                         "status",
+                        "displayStatus",
+                        "lockedAt",
+                        "verificationRequired",
                         "token"
                       ],
                       "additionalProperties": false
@@ -33203,7 +33313,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "$ref": "#/components/schemas/ShareApiError"
                 }
               }
             }
@@ -33213,7 +33323,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "$ref": "#/components/schemas/ShareApiError"
                 }
               }
             }
@@ -33243,7 +33353,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "$ref": "#/components/schemas/ShareApiError"
                 }
               }
             }
@@ -33386,6 +33496,26 @@
                                   "expired",
                                   "superseded"
                                 ]
+                              },
+                              "displayStatus": {
+                                "type": "string",
+                                "enum": [
+                                  "active",
+                                  "opened",
+                                  "locked",
+                                  "revoked",
+                                  "expired",
+                                  "superseded"
+                                ]
+                              },
+                              "lockedAt": {
+                                "nullable": true,
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "verificationRequired": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -33404,7 +33534,10 @@
                               "revokedAt",
                               "firstViewedAt",
                               "viewCount",
-                              "status"
+                              "status",
+                              "displayStatus",
+                              "lockedAt",
+                              "verificationRequired"
                             ],
                             "additionalProperties": false
                           }
@@ -33586,6 +33719,26 @@
                             "superseded"
                           ]
                         },
+                        "displayStatus": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "opened",
+                            "locked",
+                            "revoked",
+                            "expired",
+                            "superseded"
+                          ]
+                        },
+                        "lockedAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "verificationRequired": {
+                          "type": "boolean"
+                        },
                         "token": {
                           "type": "string"
                         }
@@ -33607,6 +33760,9 @@
                         "firstViewedAt",
                         "viewCount",
                         "status",
+                        "displayStatus",
+                        "lockedAt",
+                        "verificationRequired",
                         "token"
                       ],
                       "additionalProperties": false
@@ -33625,7 +33781,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "$ref": "#/components/schemas/ShareApiError"
                 }
               }
             }
@@ -33635,7 +33791,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "$ref": "#/components/schemas/ShareApiError"
                 }
               }
             }
@@ -33665,7 +33821,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "$ref": "#/components/schemas/ShareApiError"
                 }
               }
             }
@@ -33685,7 +33841,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "$ref": "#/components/schemas/ShareApiError"
                 }
               }
             }
@@ -33823,6 +33979,26 @@
                             "expired",
                             "superseded"
                           ]
+                        },
+                        "displayStatus": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "opened",
+                            "locked",
+                            "revoked",
+                            "expired",
+                            "superseded"
+                          ]
+                        },
+                        "lockedAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "verificationRequired": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -33841,7 +34017,10 @@
                         "revokedAt",
                         "firstViewedAt",
                         "viewCount",
-                        "status"
+                        "status",
+                        "displayStatus",
+                        "lockedAt",
+                        "verificationRequired"
                       ],
                       "additionalProperties": false
                     }
@@ -33869,7 +34048,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "$ref": "#/components/schemas/ShareApiError"
                 }
               }
             }
@@ -34343,6 +34522,229 @@
             }
           },
           "410": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shares": {
+      "get": {
+        "tags": [
+          "Sharing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "credentialId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "fieldKey": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "attributeKeys": {
+                                "nullable": true,
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "action": {
+                                "type": "string",
+                                "enum": [
+                                  "read"
+                                ]
+                              },
+                              "sharedBy": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "recipientType": {
+                                "type": "string",
+                                "enum": [
+                                  "user",
+                                  "external"
+                                ]
+                              },
+                              "recipientUserId": {
+                                "nullable": true,
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "recipientEmail": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "singleUse": {
+                                "type": "boolean"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "expiresAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "revokedAt": {
+                                "nullable": true,
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "firstViewedAt": {
+                                "nullable": true,
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "viewCount": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "active",
+                                  "viewed",
+                                  "revoked",
+                                  "expired",
+                                  "superseded"
+                                ]
+                              },
+                              "displayStatus": {
+                                "type": "string",
+                                "enum": [
+                                  "active",
+                                  "opened",
+                                  "locked",
+                                  "revoked",
+                                  "expired",
+                                  "superseded"
+                                ]
+                              },
+                              "lockedAt": {
+                                "nullable": true,
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "verificationRequired": {
+                                "type": "boolean"
+                              },
+                              "credentialName": {
+                                "type": "string"
+                              },
+                              "projectId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "projectName": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "credentialId",
+                              "fieldKey",
+                              "attributeKeys",
+                              "action",
+                              "sharedBy",
+                              "recipientType",
+                              "recipientUserId",
+                              "recipientEmail",
+                              "singleUse",
+                              "createdAt",
+                              "expiresAt",
+                              "revokedAt",
+                              "firstViewedAt",
+                              "viewCount",
+                              "status",
+                              "displayStatus",
+                              "lockedAt",
+                              "verificationRequired",
+                              "credentialName",
+                              "projectId",
+                              "projectName"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
             "description": "Default Response",
             "content": {
               "application/json": {
