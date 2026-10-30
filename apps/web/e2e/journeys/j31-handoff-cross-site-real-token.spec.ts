@@ -321,6 +321,16 @@ test.describe('J31 — login CSRF: an attacker token in a victim browser (AC4)',
     await expect(status).toHaveAttribute('data-status', /.+/)
     expect(['fetch-error', '403']).toContain(await status.getAttribute('data-status'))
 
+    const formPost = page.waitForResponse(
+      (response) =>
+        response.url() === `${pvOrigin}/api/v1/auth/handoff/claim` &&
+        response.request().method() === 'POST'
+    )
+    await page.goto(`${issuer.origin}/cross-site-form#${token}`)
+    expect((await formPost).status()).toBe(403)
+    const cookies = await page.context().cookies(pvOrigin)
+    expect(cookies.map((cookie) => cookie.name)).toContain('__Host-pv-handoff-nonce')
+
     const direct = await request.post(`${pvOrigin}/api/v1/auth/handoff/claim`, {
       headers: { 'sec-fetch-site': 'cross-site', 'content-type': 'application/json' },
       data: { token },

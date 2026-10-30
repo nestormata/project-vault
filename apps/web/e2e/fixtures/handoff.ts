@@ -192,6 +192,21 @@ try {
 </body></html>`
 }
 
+// A page on the issuer's origin that sends a top-level, no-preflight form POST (text/plain) to
+// PV's claim route: the realistic cross-site attack, which CORS does not stop before PV.
+function crossSiteFormPage(pvOrigin: string): string {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Cross-site form claim attempt (e2e)</title></head>
+<body>
+<form id="attack" method="post" enctype="text/plain"
+  action="${pvOrigin}/api/v1/auth/handoff/claim"><input name="token" value=""></form>
+<script>
+document.querySelector('input[name=token]').value = location.hash.slice(1)
+document.getElementById('attack').submit()
+</script>
+</body></html>`
+}
+
 function respond(
   response: ServerResponse,
   status: number,
@@ -219,6 +234,9 @@ export async function startFakeIssuer(options: {
     const route = request.method === 'GET' ? url.pathname : ''
     if (route === '/cross-site') {
       const page = crossSitePage(options.pvOrigin)
+      respond(response, 200, { 'content-type': 'text/html; charset=utf-8' }, page)
+    } else if (route === '/cross-site-form') {
+      const page = crossSiteFormPage(options.pvOrigin)
       respond(response, 200, { 'content-type': 'text/html; charset=utf-8' }, page)
     } else if (route === '/start' && current) {
       issue(current, url.searchParams.get('nonce') ?? '', response)

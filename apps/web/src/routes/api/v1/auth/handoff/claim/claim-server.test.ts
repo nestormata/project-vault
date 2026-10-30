@@ -121,7 +121,7 @@ describe('POST /api/v1/auth/handoff/claim (Story 73.1 AC2-AC5)', () => {
     ['a foreign Origin', { origin: 'http://127.0.0.1:48999' }],
     ['Origin null', { origin: 'null' }],
   ])(
-    'rejects %s with 403 before reaching the api, and still deletes the cookie',
+    'rejects %s with 403 before reaching the api and leaves the cookie alone',
     async (_label, headers) => {
       const { event, deleteCookie } = makeEvent({ cookie: NONCE, headers })
 
@@ -129,7 +129,7 @@ describe('POST /api/v1/auth/handoff/claim (Story 73.1 AC2-AC5)', () => {
 
       expect(response.status).toBe(403)
       expect(proxyApiRequestMock).not.toHaveBeenCalled()
-      expect(deleteCookie).toHaveBeenCalledWith(...EXPECTED_DELETE)
+      expect(deleteCookie).not.toHaveBeenCalled()
     }
   )
 

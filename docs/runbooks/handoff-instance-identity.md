@@ -45,12 +45,12 @@ the other two variables happen to be configured — their presence alone never i
 
 ### Boot behaviour matrix
 
-| `VAULT_HANDOFF_ENABLED` | Instance ID + verify keys | Native login | Outcome |
-| --- | --- | --- | --- |
-| unset / false | anything | anything | Handoff auth silently not registered. No error. |
-| set | both present and valid | anything | Handoff auth registered; an informational log line records it. |
-| set | either missing or empty | **enabled** | **`fatal`-level log**, handoff auth NOT registered, native login remains the usable login path. Fail-safe: the instance still boots and people can still sign in. |
-| set | either missing or empty | **excluded** | **The API refuses to boot.** A log line with no usable login path is not acceptable, so the process throws rather than starting into a configuration nobody can log in to. |
+| `VAULT_HANDOFF_ENABLED` | Instance ID + verify keys | Native login | Outcome                                                                                                                                                                    |
+| ----------------------- | ------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| unset / false           | anything                  | anything     | Handoff auth silently not registered. No error.                                                                                                                            |
+| set                     | both present and valid    | anything     | Handoff auth registered; an informational log line records it.                                                                                                             |
+| set                     | either missing or empty   | **enabled**  | **`fatal`-level log**, handoff auth NOT registered, native login remains the usable login path. Fail-safe: the instance still boots and people can still sign in.          |
+| set                     | either missing or empty   | **excluded** | **The API refuses to boot.** A log line with no usable login path is not acceptable, so the process throws rather than starting into a configuration nobody can log in to. |
 
 The last row is the one that bites during a migration or a restore: if this instance excludes native
 login ([`native-login-exclusion.md`](native-login-exclusion.md)) and you enable handoff without
@@ -67,6 +67,19 @@ with a `FATAL:` message. PV adds `nonce=<nonce>` to its query with the URL API, 
 `nonce` parameter: `https://router.example/handoff/start?v=1` becomes
 `https://router.example/handoff/start?v=1&nonce=Xy...`.
 
+### What the issuer must do
+
+The login-CSRF defence holds only while a live nonce stays secret: anyone who learns a victim's
+nonce within its 120 s life can have the issuer sign a token for their own account with it and send
+the victim to `/auth/claim#<token>`. The issuer at `VAULT_HANDOFF_START_URL` must therefore:
+
+- never log the `nonce` query parameter (strip or hash it in access logs);
+- serve its start page, and any sign-in page shown before it redirects back, with
+  `Referrer-Policy: no-referrer`;
+- sign the token only for the user whose issuer session completes that start request, and bind the
+  nonce to that session, so a nonce pasted into another session is refused;
+- redirect straight back to `/auth/claim#<token>` (fragment, never the query string) within the TTL.
+
 ---
 
 ## `VAULT_HANDOFF_INSTANCE_ID`
@@ -78,7 +91,7 @@ handoff token's audience/`instanceId` claim (a mismatch rejects as `handoff_audi
   end with a lowercase letter or digit; no uppercase, no underscore. A worked example is `app001`.
 - **Optional when handoff is disabled:** unset is allowed — no instance in the fleet is required to
   provision an identity it may never use.
-- **Boot behaviour:** whenever a value *is* present it must satisfy the format rule, or boot fails
+- **Boot behaviour:** whenever a value _is_ present it must satisfy the format rule, or boot fails
   with a `FATAL:`-prefixed message in the same "Missing or invalid environment variables" block every
   other fatal env issue uses, and the process exits.
 
@@ -117,12 +130,12 @@ missing or unparseable key set is a boot error.
 Boot-time parsing validates JSON/array/object shape and PEM envelope syntax only. Verifying that a
 PEM string actually decodes to a usable Ed25519 key is done at request time by the verifier.
 
-| Input | Outcome |
-| --- | --- |
-| Unset | Parses to an empty list. Allowed while handoff is disabled; combined with `VAULT_HANDOFF_ENABLED` it hits the boot matrix above. |
-| `[]` (empty array) | Identical to unset — parses successfully, then counts as "no keys" for the boot matrix. No token could ever verify against an empty set. |
-| Valid array of `{ kid, publicKeyPem }` | Parses successfully; exposed as the cached `handoffVerifyKeys` export, never re-parsed per request. |
-| Not valid JSON, not an array, a duplicated `kid`, or a `publicKeyPem` missing its PEM header/footer | Boot `FATAL:` env issue — the process exits. Never a silently-ignored value, never a runtime 500 on first use. |
+| Input                                                                                               | Outcome                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Unset                                                                                               | Parses to an empty list. Allowed while handoff is disabled; combined with `VAULT_HANDOFF_ENABLED` it hits the boot matrix above.         |
+| `[]` (empty array)                                                                                  | Identical to unset — parses successfully, then counts as "no keys" for the boot matrix. No token could ever verify against an empty set. |
+| Valid array of `{ kid, publicKeyPem }`                                                              | Parses successfully; exposed as the cached `handoffVerifyKeys` export, never re-parsed per request.                                      |
+| Not valid JSON, not an array, a duplicated `kid`, or a `publicKeyPem` missing its PEM header/footer | Boot `FATAL:` env issue — the process exits. Never a silently-ignored value, never a runtime 500 on first use.                           |
 
 ### Delegation key set (Story 71.6)
 
@@ -149,7 +162,7 @@ driftMs = abs(localNow - dbNow - roundTripEstimate)
 - **`info`-level `clock_skew.measured` log** when `driftMs` is under the threshold.
 - **`warn`-level `clock_skew.measured` log** when `driftMs` meets or exceeds
   `VAULT_HANDOFF_CLOCK_SKEW_WARN_MS` (default `20000` ms — deliberately tighter than the verifier's
-  own clock-skew tolerance, so this warning fires *before* the verifier would start rejecting handoff
+  own clock-skew tolerance, so this warning fires _before_ the verifier would start rejecting handoff
   tokens on clock-skew grounds).
 - **`warn`-level `clock_skew.check_failed` log**, never `fatal`, when the round-trip itself fails (DB
   unreachable, connection pool exhausted). That cycle's measurement is skipped, the process keeps

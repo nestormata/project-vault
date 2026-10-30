@@ -3,8 +3,8 @@ import type { RequestHandler } from './$types'
 
 // Story 73.1 AC2-AC5: the claim hop. A dedicated route (SvelteKit resolves it before the
 // `[...path]` catch-all) because it must read the host-only nonce cookie and forward its value in
-// the body: the api never sees browser cookies. The cookie is deleted on every request, whatever
-// the outcome, so a nonce can be presented once.
+// the body: the api never sees browser cookies. The cookie is deleted on every same-origin request,
+// whatever the outcome, so a nonce can be presented once.
 
 const ALLOWED_FETCH_SITES = new Set(['same-origin', 'none'])
 
@@ -24,10 +24,12 @@ async function readToken(request: Request): Promise<string> {
 }
 
 export const POST: RequestHandler = async ({ request, url, cookies }) => {
+  // A cross-site request is refused first and never clears the cookie, so a foreign page cannot
+  // abort a sign-in in progress.
+  if (isCrossSite(request, url.origin)) return new Response(null, { status: 403 })
+
   const nonce = cookies.get(HANDOFF_NONCE_COOKIE) ?? null
   cookies.delete(HANDOFF_NONCE_COOKIE, { path: '/', secure: true, httpOnly: true, sameSite: 'lax' })
-
-  if (isCrossSite(request, url.origin)) return new Response(null, { status: 403 })
 
   const response = await postHandoffApi('auth/handoff/claim', request, {
     token: await readToken(request),
