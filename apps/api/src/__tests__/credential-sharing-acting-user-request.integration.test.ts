@@ -9,6 +9,10 @@ import {
 } from './helpers/auth-test-helpers.js'
 import { API_ROUTES_FIXTURE_PACKAGE, importApiRoutesFixture } from './helpers/api-routes-fixture.js'
 import { createMembershipTestHelpers } from './helpers/membership-test-helpers.js'
+import {
+  enrollTotpForSession,
+  type EnrolledTotp,
+} from './helpers/external-share-step-up-test-helpers.js'
 
 /**
  * Story 65.6 Task 6b — request-path proof, the consumer view (CentralizeMe 14-39 / 14-40): an M7
@@ -102,15 +106,33 @@ describe('Story 65.6 Task 6b — ambient user through a real authenticated M7 ro
 
   type ShareResult = { status: string; share?: { id: string; sharedBy: string | null } }
 
-  async function createAs(cookies: Cookies): Promise<ShareResult> {
-    const response = await app.inject({
+  function postShare(cookies: Cookies, totpCode?: string) {
+    return app.inject({
       method: 'POST',
       url: SHARE_URL,
       headers: { cookie: cookieHeader(cookies) },
-      payload: { projectId, credentialId, fieldKey: 'value' },
+      payload: { projectId, credentialId, fieldKey: 'value', ...(totpCode ? { totpCode } : {}) },
     })
+  }
+
+  async function createAs(cookies: Cookies, totpCode: string): Promise<ShareResult> {
+    const response = await postShare(cookies, totpCode)
     expect(response.statusCode).toBe(200)
     return response.json<{ data: ShareResult }>().data
+  }
+
+  function refusalCode(response: Awaited<ReturnType<typeof postShare>>): string | null {
+    expect(response.statusCode).toBe(200)
+    const data = response.json<{ data: { status: string; code: string | null } }>().data
+    expect(data.status).toBe('error')
+    return data.code
+  }
+
+  async function shareCount(): Promise<number> {
+    const rows = await withOrg(orgId, (tx) =>
+      tx.select({ id: credentialShares.id }).from(credentialShares)
+    )
+    return rows.length
   }
 
   async function listAs(cookies: Cookies): Promise<string[]> {
@@ -149,8 +171,12 @@ describe('Story 65.6 Task 6b — ambient user through a real authenticated M7 ro
       )
     )
     await addProjectMember(orgId, projectId, admin.userId, 'admin')
+    const [totpOne, totpTwo] = await Promise.all([
+      enrollTotpForSession(app, memberOne.userId, memberOne.cookies),
+      enrollTotpForSession(app, memberTwo.userId, memberTwo.cookies),
+    ])
 
-    const created = await createAs(memberOne.cookies)
+    const created = await createAs(memberOne.cookies, totpOne.freshCode)
     expect(created.status).toBe('ok')
     const shareId = created.share?.id ?? ''
     expect(created.share?.sharedBy).toBe(memberOne.userId)
@@ -159,7 +185,7 @@ describe('Story 65.6 Task 6b — ambient user through a real authenticated M7 ro
     )
     expect(row).toMatchObject({ hostCreated: true, actingUserId: memberOne.userId })
 
-    const other = await createAs(memberTwo.cookies)
+    const other = await createAs(memberTwo.cookies, totpTwo.freshCode)
     const otherId = other.share?.id ?? ''
     expect(other.share?.sharedBy).toBe(memberTwo.userId)
 
@@ -176,6 +202,44 @@ describe('Story 65.6 Task 6b — ambient user through a real authenticated M7 ro
     expect(await revokeAs(memberOne.cookies, shareId)).toMatchObject({ status: 'ok' })
     expect(await statusOf(shareId)).toBe('revoked')
     expect(await revokeAs(admin.cookies, otherId)).toMatchObject({ status: 'ok' })
+  })
+
+  describe('Story 72.21 AC6 — the step-up through the real loader and route path', () => {
+    let enrolled: EnrolledTotp
+    let enrolledCookies: Cookies
+
+    beforeAll(async () => {
+      const member = await addUserToOrg(app, orgId, 'step-up-enrolled', { orgRole: 'member' })
+      await addProjectMember(orgId, projectId, member.userId, 'member')
+      enrolledCookies = member.cookies
+      enrolled = await enrollTotpForSession(app, member.userId, member.cookies)
+    })
+
+    it('refuses a create without a code and writes nothing', async () => {
+      const before = await shareCount()
+      const response = await postShare(enrolledCookies)
+      expect(refusalCode(response)).toBe('credential_sharing_step_up_required')
+      expect(await shareCount()).toBe(before)
+    })
+
+    it('refuses a user with no enrolled TOTP with the enrollment error', async () => {
+      const bare = await addUserToOrg(app, orgId, 'step-up-bare', { orgRole: 'member' })
+      await addProjectMember(orgId, projectId, bare.userId, 'member')
+      const before = await shareCount()
+      const response = await postShare(bare.cookies, enrolled.freshCode)
+      expect(refusalCode(response)).toBe('credential_sharing_totp_enrollment_required')
+      expect(await shareCount()).toBe(before)
+    })
+
+    it('creates the share once the enrolled user sends a current code', async () => {
+      const before = await shareCount()
+      const result = await createAs(enrolledCookies, enrolled.freshCode)
+      expect(result.status).toBe('ok')
+      expect(await shareCount()).toBe(before + 1)
+      expect(refusalCode(await postShare(enrolledCookies, enrolled.freshCode))).toBe(
+        'credential_sharing_step_up_required'
+      )
+    })
   })
 
   it('a scheduled-task style call (no request, no actingUserId) records an unknown acting user and the id fallback records a member', async () => {

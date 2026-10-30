@@ -329,6 +329,7 @@ describe('mock-api-routes-extension', () => {
     const REVOKE = 'POST /api/v1/cm/shares/revoke'
 
     const ctx = { auth: { orgId: 'org-1', userId: 'user-1' } }
+    const CREATE_SHARE = 'POST /api/v1/cm/shares'
     const ids = { projectId: 'p1', credentialId: 'c1' }
 
     it('needs the real HostServices to build its routes', () => {
@@ -339,15 +340,41 @@ describe('mock-api-routes-extension', () => {
     it('creates a share without actingUserId and forwards a field key only when given', async () => {
       const calls: Calls = []
       const call = sharingCaller(fakeHost(calls))
-      await expect(call('POST /api/v1/cm/shares', ctx, { body: ids })).resolves.toEqual({
+      await expect(call(CREATE_SHARE, ctx, { body: ids })).resolves.toEqual({
         data: { status: 'ok', name: 'createExternalShare' },
       })
-      await call('POST /api/v1/cm/shares', ctx, { body: { ...ids, fieldKey: 'password' } })
+      await call(CREATE_SHARE, ctx, { body: { ...ids, fieldKey: 'password' } })
       const [plain, withField] = calls.map(([, input]) => input)
       expect(plain).toMatchObject({ organizationId: 'org-1', ...ids })
       expect(plain).not.toHaveProperty('fieldKey')
       expect(plain).not.toHaveProperty('actingUserId')
       expect(withField).toMatchObject({ fieldKey: 'password' })
+    })
+
+    it('answers a refused create with the error code instead of throwing', async () => {
+      const refusing = {
+        credentialSharing: {
+          createExternalShare: async () => {
+            throw Object.assign(new Error('refused'), {
+              code: 'credential_sharing_step_up_required',
+            })
+          },
+        },
+      }
+      const call = sharingCaller(refusing)
+      await expect(call(CREATE_SHARE, ctx, { body: ids })).resolves.toEqual({
+        data: { status: 'error', code: 'credential_sharing_step_up_required' },
+      })
+    })
+
+    it('forwards the totpCode from the body only when one is sent', async () => {
+      const calls: Calls = []
+      const call = sharingCaller(fakeHost(calls))
+      await call(CREATE_SHARE, ctx, { body: ids })
+      await call(CREATE_SHARE, ctx, { body: { ...ids, totpCode: '123456' } })
+      const [without, withCode] = calls.map(([, input]) => input)
+      expect(without).not.toHaveProperty('totpCode')
+      expect(withCode).toMatchObject({ totpCode: '123456' })
     })
 
     it('lists shares with the signed-in user as viewer', async () => {
