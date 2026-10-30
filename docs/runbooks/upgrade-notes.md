@@ -365,7 +365,10 @@ There is no required pre-step.
 - **Migration `0108`** (`0108_handoff_nonces.sql`) adds one table, `handoff_nonces` (the HMAC of
   each browser nonce, its expiry and when it was consumed). No row-level security (no tenant is known
   when it is written, like `handoff_token_jti`). It alters no existing table and backfills nothing.
-  The retired `handoff_pending_states` table is no longer read or written; it is dropped by a later
-  reviewed migration.
+- **Migration `0109`** (`0109_drop_handoff_pending_states.sql`) drops the retired
+  `handoff_pending_states` table. Nothing reads or writes it after this upgrade, and its rows only
+  lived 120 seconds, so nothing of value is lost. It is a reviewed destructive migration: the
+  guarded migrator applies it in place without `--allow-destructive`. A prepare/confirm sign-in
+  still in flight while you upgrade fails and the user signs in again.
 - **Background job rename:** `prune-handoff-pending-states` is replaced by `prune-handoff-nonces`
   (every five minutes). The old schedule is removed at boot.

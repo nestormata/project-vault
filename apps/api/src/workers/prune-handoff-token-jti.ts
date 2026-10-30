@@ -1,6 +1,6 @@
 import { lt } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
-import { handoffNonces, handoffPendingStates, handoffTokenJti } from '@project-vault/db/schema'
+import { handoffNonces, handoffTokenJti } from '@project-vault/db/schema'
 import { runPruneJob, type WorkerLogger } from './prune-utils.js'
 
 /**
@@ -25,14 +25,6 @@ export async function pruneHandoffNonces(logger?: WorkerLogger): Promise<void> {
   await runPruneJob(
     'prune-handoff-nonces',
     () => getDb().delete(handoffNonces).where(lt(handoffNonces.expiresAt, new Date())),
-    logger
-  )
-  // The retired handoff_pending_states table stays until its reviewed drop migration lands; rows
-  // written before the upgrade still carry token claims, so they keep being swept here.
-  await runPruneJob(
-    'prune-handoff-pending-states-leftovers',
-    () =>
-      getDb().delete(handoffPendingStates).where(lt(handoffPendingStates.expiresAt, new Date())),
     logger
   )
 }

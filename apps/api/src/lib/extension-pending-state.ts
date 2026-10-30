@@ -11,7 +11,7 @@ export { generateOpaqueId, hashCookieValue } from './opaque-cookie-token.js'
  * `extension_oauth_pending_states` (via `oauth-handoff-routes.ts`, refactored onto this module)
  * and this story's `extension_request_states` (via `extension-request-state.ts`) are the third
  * and now-shared consumers of the identical mint/hash/burn/TTL-compare shape
- * `handoffPendingStates` (the auth handoff's state, retired in 73.1) established first. This
+ * `handoffPendingStates` (the auth handoff's state, dropped by migration 0109 in 73.1) established first. This
  * module covers the STORAGE/crypto layer only — it deliberately does NOT attempt to unify
  * `handoffPendingStates`' auth-handoff-specific row shape (WorkOS claim fields) with these two
  * extension-scoped tables' generic `state_json` shape; refactoring

@@ -4,7 +4,7 @@ import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
  * Story 39.1 — extension-scoped OAuth pending-state, created by `POST
  * /api/v1/extensions/oauth-handoff/start` (AC1) and consumed by `GET
  * /api/v1/extensions/oauth-handoff/callback` (AC2/AC3). Deliberately NOT `handoffPendingStates`
- * (`handoff-pending-states.ts`) — that table's row shape is auth-handoff-specific (WorkOS claim
+ * (the auth handoff's table, dropped by migration 0109 in Story 73.1) — that table's row shape is auth-handoff-specific (WorkOS claim
  * fields, a `jti` to burn into a SEPARATE `handoff_token_jti` ledger) and this story's Recommended
  * Mechanism Decision explicitly rejects reusing it blindly.
  *

@@ -19,10 +19,7 @@ export const EXCLUDED_TABLES = new Set([
   // Story 30.2: instance-level replay-burn ledger — no tenant is known/trusted at ingestion time.
   // Story 73.1: the browser-bound handoff nonce, written by /auth/start before any user or org is
   // known. Same reasoning as sso_login_states/platform_security_events above.
-  // handoff_pending_states is the retired prepare/confirm state (unused since 73.1, awaiting its
-  // reviewed drop migration).
   'handoff_token_jti',
-  'handoff_pending_states',
   'handoff_nonces',
   // Story 39.1 — extension OAuth start/callback pending-state: no tenant is known/trusted at
   // insert (the start route's caller is authenticated but the row itself carries no org context)
