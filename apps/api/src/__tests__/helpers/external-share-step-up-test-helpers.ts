@@ -20,18 +20,27 @@ export type EnrolledTotp = {
 }
 
 /**
- * Enrolls and confirms a TOTP authenticator for the user through the real routes. The membership
- * helpers only stamp `users.mfa_enrolled_at`; that stamp is cleared first so the enroll route
- * accepts the user (it answers 409 once a user counts as enrolled).
+ * Starts a TOTP enrollment (pending, unconfirmed) through the real route and returns its secret.
+ * The membership helpers only stamp `users.mfa_enrolled_at`; that stamp is cleared first so the
+ * enroll route accepts the user (it answers 409 once a user counts as enrolled).
  */
+export async function startPendingTotpEnrollment(
+  app: TestApp,
+  userId: string,
+  cookies: CookieJar
+): Promise<string> {
+  await getDb().update(users).set({ mfaEnrolledAt: null }).where(eq(users.id, userId))
+  return startMfaEnrollment(app, cookieHeader(cookies))
+}
+
+/** Enrolls and confirms a TOTP authenticator for the user through the real routes. */
 export async function enrollTotpForSession(
   app: TestApp,
   userId: string,
   cookies: CookieJar
 ): Promise<EnrolledTotp> {
-  await getDb().update(users).set({ mfaEnrolledAt: null }).where(eq(users.id, userId))
+  const secret = await startPendingTotpEnrollment(app, userId, cookies)
   const header = cookieHeader(cookies)
-  const secret = await startMfaEnrollment(app, header)
   const enrollmentCode = totpForSecret(secret)
   const verify = await app.inject({
     method: 'POST',
