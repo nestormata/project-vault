@@ -12,6 +12,7 @@
   import type { OrgUser } from '$lib/api/org-users.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import CredentialShareFieldHelp from './CredentialShareFieldHelp.svelte'
+  import type { CredentialSharesListProps } from './credential-shares-props.js'
   import {
     archivedBannerFor,
     canRevealCredential,
@@ -54,15 +55,7 @@
     orgRole: CredentialPointExtras['orgRole']
     project: CredentialPointExtras['project']
     origin: string
-    shares?: CredentialShareSummary[]
-    sharesTotal?: number
-    sharesPage?: number
-    sharesStatus?: string | null
-    orgMembers?: OrgUser[]
-    // Story 72.11: the region's point props and contributed data, for the field-help point only.
-    pointProps: CredentialPointExtras
-    data?: Record<string, readonly unknown[]> | undefined
-  } = $props()
+  } & CredentialSharesListProps = $props()
 
   // Story 68.1 AC-3: display-once secrets and in-progress forms are cleared when the record changes
   // (never sourced from props), and a request started on A that settles after A -> B is dropped.

@@ -38,6 +38,8 @@ test.describe('J12 — bounded/scoped credential sharing', () => {
     })
     const projectId = project.id
 
+    const defaultRecipient = uniqueEmail('j12-recipient')
+    const explicitRecipient = uniqueEmail('j12-recipient-2')
     await createLoginTemplateCredentialViaUi(page, projectId, {
       name: 'j12-login',
       field1Value: USERNAME_VALUE,
@@ -60,7 +62,7 @@ test.describe('J12 — bounded/scoped credential sharing', () => {
     await expect(usernameRow.getByRole('checkbox')).toBeChecked()
     await expect(passwordRow.getByRole('checkbox')).not.toBeChecked()
 
-    await page.getByLabel('Recipient email').fill('j12-recipient@example.com')
+    await page.getByLabel('Recipient email').fill(defaultRecipient)
     await page.getByLabel('Confirm your password').fill(OWNER_PASSWORD)
     await page.getByRole('button', { name: 'Create share link' }).click()
 
@@ -74,7 +76,7 @@ test.describe('J12 — bounded/scoped credential sharing', () => {
     // --- Share #2: explicitly opt the sensitive `password` field in ---
     await passwordRow.getByRole('checkbox').click()
     await expect(passwordRow.getByRole('checkbox')).toBeChecked()
-    await page.getByLabel('Recipient email').fill('j12-recipient-2@example.com')
+    await page.getByLabel('Recipient email').fill(explicitRecipient)
     await page.getByLabel('Confirm your password').fill(OWNER_PASSWORD)
     await page.getByRole('button', { name: 'Create share link' }).click()
     await expect(page.getByText('Share link created')).toBeVisible()
@@ -89,7 +91,7 @@ test.describe('J12 — bounded/scoped credential sharing', () => {
     const recipientPage = await recipientContext.newPage()
     await openGuestShare(recipientPage, defaultToken)
     await completeGuestCodeStep(recipientPage, {
-      recipientEmail: 'j12-recipient@example.com',
+      recipientEmail: defaultRecipient,
       rawToken: defaultToken,
     })
     await recipientPage.getByRole('button', { name: 'Reveal' }).click()
@@ -102,7 +104,7 @@ test.describe('J12 — bounded/scoped credential sharing', () => {
     const recipientPage2 = await recipientContext.newPage()
     await openGuestShare(recipientPage2, explicitToken)
     await completeGuestCodeStep(recipientPage2, {
-      recipientEmail: 'j12-recipient-2@example.com',
+      recipientEmail: explicitRecipient,
       rawToken: explicitToken,
     })
     await recipientPage2.getByRole('button', { name: 'Reveal' }).click()

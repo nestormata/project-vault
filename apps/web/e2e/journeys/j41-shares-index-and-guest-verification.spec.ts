@@ -68,6 +68,23 @@ async function newGuest(browser: Browser, appearance: Appearance): Promise<Brows
   })
 }
 
+/** An external share to a fresh recipient, opened in a guest browser context on its link. */
+async function shareToGuestAndOpen(
+  page: Page,
+  browser: Browser,
+  appearance: Appearance,
+  label: string
+): Promise<{ recipientEmail: string; token: string; guest: Page }> {
+  const recipientEmail = `${label}-${randomUUID().slice(0, 8)}@vendor.example`
+  const token = tokenFromShareUrl(
+    await createExternalShareViaUi(page, { recipientEmail, password: OWNER_PASSWORD })
+  )
+  const guestContext = await newGuest(browser, appearance)
+  const guest = await guestContext.newPage()
+  await openGuestShare(guest, token)
+  return { recipientEmail, token, guest }
+}
+
 async function expectAppearanceApplied(page: Page, appearance: Appearance): Promise<void> {
   // PV has no dark scheme of its own (epic 72 D2): what must hold is that the browser really runs
   // in the requested scheme and size, and that the page still lays out.
@@ -168,14 +185,12 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
   }) => {
     test.slow()
     const sharer = await startAsSharer(page, context)
-    const recipientEmail = `j41-lock-${randomUUID().slice(0, 8)}@vendor.example`
-    const token = tokenFromShareUrl(
-      await createExternalShareViaUi(page, { recipientEmail, password: OWNER_PASSWORD })
+    const { recipientEmail, token, guest } = await shareToGuestAndOpen(
+      page,
+      browser,
+      appearance,
+      'j41-lock'
     )
-
-    const guestContext = await newGuest(browser, appearance)
-    const guest = await guestContext.newPage()
-    await openGuestShare(guest, token)
     await sendGuestCode(guest)
     await plantVerificationCode({ recipientEmail, rawToken: token, sendCount: 1 })
 
@@ -199,7 +214,7 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     await expect(guest.getByLabel('6-digit code')).toHaveCount(0)
     await expect(guest.getByRole('button', { name: REVEAL_BUTTON })).toHaveCount(0)
     await expect(guest.getByRole('button', { name: 'Send code' })).toHaveCount(0)
-    await guestContext.close()
+    await guest.context().close()
 
     await page.goto('/shares')
     await expect(indexRow(page, sharer.credentialName)).toContainText('Locked')
@@ -214,7 +229,7 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
   }) => {
     await startAsSharer(page, context)
     await page.getByRole('button', { name: 'External (email)' }).click()
-    await page.getByPlaceholder('vendor@invalid').fill('j41-reason@vendor.example')
+    await page.getByPlaceholder('vendor@invalid').fill(uniqueEmail('j41-reason'))
 
     // No step-up factor: step_up_required.
     await page.getByRole('button', { name: 'Create share link' }).click()
@@ -235,14 +250,12 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
   }) => {
     test.slow()
     await startAsSharer(page, context)
-    const recipientEmail = `j41-kbd-${randomUUID().slice(0, 8)}@vendor.example`
-    const token = tokenFromShareUrl(
-      await createExternalShareViaUi(page, { recipientEmail, password: OWNER_PASSWORD })
+    const { recipientEmail, token, guest } = await shareToGuestAndOpen(
+      page,
+      browser,
+      appearance,
+      'j41-kbd'
     )
-
-    const guestContext = await newGuest(browser, appearance)
-    const guest = await guestContext.newPage()
-    await openGuestShare(guest, token)
 
     // Tab to "Send code", Enter sends it.
     await guest.keyboard.press('Tab')
@@ -267,7 +280,7 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     await expect(reveal).toBeFocused()
     await guest.keyboard.press('Enter')
     await expect(guest.getByText(USERNAME_VALUE, { exact: true })).toBeVisible()
-    await guestContext.close()
+    await guest.context().close()
   })
 
   test('AC1: an anonymous visitor to /shares is sent to sign in', async ({ browser }) => {

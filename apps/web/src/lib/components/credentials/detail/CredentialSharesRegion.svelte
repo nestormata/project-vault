@@ -1,9 +1,8 @@
 <script lang="ts">
   import type { CredentialDetail } from '@project-vault/shared'
-  import type { CredentialShareSummary } from '$lib/api/credential-shares.js'
-  import type { OrgUser } from '$lib/api/org-users.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import type { CredentialPointExtras } from '$lib/credentials/credential-detail-helpers.js'
+  import type { CredentialSharesListProps } from './credential-shares-props.js'
   import CredentialSharesNative from './CredentialSharesNative.svelte'
 
   // Story 69.2: the Shares section chrome (card, heading, intro) with PV's native sharer UI inside
@@ -29,14 +28,7 @@
     credentialId: string
     orgRole: CredentialPointExtras['orgRole']
     origin: string
-    shares?: CredentialShareSummary[]
-    sharesTotal?: number
-    sharesPage?: number
-    sharesStatus?: string | null
-    orgMembers?: OrgUser[]
-    pointProps: CredentialPointExtras
-    data?: Record<string, readonly unknown[]> | undefined
-  } = $props()
+  } & CredentialSharesListProps = $props()
 </script>
 
 <!-- @region credential.detail.shares -->

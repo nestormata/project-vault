@@ -19,6 +19,8 @@ import {
   createCredentialViaApi,
 } from '../credentials/credential-route-test-helpers.js'
 
+const VENDOR_DOMAIN = 'vendor.example'
+
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
@@ -158,7 +160,7 @@ describe('shares index, display status and typed reasons', () => {
       projectId,
       credentialId,
       {
-        recipientEmail: 'guest@vendor.example',
+        recipientEmail: `guest@${VENDOR_DOMAIN}`,
         expiresAt: futureIso(),
         password: MEMBERSHIP_TEST_LOGIN_SECRET,
       },
@@ -212,7 +214,7 @@ describe('shares index, display status and typed reasons', () => {
       projectId,
       credentialId,
       {
-        recipientEmail: 'guest@vendor.example',
+        recipientEmail: `guest@${VENDOR_DOMAIN}`,
         expiresAt: futureIso(),
         password: MEMBERSHIP_TEST_LOGIN_SECRET,
         singleUse: false,

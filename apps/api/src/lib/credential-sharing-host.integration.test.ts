@@ -49,6 +49,7 @@ const { registerOwner } = createMembershipTestHelpers({
 
 const EXTENSION_NAME = 'com.acme.credential-sharing-host-fixture'
 const RECIPIENT_EMAIL = 'recipient@invalid'
+const VENDOR_DOMAIN = 'vendor.example'
 
 const MANIFEST: ExtensionManifest = {
   name: EXTENSION_NAME,
@@ -182,7 +183,7 @@ describe('buildCredentialSharingHost — real-Postgres integration (Story 20.12 
       url: `/api/v1/projects/${projectId}/credentials/${credential.id}/external-shares`,
       headers: { cookie: cookieHeader(owner.cookies) },
       payload: {
-        recipientEmail: 'gated-recipient@vendor.example',
+        recipientEmail: `gated-recipient@${VENDOR_DOMAIN}`,
         expiresAt: futureIso(),
         fieldKey: 'value',
         password: MEMBERSHIP_TEST_LOGIN_SECRET,

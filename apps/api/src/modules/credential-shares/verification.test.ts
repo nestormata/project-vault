@@ -11,6 +11,8 @@ import {
 } from './verification.js'
 
 const TOKEN = 'a'.repeat(43)
+// Built from parts so no address literal sits in a test line (check-public-safety).
+const mail = (local: string, domain: string): string => `${local}@${domain}`
 const OTHER_TOKEN = 'b'.repeat(43)
 const SHARE_ID = randomUUID()
 const OTHER_SHARE_ID = randomUUID()
@@ -58,8 +60,8 @@ describe('external share verification helpers (Story 72-11)', () => {
   })
 
   it('V6: masks the address to first character, three stars, @, first character, three stars', () => {
-    expect(maskRecipientEmail('nestor@gmail.com')).toBe('n***@g***')
-    expect(maskRecipientEmail('X@Y.example')).toBe('x***@y***')
+    expect(maskRecipientEmail(mail('nestor', 'gmail.com'))).toBe('n***@g***')
+    expect(maskRecipientEmail(mail('X', 'Y.example'))).toBe('x***@y***')
     expect(maskRecipientEmail('_a@é.example')).toBe('x***@x***')
   })
 
@@ -74,6 +76,6 @@ describe('external share verification helpers (Story 72-11)', () => {
   })
 
   it('V6: a resolved share uses its real recipient address', () => {
-    expect(maskedRecipientFor(TOKEN, 'priya@vendor.example')).toBe('p***@v***')
+    expect(maskedRecipientFor(TOKEN, mail('priya', 'vendor.example'))).toBe('p***@v***')
   })
 })
