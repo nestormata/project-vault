@@ -184,14 +184,15 @@ only after the downstream consumer has verified the build:
 npm dist-tag add @project-vault/extension-api@X.Y.Z latest
 ```
 
-**Current state (2026-10-14):** npm `latest` and `next` are both `3.36.0` (promoted to `latest` on 2026-10-14) (published tags:
-`extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`, `-v3.24.1`, `-v3.25.0`, `-v3.27.0`, `-v3.29.0`, `-v3.32.0`, `-v3.36.0`). `3.27.0` (Story 68.8,
+**Current state (2026-10-30):** npm `latest` and `next` are both `3.38.0` (promoted to `latest` on 2026-10-30) (published tags:
+`extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`, `-v3.24.1`, `-v3.25.0`, `-v3.27.0`, `-v3.29.0`, `-v3.32.0`, `-v3.36.0`, `-v3.38.0`). `3.27.0` (Story 68.8,
 M7 `apiRoutes`) was tagged on merge commit `c610e486`, published by run `37088769144` (shasum
 `7f9423e286a678c41a679363ff1d170c90df83df`). `3.29.0` (Story 68.14, app-level `apiRoutes`) was tagged on
 `49c27b34` and published by run `37166931749` on 2026-10-04; it includes `3.28.0` (Story 71.1), which was never
 published on its own. `3.32.0` (run `37410449757`, 2026-10-06) includes `3.30.0` (Story 68.11 Phase A: the deprecation
 markers and neutral request types) and `3.31.0`, neither published on its own. `3.36.0` (Story 65.6; run `38488878696`,
-tagged on `d0370e71`, 2026-10-14) includes `3.33.0` to `3.35.0`, also never published on their own. The Phase A
+tagged on `d0370e71`, 2026-10-14) includes `3.33.0` to `3.35.0`, also never published on their own. `3.38.0` (tagged on `fa69259d`) carries 69-18 and 72-21; `3.37.0` was
+never published. The Phase A
 deprecation notice was given on 2026-10-14 in an issue on the CM repository (#145). `latest` moves only after
 CentralizeMe verifies the version.
 `3.26.0` was never published (71.1 renumbered to `3.28.0` after 68.8 took `3.27.0`). `3.24.2` was a
