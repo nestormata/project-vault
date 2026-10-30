@@ -2,6 +2,52 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.38.0 — 2026-10-30
+
+contract-hash: sha256:8740a713ce7734b648c736551124acbd090c7847979a66bfa57fea5cb7cbeeab
+
+Story 72.21. Additive for every existing extension: the step-up applies only to a manifest that
+declares `apiVersion` 3.38.0 or later, so a pack that still declares 3.37.0 or older keeps today's
+behaviour (no code needed). An unparsable declared version gets the step-up (fail closed).
+
+### Added
+
+- `CredentialSharingCreateExternalShareParams.totpCode` (optional `string`): the acting user's
+  current code from his or her confirmed Project Vault TOTP enrollment. With `apiVersion` 3.38.0 or
+  later the host verifies it (replay-protected, the check behind PV's own share form, so a code
+  already used by a login or an earlier share is refused) after the acting-user checks and before
+  any write. There is no password factor on this method.
+- `CredentialSharingStepUpRequiredError` (`code = 'credential_sharing_step_up_required'`): thrown
+  when `totpCode` is missing, empty, not a string, wrong or reused, or when there is no acting user
+  (no request user and no `actingUserId`). One error for every cause, no reason field, and the
+  message never echoes the code. No share, token or audit row exists afterwards.
+- `CredentialSharingTotpEnrollmentRequiredError` (`code = 'credential_sharing_totp_enrollment_required'`):
+  thrown, with or without a code, when the acting user has no confirmed TOTP enrollment (a pending
+  enrollment counts as none). Show "enroll a TOTP authenticator in Project Vault".
+
+### Migration
+
+CentralizeMe must move its pinned `@project-vault/extension-api` tuple to this release and implement
+CM story 16-72: collect the code in its share dialog, pass it as `totpCode`, and map the two errors.
+Until its manifest declares 3.38.0 the step-up does not run for it. A scheduled task on 3.38.0 or
+later can no longer create external shares unattended: it needs a human's `actingUserId` and live
+code. A code is single use, and one accepted before a later failure (for example an unknown
+credential) stays burned.
+
+### Deprecated
+
+Nothing new is deprecated. The 3.30.0 notice still stands, and the newest entry restates its scope
+for the marker lint. Panel era types: `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`,
+`ModuleActionContext`, `ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`,
+`ModuleDataResult`, `ModuleDataRouteHandler`, `ModuleDataRouteDeclaration`, `ExtensionNavItem`.
+Manifest fields: `uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`. Hooks: `uiPanel`,
+`moduleAction`, `moduleData`, plus the `'ui-panel'` capability member. Replacements are
+`ExtensionRequestContext`, `ExtensionActionResult`, composed UI and M7 `apiRoutes`.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, recipient CentralizeMe maintainer (the 3.30.0 notice stands).
+
 ## 3.37.0 — 2026-10-25
 
 contract-hash: sha256:b179e81a47e9100fe82e39deffbb08af4bbc4f7a42633400bd1214074c568459

@@ -604,6 +604,28 @@ and before your handler; no audit row is written. Reads are never gated by defau
 - `checkProjectWriteRoles(manifest)` lists your project writes with the gate the host will apply;
   fail your CI on an `ungated` entry you did not mean.
 
+**External shares need a step-up (since 3.38.0).** Project Vault's own share form asks the sharer for
+a current authenticator code (Story 72.21). When the manifest declares `apiVersion` 3.38.0 or later,
+`HostServices.credentialSharing.createExternalShare` asks for the same thing before it writes
+anything: pass the acting user's current code as `totpCode` (a string from his or her confirmed
+Project Vault TOTP enrollment).
+
+- `CredentialSharingStepUpRequiredError` (`code = 'credential_sharing_step_up_required'`): `totpCode`
+  missing, empty, not a string, wrong, or already used (by a login or an earlier share), or there is
+  no acting user (no request user and no `actingUserId`). One error for every cause; the message never
+  echoes the code.
+- `CredentialSharingTotpEnrollmentRequiredError` (`code = 'credential_sharing_totp_enrollment_required'`):
+  the acting user has no confirmed TOTP enrollment, whether or not a code was sent. A pending,
+  unconfirmed enrollment counts as none. Tell the user to enroll an authenticator in Project Vault.
+- Both are thrown before any share, token or audit row is written. The enrollment check runs after
+  the acting-user checks, so an `actingUserId` of another organization is still
+  `CredentialSharingActingUserInvalidError`.
+- A code is single use. A call that passes the step-up and then fails (for example
+  `credential_not_found`) still burns its code.
+- There is no password factor on this method. A manifest that declares an older `apiVersion` keeps the
+  3.37.0 behaviour (no step-up). A scheduled task on 3.38.0 or later cannot create shares unattended:
+  it needs a human's `actingUserId` and live code.
+
 **Handler context.** An authenticated, organization-scoped route gets
 `ctx = { auth, tx, onPostCommit, audit }`. `ctx.tx` is Project Vault's request transaction (a
 drizzle `PgTransaction` at runtime, with `app.current_org_id` set, so RLS limits every query to
@@ -804,20 +826,21 @@ session. The declaration is plain data and is validated at registration:
 - A write that carries an `idempotencyKey` is limited to a 1 MiB audit entry (the payload as stored); over it the write
   fails with `payload_too_large`, even though the same payload without a key is accepted. Split or trim large payloads.
 
-##### Host version compatibility of the audit-write contract (3.28.0 to 3.37.0)
+##### Host version compatibility of the audit-write contract (3.28.0 to 3.38.0)
 
 What a consumer gets in each release, and what an older host does with it. "Ignores" means the field is accepted
 and has no effect.
 
-| Since  | Surface                                                                                                      | An older host                                                                          |
-| ------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| 3.28.0 | `AuditEventSourceWriteInput.idempotencyKey`                                                                  | Ignores it: a retry writes a second row.                                               |
-| 3.31.0 | `security.delegation`, `ApiRouteDelegation`, `isApiRouteDelegatedContext` (contract only)                    | A host without the assertion verifier treats the route as a plain session route (401). |
-| 3.33.0 | `actorId`, `occurredAt`, `historicalActorPolicy`, `ApiRouteDelegation.occurredAt` / `actorAttestationReason` | Ignores `actorId` and `occurredAt`; do not rely on the rest there.                     |
-| 3.34.0 | `checkExtensionEmitters`, `assertExtensionEmittersContained`, `checkBackgroundPromisesHandled`               | Package-side helpers; the host is unaffected.                                          |
-| 3.35.0 | `ExtensionManifest.anonymousRouteMinResponseMs`                                                              | Not relied on: confirm the host version first.                                         |
-| 3.36.0 | `CredentialSharingShareRecord.sharedBy`, `viewer` / `actor` / `actingUserId` on credential sharing           | Not relied on: confirm the host version first.                                         |
-| 3.37.0 | `security.minimumProjectRole`, the project-role default, `checkProjectWriteRoles`                            | An older host ignores the field and gates no extension route: check the host version.  |
+| Since  | Surface                                                                                                                     | An older host                                                                          |
+| ------ | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 3.28.0 | `AuditEventSourceWriteInput.idempotencyKey`                                                                                 | Ignores it: a retry writes a second row.                                               |
+| 3.31.0 | `security.delegation`, `ApiRouteDelegation`, `isApiRouteDelegatedContext` (contract only)                                   | A host without the assertion verifier treats the route as a plain session route (401). |
+| 3.33.0 | `actorId`, `occurredAt`, `historicalActorPolicy`, `ApiRouteDelegation.occurredAt` / `actorAttestationReason`                | Ignores `actorId` and `occurredAt`; do not rely on the rest there.                     |
+| 3.34.0 | `checkExtensionEmitters`, `assertExtensionEmittersContained`, `checkBackgroundPromisesHandled`                              | Package-side helpers; the host is unaffected.                                          |
+| 3.35.0 | `ExtensionManifest.anonymousRouteMinResponseMs`                                                                             | Not relied on: confirm the host version first.                                         |
+| 3.36.0 | `CredentialSharingShareRecord.sharedBy`, `viewer` / `actor` / `actingUserId` on credential sharing                          | Not relied on: confirm the host version first.                                         |
+| 3.37.0 | `security.minimumProjectRole`, the project-role default, `checkProjectWriteRoles`                                           | An older host ignores the field and gates no extension route: check the host version.  |
+| 3.38.0 | `createExternalShare({ totpCode })`, `CredentialSharingStepUpRequiredError`, `CredentialSharingTotpEnrollmentRequiredError` | An older host ignores `totpCode` and checks no step-up: check the host version.        |
 
 ```ts
 import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'

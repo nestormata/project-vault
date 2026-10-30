@@ -125,6 +125,16 @@ handler), the same rule Project Vault applies to its own project writes. Declare
 behaviour. `checkProjectWriteRoles(manifest)` shows what the host will enforce; see
 [docs/extensions/authoring.md](../../docs/extensions/authoring.md) "Project roles".
 
+### External shares and `totpCode` (since 3.38.0)
+
+With `apiVersion` 3.38.0 or later, `credentialSharing.createExternalShare` needs the acting user's
+current Project Vault TOTP code in `totpCode`, verified by the host (replay-protected, the same check
+as the native share form) before any write. A missing, empty, wrong or reused code, or no acting user,
+throws `CredentialSharingStepUpRequiredError`. A user with no confirmed TOTP enrollment gets
+`CredentialSharingTotpEnrollmentRequiredError`. An older declared `apiVersion` keeps the old
+behaviour. See [docs/extensions/authoring.md](../../docs/extensions/authoring.md) "External shares
+need a step-up".
+
 ### Delegated routes (`apiRoutes` `security.delegation`)
 
 A route can declare `security.delegation` to accept a service-delegated actor assertion
