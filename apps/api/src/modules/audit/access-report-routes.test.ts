@@ -497,6 +497,48 @@ describe('POST /api/v1/org/audit/access-report — historical replay (AC-2)', ()
     expect(afterRemovalBody.users.map((u) => u.userId)).not.toContain(userA.userId)
   }, 30_000)
 
+  it('replays a direct project.member_added grant (Story 72-14) with the role from its payload', async () => {
+    const owner = await registerOwner(app, 'replay-added')
+    const firstProject = await createProjectViaApi(app, owner.cookies, 'replay-added-first')
+    const secondProject = await createProjectViaApi(app, owner.cookies, 'replay-added-second')
+    const userA = await registerAndLoginViaApi(app, {
+      email: `access-report-replay-added-${randomUUID()}@example.com`,
+      password: PASSWORD,
+      orgName: `Replay Added Org ${randomUUID()}`,
+    })
+    const [userARow] = await getDb()
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userA.userId))
+    // The invitation puts userA in the org (the replay's org-membership creation event); the
+    // direct add below is the grant under test.
+    const created = await invite(app, owner.cookies, firstProject, {
+      email: userARow?.email as string,
+      role: 'member',
+    })
+    const invitationId = created.json<{ data: { id: string } }>().data.id
+    const token = await tokenForInvitation(owner.orgId, invitationId)
+    expect((await acceptInvitationAsExistingUser(app, userA.cookies, token)).statusCode).toBe(200)
+
+    const addRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${secondProject}/members`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { userId: userA.userId, role: 'admin' },
+    })
+    expect(addRes.statusCode).toBe(201)
+    const addedAt = await eventCreatedAt(owner.orgId, 'project.member_added', userA.userId)
+
+    const res = await callReport(app, owner.cookies, {
+      asOf: new Date(addedAt.getTime() + 1).toISOString(),
+    })
+    const body = res.json<{
+      data: { users: { userId: string; projects: { projectId: string; role: string }[] }[] }
+    }>().data
+    const entry = body.users.find((u) => u.userId === userA.userId)
+    expect(entry?.projects.find((p) => p.projectId === secondProject)?.role).toBe('admin')
+  }, 30_000)
+
   it('AC-2 critical: a historical asOf generated right after pseudonymizing a still-active user shows the alias, never the real historical name (D4)', async () => {
     const owner = await registerOwner(app, 'pseudo-historical')
     const projectId = await createProjectViaApi(app, owner.cookies, 'pseudo-historical-project')

@@ -11,6 +11,12 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Add an existing organization user to a project** (Story 72-14, Epic 72). `POST /api/v1/projects/{projectId}/members`
+  with `{ userId, role }` (`viewer`, `member` or `admin`) adds an active user of the organization to a project in one call,
+  without an invitation e-mail: `201` with the member row, `409 already_member` on a repeat, `404 user_not_found` for a
+  nonexistent, cross-organization or deactivated user, `410` for an archived project. Project `admin`/`owner` or org
+  `admin`/`owner`, strict MFA, 30 requests per minute, one `project.member_added` audit event. There is no
+  project-scoped candidate list. No `@project-vault/extension-api` change: host code has no membership write.
 - **Dashboard attention list** (Story 72-12, Epic 72). `GET /api/v1/dashboard/attention` answers, per viewer, what needs
   attention: active shares expiring within 7 days, certificates within 30 days (expired ones included) and pending
   invitations (admin and owner only), at most 10 per kind with true `counts`. An org viewer gets an empty list. The

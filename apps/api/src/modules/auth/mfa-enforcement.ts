@@ -125,6 +125,20 @@ export async function loadMfaEnforcementStatus(
  * requireMfaEnrollment(), this ignores an active grace period — the MFA policy matrix
  * requires invites to be blocked for unenrolled owner/admin even during grace.
  */
+export async function rejectIfUserNotMfaEnrolled(
+  reply: FastifyReply,
+  userId: string
+): Promise<boolean> {
+  const [user] = await getDb()
+    .select({ mfaEnrolledAt: users.mfaEnrolledAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+  if (user?.mfaEnrolledAt) return false
+  reply.status(403).send({ code: 'mfa_required', message: MFA_REQUIRED_MESSAGE })
+  return true
+}
+
 export function requireMfaEnrollmentStrict() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     if (!request.authContext) {
@@ -133,14 +147,7 @@ export function requireMfaEnrollmentStrict() {
     }
     const { orgRole, userId } = request.authContext
     if (orgRole !== 'owner' && orgRole !== 'admin') return
-    const [user] = await getDb()
-      .select({ mfaEnrolledAt: users.mfaEnrolledAt })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1)
-    if (!user?.mfaEnrolledAt) {
-      reply.status(403).send({ code: 'mfa_required', message: MFA_REQUIRED_MESSAGE })
-    }
+    await rejectIfUserNotMfaEnrolled(reply, userId)
   }
 }
 
