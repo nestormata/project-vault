@@ -49,6 +49,6 @@ describe('attention service', () => {
       isAdmin: false,
       isViewer: true,
     })
-    expect(result).toBe(EMPTY_ATTENTION)
+    expect(result).toEqual(EMPTY_ATTENTION)
   })
 })

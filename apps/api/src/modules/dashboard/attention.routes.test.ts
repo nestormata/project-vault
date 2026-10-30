@@ -37,7 +37,8 @@ const { addUserToOrg, registerOwner, addProjectMember } = createMembershipTestHe
   orgNamePrefix: 'Attention Org',
 })
 
-const HOUR = 60 * 60 * 1000
+const MINUTE = 60 * 1000
+const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 function inMs(ms: number): Date {
@@ -262,6 +263,31 @@ describe('GET /api/v1/dashboard/attention (story 72-12)', () => {
 
   it('(c) equals the union of what the existing list routes return for the caller', async () => {
     const f = await seedOrg('compare')
+    const archivedProject = await createCredentialTestProject(app, f.owner.cookies, 'compare-arch')
+    const archivedCredential = (await createCredentialViaApi(app, f.owner.cookies, archivedProject))
+      .id
+    const archivedShare = await shareWith(
+      f.owner,
+      archivedProject,
+      archivedCredential,
+      f.admin.userId
+    )
+    await setShareExpiry(f.owner.orgId, archivedShare, inMs(DAY))
+    await addCertificate(f.owner.orgId, archivedProject, 'arch.example', inMs(DAY))
+    const lockedShare = await shareWith(f.owner, f.p1, f.c1, f.sharer.userId)
+    await withOrg(f.owner.orgId, (tx) =>
+      tx
+        .update(credentialShares)
+        .set({ expiresAt: inMs(DAY), lockedAt: new Date() })
+        .where(eq(credentialShares.id, lockedShare))
+    )
+    const expiredShare = await shareWith(f.owner, f.p2, f.c2, f.sharer.userId)
+    await setShareExpiry(f.owner.orgId, expiredShare, inMs(-HOUR))
+    await withOrg(f.owner.orgId, (tx) =>
+      tx.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, archivedProject))
+    )
+    const archivedProjectIds = new Set([archivedProject])
+    const excludedShareIds = new Set([archivedShare, lockedShare, expiredShare])
 
     const get = async (actor: Cookies, url: string) =>
       app.inject({ method: 'GET', url, headers: { cookie: cookieHeader(actor.cookies) } })
@@ -281,11 +307,17 @@ describe('GET /api/v1/dashboard/attention (story 72-12)', () => {
 
     async function listed(actor: Cookies, isAdmin: boolean): Promise<string[]> {
       const index = await get(actor, '/api/v1/shares?status=active&limit=100')
-      const out = within(index.json<{ data: { items: Dated[] } }>().data.items, 7)
+      const activeShares = index
+        .json<{ data: { items: Dated[] } }>()
+        .data.items.filter((share) => !excludedShareIds.has(share.id))
+      const out = within(activeShares, 7)
       // The project list is the access-controlled source of projects (a member only lists projects
       // they belong to); the per-project certificate route itself only checks the org role.
       const visible = await get(actor, '/api/v1/projects')
-      for (const project of visible.json<{ data: { items: Array<{ id: string }> } }>().data.items) {
+      const liveProjects = visible
+        .json<{ data: { items: Array<{ id: string }> } }>()
+        .data.items.filter((project) => !archivedProjectIds.has(project.id))
+      for (const project of liveProjects) {
         out.push(...(await listedForProject(actor, project.id, isAdmin)))
       }
       return out.sort()
@@ -324,12 +356,12 @@ describe('GET /api/v1/dashboard/attention (story 72-12)', () => {
     await withOrg(owner.orgId, (tx) =>
       tx
         .update(credentialShares)
-        .set({ expiresAt: inMs(DAY), lockedAt: new Date(), status: 'revoked' })
+        .set({ expiresAt: inMs(DAY), lockedAt: new Date() })
         .where(eq(credentialShares.id, lockedShare))
     )
 
-    const certIn = await addCertificate(owner.orgId, project, 'in.example', inMs(30 * DAY - HOUR))
-    await addCertificate(owner.orgId, project, 'out.example', inMs(31 * DAY))
+    const certIn = await addCertificate(owner.orgId, project, 'in.example', inMs(30 * DAY - MINUTE))
+    await addCertificate(owner.orgId, project, 'out.example', inMs(30 * DAY + MINUTE))
     await addCertificate(owner.orgId, project, 'none.example', null)
     const certExpired = await addCertificate(owner.orgId, project, 'gone.example', inMs(-DAY))
 
@@ -393,9 +425,23 @@ describe('GET /api/v1/dashboard/attention (story 72-12)', () => {
     const alive = await createCredentialTestProject(app, owner.cookies, 'alive')
     const gone = await createCredentialTestProject(app, owner.cookies, 'gone')
     const archived = await createCredentialTestProject(app, owner.cookies, 'archived')
+    let aliveShare = ''
     const aliveCert = await addCertificate(owner.orgId, alive, 'alive.example', inMs(DAY))
     await addCertificate(owner.orgId, gone, 'gone.example', inMs(DAY))
     await addCertificate(owner.orgId, archived, 'archived.example', inMs(DAY))
+    const credential = (await createCredentialViaApi(app, owner.cookies, alive)).id
+    const goneCredential = (await createCredentialViaApi(app, owner.cookies, gone)).id
+    const archivedCredential = (await createCredentialViaApi(app, owner.cookies, archived)).id
+    const recipient = await addUserToOrg(app, owner.orgId, 'gone-recipient')
+    for (const [projectId, credentialId] of [
+      [alive, credential],
+      [gone, goneCredential],
+      [archived, archivedCredential],
+    ] as const) {
+      const shareId = await shareWith(owner, projectId, credentialId, recipient.userId)
+      await setShareExpiry(owner.orgId, shareId, inMs(DAY))
+      if (projectId === alive) aliveShare = shareId
+    }
     await addInvitation(owner.orgId, gone, owner.userId, { email: `gone@${MAIL_DOMAIN}` })
     await addInvitation(owner.orgId, archived, owner.userId, { email: `archived@${MAIL_DOMAIN}` })
     await withOrg(owner.orgId, async (tx) => {
@@ -403,9 +449,9 @@ describe('GET /api/v1/dashboard/attention (story 72-12)', () => {
       await tx.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, archived))
     })
     const result = await attentionOf(owner)
-    expect(ids(result)).toEqual([aliveCert])
+    expect(ids(result)).toEqual([aliveShare, aliveCert].sort())
     expect(result.counts).toEqual({
-      expiringShares: 0,
+      expiringShares: 1,
       expiringCertificates: 1,
       pendingInvitations: 0,
     })
