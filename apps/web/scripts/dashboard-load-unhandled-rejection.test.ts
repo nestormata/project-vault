@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const WEB_ROOT = fileURLToPath(new URL('../', import.meta.url))
-const PROBE = fileURLToPath(new URL('./dashboard-load-probe.ts', import.meta.url))
+const PROBE = fileURLToPath(new URL('../../../scripts/dashboard-load-probe.ts', import.meta.url))
 const PROBE_TIMEOUT_MS = 90_000
 
 describe('dashboard load in a plain Node process', () => {

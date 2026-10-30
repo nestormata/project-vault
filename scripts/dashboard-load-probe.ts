@@ -2,7 +2,12 @@
 // unhandled-rejection mode) against a fetch that answers 403 for the certificate and domain reads
 // while the project dashboard read is slow. Run by dashboard-load-unhandled-rejection.test.ts.
 import { randomUUID } from 'node:crypto'
-import { createServer } from 'vite'
+import { createRequire } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const WEB_ROOT = fileURLToPath(new URL('../apps/web/', import.meta.url))
+// vite is a dependency of apps/web only, so resolve it from there.
+const viteEntry = createRequire(`${WEB_ROOT}package.json`).resolve('vite')
 
 const PROJECT_ID = randomUUID()
 const SLOW_READ_MS = 200
@@ -45,33 +50,47 @@ async function answer(path: string): Promise<Response> {
   return json(404, { code: 'not_found', message: 'not found' })
 }
 
+function requestUrl(input: string | URL | Request): string {
+  if (typeof input === 'string') return input
+  return input instanceof URL ? input.href : input.url
+}
+
 const mockFetch = ((input: string | URL | Request) => {
-  const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  const raw = requestUrl(input)
   return answer(new URL(raw, 'http://localhost').pathname)
 }) as typeof fetch
 
-const server = await createServer({
-  server: { middlewareMode: true },
-  appType: 'custom',
-  logLevel: 'error',
-})
-try {
-  const page = (await server.ssrLoadModule('/src/routes/(app)/dashboard/+page.server.ts')) as {
-    load: (event: unknown) => Promise<{ monitoringAssets: Record<string, Promise<unknown>> }>
-  }
-  const result = await page.load({
-    fetch: mockFetch,
-    url: new URL('http://localhost/dashboard'),
-    locals: {},
-    params: {},
-    route: { id: '/(app)/dashboard' },
+async function main(): Promise<void> {
+  const { createServer } = (await import(pathToFileURL(viteEntry).href)) as typeof import('vite')
+  const server = await createServer({
+    root: WEB_ROOT,
+    server: { middlewareMode: true },
+    appType: 'custom',
+    logLevel: 'error',
   })
-  const states = await Promise.all([
-    result.monitoringAssets.certificates,
-    result.monitoringAssets.domains,
-  ])
-  await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
-  process.stdout.write(`${JSON.stringify(states)}\n`)
-} finally {
-  await server.close()
+  try {
+    const page = (await server.ssrLoadModule('/src/routes/(app)/dashboard/+page.server.ts')) as {
+      load: (event: unknown) => Promise<{ monitoringAssets: Record<string, Promise<unknown>> }>
+    }
+    const result = await page.load({
+      fetch: mockFetch,
+      url: new URL('http://localhost/dashboard'),
+      locals: {},
+      params: {},
+      route: { id: '/(app)/dashboard' },
+    })
+    const states = await Promise.all([
+      result.monitoringAssets.certificates,
+      result.monitoringAssets.domains,
+    ])
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
+    process.stdout.write(`${JSON.stringify(states)}\n`)
+  } finally {
+    await server.close()
+  }
 }
+
+main().catch((error: unknown) => {
+  process.stderr.write(`${String(error)}\n`)
+  process.exitCode = 1
+})
