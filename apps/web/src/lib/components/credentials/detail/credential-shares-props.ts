@@ -11,5 +11,5 @@ export type CredentialSharesListProps = {
   sharesStatus?: string | null
   orgMembers?: OrgUser[]
   pointProps: CredentialPointExtras
-  data?: Record<string, readonly unknown[]> | undefined
+  data?: Record<string, readonly unknown[]>
 }
