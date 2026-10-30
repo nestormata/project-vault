@@ -12,6 +12,10 @@ import {
   type ShareOverrides,
 } from './external-share-test-helpers.js'
 import { generateAndHashShareToken } from './service.js'
+import { hashVerificationCode } from './verification.js'
+import { eq } from 'drizzle-orm'
+import { withOrg } from '@project-vault/db'
+import { credentialShares } from '@project-vault/db/schema'
 import {
   evaluateTiming,
   formatTimingTable,
@@ -38,6 +42,10 @@ import {
  * `credential-sharing-host.test.ts`.
  *
  * `TIMING_N` overrides the per-class sample size (default 30), `TIMING_SEED` the PRNG seed.
+ *
+ * Story 72-11 adds a second leg with the same method for the two guest verification routes
+ * (`POST .../verification` and `POST .../verification/confirm`, decision V9): every outcome of
+ * those routes, a success included, must be within T of an unknown token.
  */
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
@@ -63,7 +71,14 @@ const METHOD: Omit<TimingEvaluationOptions, 'seed' | 'missClasses'> = {
   maxInconclusive: 2,
 }
 
-type RouteKind = 'GET' | 'POST'
+type RouteKind = 'GET' | 'POST' | 'SEND' | 'CONFIRM'
+
+const ROUTE_SUFFIX = new Map<RouteKind, string>([
+  ['GET', ''],
+  ['POST', '/reveal'],
+  ['SEND', '/verification'],
+  ['CONFIRM', '/verification/confirm'],
+])
 
 /** How each seeded miss class is expressed on a fresh row; classes without an entry carry no row
  *  at all (an unknown or malformed token, and the two controls). */
@@ -76,12 +91,38 @@ const ROW_CLASSES = new Map<string, () => ShareOverrides>([
   ['FLD', () => ({ fieldKey: 'no-longer-exists' })],
 ])
 
-const MISS_CLASSES_BY_ROUTE = {
+// Story 72-11: the verification classes are gated rows (`verificationRequired: true`), except LINK
+// (a link-only share). LIVE is a verifiable share with no code yet, CODE one with a live code (the
+// confirm then guesses wrong, or right for OK), THR one whose last send was just now, CAP one at
+// the send cap, LOCK one an attempt cap closed.
+const GATED = { verificationRequired: true } satisfies ShareOverrides
+const VERIFICATION_ROW_CLASSES = new Map<string, () => ShareOverrides>([
+  ['EXP', () => ({ ...GATED, status: 'expired', expiresAt: PAST() })],
+  ['LAZY', () => ({ ...GATED, status: 'active', expiresAt: PAST() })],
+  ['REV', () => ({ ...GATED, status: 'revoked', revokedAt: new Date() })],
+  ['VIEW', () => ({ ...GATED, status: 'viewed', firstViewedAt: new Date(), viewCount: 1 })],
+  ['LOCK', () => ({ ...GATED, status: 'revoked', revokedAt: new Date(), lockedAt: new Date() })],
+  ['THR', () => ({ ...GATED, verificationSentAt: new Date(), verificationSendCount: 1 })],
+  ['CAP', () => ({ ...GATED, verificationSendCount: 5, verificationSentAt: PAST() })],
+  ['LINK', () => ({})],
+  ['LIVE', () => ({ ...GATED })],
+  ['CODE', () => ({ ...GATED })],
+  ['OK', () => ({ ...GATED })],
+])
+const CONFIRM_CODE = '424242'
+const WRONG_CODE = '131313'
+
+const MISS_CLASSES_BY_ROUTE = new Map<RouteKind, string[]>([
   // The metadata GET answers a still-active share with its details (a hit), so FLD (a
   // reveal-only miss: the field was removed) does not apply to it.
-  GET: ['MAL', 'EXP', 'LAZY', 'REV', 'VIEW', 'SUP'],
-  POST: ['MAL', 'EXP', 'LAZY', 'REV', 'VIEW', 'SUP', 'FLD'],
-} satisfies Record<RouteKind, string[]>
+  ['GET', ['MAL', 'EXP', 'LAZY', 'REV', 'VIEW', 'SUP']],
+  ['POST', ['MAL', 'EXP', 'LAZY', 'REV', 'VIEW', 'SUP', 'FLD']],
+  // Story 72-11 V9: on these two routes EVERY outcome is held, the live and successful ones too.
+  ['SEND', ['MAL', 'EXP', 'LAZY', 'REV', 'VIEW', 'LOCK', 'THR', 'CAP', 'LINK', 'LIVE']],
+  ['CONFIRM', ['MAL', 'EXP', 'REV', 'VIEW', 'LOCK', 'LINK', 'LIVE', 'CODE', 'OK']],
+])
+
+const isVerificationRoute = (kind: RouteKind) => kind === 'SEND' || kind === 'CONFIRM'
 
 describe('external share miss-path timing (Story 65.4 AC1/AC3)', () => {
   let app: TestApp
@@ -100,25 +141,53 @@ describe('external share miss-path timing (Story 65.4 AC1/AC3)', () => {
     await resetVaultForTest()
   })
 
-  async function tokenFor(cls: string): Promise<string> {
+  /** Story 72-11: gives a seeded verification row a live code, as a send would have. */
+  async function giveLiveCode(id: string, token: string): Promise<void> {
+    await withOrg(seeder.orgId, (tx) =>
+      tx
+        .update(credentialShares)
+        .set({
+          verificationCodeHash: hashVerificationCode(token, id, CONFIRM_CODE),
+          verificationCodeExpiresAt: new Date(Date.now() + 5 * 60_000),
+        })
+        .where(eq(credentialShares.id, id))
+    )
+  }
+
+  async function tokenFor(kind: RouteKind, cls: string): Promise<string> {
     if (cls === 'MAL') return 'x'
-    const overrides = ROW_CLASSES.get(cls)
+    const overrides = (isVerificationRoute(kind) ? VERIFICATION_ROW_CLASSES : ROW_CLASSES).get(cls)
     if (!overrides) return generateAndHashShareToken().rawToken
-    return (await seeder.seedShare(overrides())).token
+    const { id, token } = await seeder.seedShare(overrides())
+    if (cls === 'CODE' || cls === 'OK') await giveLiveCode(id, token)
+    return token
+  }
+
+  function expectedStatuses(kind: RouteKind, cls: string): number[] {
+    // Every class here is never a reveal and never a rate-limit rejection.
+    if (kind === 'SEND') return [200]
+    if (kind === 'CONFIRM') return cls === 'OK' ? [200] : [422]
+    return kind === 'POST' ? [404, 410] : [200, 404, 410]
   }
 
   async function timeOne(kind: RouteKind, cls: string): Promise<number> {
-    const token = await tokenFor(cls)
+    const token = await tokenFor(kind, cls)
     ipCounter += 1
     const remoteAddress = `10.${(ipCounter >> 16) & 255}.${(ipCounter >> 8) & 255}.${ipCounter & 255}`
-    const url = `/api/v1/external-shares/access/${token}${kind === 'POST' ? '/reveal' : ''}`
+    const url = `/api/v1/external-shares/access/${token}${ROUTE_SUFFIX.get(kind) ?? ''}`
+    const payload =
+      kind === 'CONFIRM' ? { code: cls === 'OK' ? CONFIRM_CODE : WRONG_CODE } : undefined
+    const method = kind === 'GET' ? 'GET' : 'POST'
     const started = performance.now()
-    const response = await app.inject({ method: kind, url, remoteAddress })
+    const response = await app.inject({
+      method,
+      url,
+      remoteAddress,
+      ...(payload ? { payload } : {}),
+    })
     if (cls === 'H') await sleep(POSITIVE_CONTROL_MS)
     const elapsed = performance.now() - started
-    // Every class here is a miss: never a reveal and never a rate-limit rejection.
-    expect([200, 404, 410]).toContain(response.statusCode)
-    if (kind === 'POST') expect(response.statusCode).not.toBe(200)
+    expect(expectedStatuses(kind, cls)).toContain(response.statusCode)
     return elapsed
   }
 
@@ -143,7 +212,7 @@ describe('external share miss-path timing (Story 65.4 AC1/AC3)', () => {
 
   async function measure(kind: RouteKind): Promise<TimingEvaluation> {
     const rng = mulberry32(SEED)
-    const missClasses = kind === 'GET' ? MISS_CLASSES_BY_ROUTE.GET : MISS_CLASSES_BY_ROUTE.POST
+    const missClasses = MISS_CLASSES_BY_ROUTE.get(kind) ?? []
     const controls = ['U', "U'", 'H']
     const first = evaluateTiming(await collect(kind, [...controls, ...missClasses], N, rng), {
       ...METHOD,
@@ -161,7 +230,7 @@ describe('external share miss-path timing (Story 65.4 AC1/AC3)', () => {
       result = mergeResample(first, second, METHOD.maxInconclusive)
     }
     process.stdout.write(
-      `[65-4 timing ${kind}] seed=${SEED} n=${N} resamples=${METHOD.resamples}\n${formatTimingTable(result)}\n`
+      `[65-4/72-11 timing ${kind}] seed=${SEED} n=${N} resamples=${METHOD.resamples}\n${formatTimingTable(result)}\n`
     )
     return result
   }
@@ -170,6 +239,21 @@ describe('external share miss-path timing (Story 65.4 AC1/AC3)', () => {
     'every miss class is within T of an unknown token on %s',
     async (kind) => {
       const result = await measure(kind)
+      expect(result.validity).toBe('valid')
+      expect(result.leaks).toEqual([])
+      expect(result.inconclusive).toEqual([])
+    },
+    600_000
+  )
+
+  // Story 72-11 V9: the guest verification routes. The deferred send tasks of the SEND leg are
+  // drained before the CONFIRM leg so they never overlap its samples.
+  it.each(['SEND', 'CONFIRM'] as const)(
+    'every outcome class of the %s verification route is within T of an unknown token',
+    async (kind) => {
+      await flushPendingLosingAttempts()
+      const result = await measure(kind)
+      await flushPendingLosingAttempts()
       expect(result.validity).toBe('valid')
       expect(result.leaks).toEqual([])
       expect(result.inconclusive).toEqual([])
