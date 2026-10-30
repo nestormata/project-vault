@@ -70,6 +70,7 @@ const projectOf = (id, name, orgId) => ({
   description: null,
   role: 'owner',
   tags: [],
+  urls: [],
   memberCount: 1,
   createdBy: null,
   createdAt: FIXTURE_TIME,
