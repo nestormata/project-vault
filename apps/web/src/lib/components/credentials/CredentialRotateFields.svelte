@@ -24,7 +24,7 @@
         name="rotation-mode"
         value="whole"
         checked={form.rotationMode === 'whole'}
-        disabled={form.rotationActive}
+        disabled={form.rotationActive || form.hasTotpField}
         onchange={() => (form.rotationMode = 'whole')}
         aria-describedby="rotation-mode-help"
       />

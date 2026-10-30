@@ -324,17 +324,55 @@ export type AddCredentialVersionResponse = {
 export function parseRevealedFields(
   fieldMeta: FieldMeta[],
   revealed: CredentialValue | CredentialFieldsValue
-): Field[] {
+): Array<Field & { storedSeed?: boolean }> {
   if (isFieldsValue(revealed)) {
     const valueByKey = new Map(revealed.fields.map((f) => [f.key, f.value]))
-    return fieldMeta.map((m) => ({
-      key: m.key,
-      value: valueByKey.get(m.key) ?? '',
-      sensitive: m.sensitive,
-    }))
+    return fieldMeta.map((m) =>
+      m.kind === 'totp'
+        ? // A one-time-password seed is write-only: the reveal never carries it.
+          { key: m.key, value: '', sensitive: true, kind: m.kind, storedSeed: true }
+        : {
+            key: m.key,
+            value: valueByKey.get(m.key) ?? '',
+            sensitive: m.sensitive,
+            ...(m.kind ? { kind: m.kind } : {}),
+          }
+    )
   }
   const only = fieldMeta[0] ?? { key: DEFAULT_FIELD_KEY, sensitive: true }
-  return [{ key: only.key, value: revealed.value, sensitive: only.sensitive }]
+  return [
+    {
+      key: only.key,
+      value: revealed.value,
+      sensitive: only.sensitive,
+      ...('kind' in only && only.kind ? { kind: only.kind } : {}),
+    },
+  ]
+}
+
+/** Story 72.10: one current code of a one-time-password field. The seed never reaches the browser. */
+export type CredentialTotpCode = {
+  field: string
+  code: string
+  digits: number
+  periodSeconds: number
+  expiresAt: string
+  secondsRemaining: number
+  versionNumber: number
+  retrievedAt: string
+}
+
+export function generateCredentialTotp(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  field: string
+) {
+  return apiFetch<CredentialTotpCode>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/totp`,
+    { method: 'POST', body: JSON.stringify({ field }) }
+  )
 }
 
 export function addCredentialVersion(

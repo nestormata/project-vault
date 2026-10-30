@@ -7,6 +7,7 @@
     parseTagsInput,
     validateCredentialForm,
     validateFieldSet,
+    fieldDraftToRequest,
     type FieldDraft,
   } from '$lib/components/onboarding/onboarding-logic.js'
   import { canCreateCredentialInProject } from '$lib/credentials/permissions.js'
@@ -59,6 +60,16 @@
     fieldSetErrors = {}
     fields = next === '' ? [] : buildTemplateFieldDrafts(next)
   }
+  // Story 72.10: the single value becomes the first field of a custom field list.
+  function addCustomFields(): void {
+    template = 'custom'
+    fieldSetErrors = {}
+    fields = [
+      { key: 'value', value, sensitive: true },
+      { key: '', value: '', sensitive: false },
+    ]
+    value = ''
+  }
   function addField(): void {
     fields = [...fields, { key: '', value: '', sensitive: false }]
   }
@@ -95,11 +106,7 @@
         ? {
             ...common,
             template: template as CredentialTemplate,
-            fields: fields.map((f) => ({
-              key: f.key.trim(),
-              value: f.value,
-              sensitive: f.sensitive,
-            })),
+            fields: fields.map(fieldDraftToRequest),
           }
         : { ...common, value }
       const created = await createCredential(fetch, pageData.projectId, body)
@@ -145,7 +152,12 @@
     <CredentialsNewTemplate {template} onChange={onTemplateChange} {data} />
 
     {#if !useFieldSet}
-      <CredentialsNewValue bind:value error={fieldErrors.value} {data} />
+      <CredentialsNewValue
+        bind:value
+        error={fieldErrors.value}
+        onAddCustomFields={addCustomFields}
+        {data}
+      />
     {:else}
       <CredentialsNewFields
         bind:fields

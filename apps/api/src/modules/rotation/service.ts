@@ -28,9 +28,11 @@ import {
   isUniqueViolation,
   lockCredentialInProject,
 } from '../credentials/db-helpers.js'
+import { selectCurrentVersionMeta } from '../credentials/service.js'
 import {
   fieldMetaForResponse,
   parseFieldsFromPlaintext,
+  plaintextWithoutTotpSeeds,
   serializeFieldEnvelope,
   unwrapRevealValue,
 } from '../credentials/field-set.js'
@@ -191,10 +193,20 @@ function validateTargetFields(
   schemaVersion: number,
   fieldMeta: unknown
 ): TargetFieldsValidation {
-  if (!targetFields) return { ok: true, normalized: undefined }
+  const declared = fieldMetaForResponse(schemaVersion, fieldMeta)
+  if (!targetFields) {
+    // Story 72.10: a whole-secret rotation replaces the field set with one bare value, which would
+    // destroy a write-only one-time-password seed. Answered as the unknown field it would have to name.
+    const totp = declared.find((entry) => entry.kind === 'totp')
+    return totp
+      ? { ok: false, field: normalizeFieldKey(totp.key) }
+      : { ok: true, normalized: undefined }
+  }
   const normalized = targetFields.map((key) => normalizeFieldKey(key))
+  // Story 72.10: a `totp` seed is replaced by editing the fields, not rotated: it is not a target
+  // (this also keeps the same-value check from confirming a guessed seed).
   const declaredKeys = new Set(
-    fieldMetaForResponse(schemaVersion, fieldMeta).map((f) => normalizeFieldKey(f.key))
+    declared.filter((entry) => entry.kind !== 'totp').map((entry) => normalizeFieldKey(entry.key))
   )
   const missing = normalized.find((key) => !declaredKeys.has(key))
   if (missing !== undefined) return { ok: false, field: missing }
@@ -1931,7 +1943,11 @@ export async function getStagedValue(
   const plaintext = await withSecret(version.encryptedValue, (buf) =>
     Promise.resolve(buf.toString('utf8'))
   )
-  const value = unwrapRevealValue(version.schemaVersion, plaintext)
+  // Story 72.10: a `totp` seed is write-only, so it is blanked before this reveal.
+  const value = unwrapRevealValue(
+    version.schemaVersion,
+    plaintextWithoutTotpSeeds(version.schemaVersion, plaintext)
+  )
   return { status: 'found', value, versionNumber: version.versionNumber }
 }
 
@@ -2098,6 +2114,8 @@ export type BreakGlassResult =
   | { status: 'lock_contention' }
   | { status: 'credential_not_found' }
   | { status: 'promoted_rotation_conflict'; rotationId: string }
+  // Story 72.10: break-glass writes one bare value and would destroy a write-only TOTP seed.
+  | { status: 'totp_field_unsupported' }
   | {
       status: 'ok'
       rotation: RotationRow
@@ -2300,6 +2318,14 @@ async function createBreakGlassVersion(
   return { previousVersion, newVersion }
 }
 
+// Story 72.10: whether the live version carries a write-only one-time-password field.
+async function currentVersionHasTotpField(tx: Tx, credentialId: string): Promise<boolean> {
+  const meta = await selectCurrentVersionMeta(tx, credentialId)
+  return fieldMetaForResponse(meta?.schemaVersion ?? 1, meta?.fieldMeta).some(
+    (entry) => entry.kind === 'totp'
+  )
+}
+
 /** AC-2/AC-5/AC-6: break-glass emergency rotation — immediately writes a new live value,
  *  supersedes (auto-abandons) any existing active rotation for the credential (CR6), and puts
  *  the superseded version into a purge-protected overlap window (CR1) rather than retiring it
@@ -2325,6 +2351,10 @@ export async function breakGlassRotation(
     projectId: input.projectId,
   })
   if (!credential) return { status: 'credential_not_found' }
+
+  if (await currentVersionHasTotpField(tx, input.credentialId)) {
+    return { status: 'totp_field_unsupported' }
+  }
 
   const duplicate = await findRecentDuplicateBreakGlass(
     tx,

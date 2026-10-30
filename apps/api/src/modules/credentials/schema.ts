@@ -135,6 +135,29 @@ export const CredentialValueQuerySchema = z
   .meta({ id: 'CredentialValueQuery' })
 export type CredentialValueQuery = z.infer<typeof CredentialValueQuerySchema>
 
+// Story 72.10 (P5): one-time code of a `totp` field. POST (not GET) because it is an audited,
+// rate-limited action that must never be cached; the seed is never in any request or response.
+export const CredentialTotpBodySchema = z
+  .object({ field: z.string().trim().min(1).max(FIELD_KEY_MAX_LENGTH).regex(FIELD_KEY_PATTERN) })
+  .strict()
+  .meta({ id: 'CredentialTotpBody' })
+export type CredentialTotpBody = z.infer<typeof CredentialTotpBodySchema>
+
+export const CredentialTotpResponseSchema = z
+  .object({
+    data: z.object({
+      field: z.string(),
+      code: z.string(),
+      digits: z.number().int(),
+      periodSeconds: z.number().int(),
+      expiresAt: z.iso.datetime(),
+      secondsRemaining: z.number().int(),
+      versionNumber: z.number().int(),
+      retrievedAt: z.iso.datetime(),
+    }),
+  })
+  .meta({ id: 'CredentialTotpResponse' })
+
 export const CredentialParamsSchema = z
   .object({ projectId: z.uuid(), credentialId: z.uuid() })
   .meta({ id: 'CredentialParams' })

@@ -33,6 +33,7 @@ function data(overrides: Partial<ManageData> = {}): ManageData {
     canManage: true,
     dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
     fieldMeta: [{ key: 'value', sensitive: true }],
+    hasTotpField: false,
     activeRotationId: null,
     ...overrides,
   }

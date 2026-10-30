@@ -39,6 +39,7 @@ const ownLoad = (async ({ params, fetch, locals, setHeaders }) => {
       canManage: false as const,
       dependencies: null,
       fieldMeta: null,
+      hasTotpField: false,
       activeRotationId: null,
     }
   }
@@ -74,6 +75,7 @@ const ownLoad = (async ({ params, fetch, locals, setHeaders }) => {
       canManage: true as const,
       dependencies,
       fieldMeta: credential.fields,
+      hasTotpField: credential.fields.some((entry) => entry.kind === 'totp'),
       activeRotationId,
     }
   } catch (error) {
@@ -85,6 +87,7 @@ const ownLoad = (async ({ params, fetch, locals, setHeaders }) => {
         canManage: true as const,
         dependencies: null,
         fieldMeta: null,
+        hasTotpField: false,
         activeRotationId: null,
         vaultSealed: true as const,
       }

@@ -3,11 +3,13 @@ import { invalidateAll } from '$app/navigation'
 import { ApiClientError } from '$lib/api/client.js'
 import {
   addCredentialVersion,
+  generateCredentialTotp,
   isFieldsValue,
   parseRevealedFields,
   revealCredentialValue,
 } from '$lib/api/credentials.js'
 import {
+  fieldDraftToRequest,
   mapCredentialSubmitError,
   validateFieldSet,
   type FieldDraft,
@@ -38,6 +40,9 @@ const COPY_STATUS_MS = 3000
 export const REVEAL_AUTO_HIDE_MS = 30_000
 const WHOLE_SLOT = ''
 const fieldSlot = (key: string) => `field:${key}`
+const totpSlot = (key: string) => `totp:${key}`
+
+export type TotpCodeView = { code: string; expiresAtMs: number }
 
 // Story 69-14: the one owner of the Secret value section's state (reveal, per-field reveal, copy
 // without reveal, add version, field-set editor). The section creates it and hands it to its
@@ -74,10 +79,60 @@ export class CredentialValueController extends CredentialSectionController<Crede
   revealAllLoading = $state(false)
   revealAllError = $state<string | null>(null)
 
+  // Story 72.10: current one-time codes by field key. A code is display-once state like a revealed
+  // value: it lives only here, expires with its period, and hides with the same triggers (tab
+  // hidden, route change, bfcache restore, unmount). The seed never reaches the browser.
+  totpCodes = $derived(resetOn<Record<string, TotpCodeView>>(this.credentialKey, {}))
+  generatingTotp = $state<string | null>(null)
+  totpError = $state<Record<string, string>>({})
+
+  async generateTotp(key: string): Promise<void> {
+    if (this.generatingTotp || !this.canReveal) return
+    this.generatingTotp = key
+    this.totpError = { ...this.totpError, [key]: '' }
+    const requestKey = this.credentialKey
+    const generation = this.#hideGeneration
+    try {
+      const result = await generateCredentialTotp(fetch, this.projectId, this.credentialId, key)
+      if (!this.#isCurrentCredential(requestKey) || generation !== this.#hideGeneration) return
+      // The server's remaining seconds, not its clock: a skewed client clock must not hide the code at
+      // once or keep an expired one on screen.
+      const expiresAtMs = Date.now() + result.secondsRemaining * 1000
+      this.totpCodes = { ...this.totpCodes, [key]: { code: result.code, expiresAtMs } }
+      this.#armAutoHide(
+        totpSlot(key),
+        () => this.hideTotp(key),
+        Math.max(0, expiresAtMs - Date.now())
+      )
+    } catch (error) {
+      if (!this.#isCurrentCredential(requestKey)) return
+      this.hideTotp(key)
+      this.totpError = { ...this.totpError, [key]: totpFailureMessage(error) }
+    } finally {
+      this.generatingTotp = null
+    }
+  }
+
+  hideTotp(key: string): void {
+    this.#clearAutoHide(totpSlot(key))
+    this.totpCodes = omitKey(this.totpCodes, key)
+  }
+
+  async copyTotp(key: string): Promise<void> {
+    const shown = Object.entries(this.totpCodes).find(([name]) => name === key)?.[1]
+    if (!shown) return
+    try {
+      await navigator.clipboard.writeText(shown.code)
+      this.#showCopyStatus('success', m.credential_totp_copy_success())
+    } catch {
+      this.#showCopyStatus('failure', m.credential_totp_copy_failure())
+    }
+  }
+
   // Story 72.8: one auto-hide timer per revealed value (the whole secret, or one field).
   readonly #hideTimers = new SvelteMap<string, ReturnType<typeof setTimeout>>()
 
-  #armAutoHide(slot: string, hide: () => void): void {
+  #armAutoHide(slot: string, hide: () => void, afterMs: number = REVEAL_AUTO_HIDE_MS): void {
     this.#clearAutoHide(slot)
     const armedFor = this.credentialKey
     this.#hideTimers.set(
@@ -86,7 +141,7 @@ export class CredentialValueController extends CredentialSectionController<Crede
         this.#hideTimers.delete(slot)
         // A timer armed for another credential must not hide this one's value.
         if (armedFor === this.credentialKey) hide()
-      }, REVEAL_AUTO_HIDE_MS)
+      }, afterMs)
     )
   }
 
@@ -109,6 +164,7 @@ export class CredentialValueController extends CredentialSectionController<Crede
     this.revealedValue = null
     this.revealVersion = null
     this.revealedFields = {}
+    this.totpCodes = {}
   }
 
   /** "Extend": a NEW server reveal (re-authorizes, re-audits), never a client-side timer reset. */
@@ -410,11 +466,7 @@ export class CredentialValueController extends CredentialSectionController<Crede
     this.fieldSetFormError = null
     try {
       await addCredentialVersion(fetch, this.projectId, this.credentialId, {
-        fields: this.editFields.map((f) => ({
-          key: f.key.trim(),
-          value: f.value,
-          sensitive: f.sensitive,
-        })),
+        fields: this.editFields.map(fieldDraftToRequest),
       })
       this.editingFieldSet = false
       this.editFields = []
@@ -482,8 +534,15 @@ function copyFailureMessage(field: string | undefined): string {
   return field ? m.credential_copy_field_failure({ field }) : m.credential_copy_legacy_failure()
 }
 
-function omitKey(record: Record<string, string>, omitted: string): Record<string, string> {
+function omitKey<T>(record: Record<string, T>, omitted: string): Record<string, T> {
   return Object.fromEntries(Object.entries(record).filter(([name]) => name !== omitted))
+}
+
+function totpFailureMessage(error: unknown): string {
+  if (error instanceof ApiClientError && error.code === 'totp_seed_unavailable') {
+    return m.credential_totp_seed_unavailable()
+  }
+  return m.credential_totp_error()
 }
 
 function fieldRevealFailureMessage(error: unknown): string {

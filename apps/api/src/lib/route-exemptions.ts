@@ -594,6 +594,14 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'credential.value_revealed',
     sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
   },
+  // Story 72.10: server-side one-time code of a `totp` field. Same classification as the reveal it
+  // sits next to (the code is a short-lived secret); writes `credential.value_revealed` with
+  // `purpose: "totp"`.
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/totp': {
+    action: SENSITIVE_READ,
+    auditEvent: 'credential.value_revealed',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
   // Story 28.5 AC2/AC3 — mirrors project archive/unarchive's SECURITY_ACTION classification
   // exactly (MFA-gated, blast-radius-bearing lifecycle action on the secret itself).
   'POST /api/v1/projects/:projectId/credentials/:credentialId/archive': {

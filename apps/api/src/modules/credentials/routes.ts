@@ -96,6 +96,7 @@ import {
   parseOperationalContextQuery,
 } from './operational-context-service.js'
 import { FieldKeyConflictError, LegacyShapeFieldLossError } from './field-set.js'
+import { InvalidTotpSeedError, TotpSeedRequiredError } from './totp-field.js'
 import {
   addCredentialDependency,
   archiveCredentialDependency,
@@ -353,6 +354,29 @@ export async function rejectIfInsufficientProjectRoleForReveal(
   return true
 }
 
+/** Story 72.10: the visibility gate followed by the reveal's project-role floor, in that order, for
+ *  routes that sit on the reveal boundary (the one-time-code route). Returns true when the reply was
+ *  already sent. */
+export async function rejectUnlessCredentialRevealAllowed(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  projectId: string,
+  credentialId: string
+): Promise<boolean> {
+  if (await rejectIfProjectNotVisible(secureCtx, req, reply, projectId, CREDENTIAL_NOT_FOUND)) {
+    return true
+  }
+  return rejectIfInsufficientProjectRoleForReveal(
+    secureCtx,
+    req,
+    reply,
+    projectId,
+    credentialId,
+    'reveal'
+  )
+}
+
 /**
  * Story 4.5 AC-V4: combines the visibility gate with the existing archived-project guard for
  * mutation routes, keeping each individual handler's own branching count low.
@@ -409,8 +433,30 @@ async function runCredentialFieldSetWrite<T>(
       reply.status(409).send({ code: 'version_conflict', message: error.message })
       return { ok: false }
     }
+    const totpError = totpSeedErrorResponse(error)
+    if (totpError) {
+      reply.status(422).send(totpError)
+      return { ok: false }
+    }
     throw error
   }
+}
+
+// Story 72.10: a TOTP field with no usable seed. The body names the field KEY only, never the seed.
+function totpSeedErrorResponse(error: unknown) {
+  if (error instanceof InvalidTotpSeedError) {
+    return {
+      code: 'invalid_totp_seed' as const,
+      message: `The one-time-password seed of "${error.fieldKey}" is not a valid Base32 secret or otpauth:// link`,
+    }
+  }
+  if (error instanceof TotpSeedRequiredError) {
+    return {
+      code: 'totp_seed_required' as const,
+      message: `Enter the one-time-password seed of "${error.fieldKey}"`,
+    }
+  }
+  return null
 }
 
 const DEPENDENCY_NOT_FOUND = {

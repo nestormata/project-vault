@@ -7,7 +7,7 @@ import {
   credentialDependencies,
 } from '@project-vault/db/schema'
 import { withSecret, type EncryptedValue } from '@project-vault/crypto'
-import type { Field, FieldMeta } from '@project-vault/shared'
+import { normalizeFieldKey, type Field, type FieldMeta } from '@project-vault/shared'
 import { dedupeTags, normalizeTag, tagDelta } from '../../lib/tags.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
 import {
@@ -27,7 +27,9 @@ import {
   resolveFieldSet,
   serializeFieldEnvelope,
   unwrapRevealValue,
+  withoutTotpFields,
 } from './field-set.js'
+import { generateTotpCode, type GeneratedTotpCode } from './totp-field.js'
 import type {
   AddVersionBody,
   CreateCredentialBody,
@@ -367,7 +369,8 @@ async function eagerNonSensitiveFieldValues(params: {
     )
     const fields = parseFieldsFromPlaintext(params.schemaVersion, plaintext)
     const values: Record<string, string> = {}
-    for (const field of fields) {
+    // Story 72.10: a seed is never an eager value, whatever the stored metadata says.
+    for (const field of withoutTotpFields(fields)) {
       if (nonSensitiveKeys.has(field.key)) values[field.key] = field.value
     }
     return values
@@ -630,7 +633,9 @@ export async function addCredentialVersion(
   // Story 13.2 — uniqueness-validate the FINAL field set before any write (may throw
   // FieldKeyConflictError → 409 with zero side effects, AC-3); a legacy `{ value }` body
   // synthesizes a single default field (AC-7 legacy → schema_version 2 transition on first edit).
-  const resolved = resolveFieldSet(input.body)
+  // Story 72.10: an empty `totp` seed keeps the stored one (seeds are write-only), so the current
+  // version's decrypted fields are passed in.
+  const resolved = resolveFieldSet(input.body, oldFields)
   const fieldMeta = buildFieldMeta(resolved)
 
   const [maxRow] = await tx
@@ -695,8 +700,28 @@ function invalidRequestedField(
 ): string | undefined {
   if (field === undefined) return undefined
   if (schemaVersion < 2) return field
-  const declaredKeys = fieldMetaForResponse(schemaVersion, fieldMeta).map((f) => f.key)
+  // Story 72.10: a `totp` seed is write-only, so asking for that field by name answers exactly as
+  // for a key the secret does not have.
+  const declaredKeys = fieldMetaForResponse(schemaVersion, fieldMeta)
+    .filter((item) => item.kind !== 'totp')
+    .map((item) => item.key)
   return declaredKeys.includes(field) ? undefined : field
+}
+
+// Story 72.10: `totp` seeds are write-only. They are dropped here, before any branch of the reveal,
+// so nothing that builds on `revealCurrentValue` (the reveal route, share reveal, machine-user reads)
+// can return one. A secret that holds one is always handled as a field set.
+function readableFields(
+  schemaVersion: number,
+  plaintext: string
+): { fields: Field[]; isGenuineMultiField: boolean } {
+  const allFields = parseFieldsFromPlaintext(schemaVersion, plaintext)
+  const fields = withoutTotpFields(allFields)
+  return {
+    fields,
+    isGenuineMultiField:
+      schemaVersion >= 2 && (allFields.length > 1 || fields.length !== allFields.length),
+  }
 }
 
 export async function revealCurrentValue(
@@ -765,8 +790,7 @@ export async function revealCurrentValue(
   // multi-field v2 row returns the full JSON field envelope. The stored ciphertext is never
   // re-parsed or re-encrypted. Story 13.3 — parsing via parseFieldsFromPlaintext (rather than a
   // third parallel envelope parser) determines whether this is genuinely multi-field.
-  const fields = parseFieldsFromPlaintext(version.schemaVersion, plaintext)
-  const isGenuineMultiField = version.schemaVersion >= 2 && fields.length > 1
+  const { fields, isGenuineMultiField } = readableFields(version.schemaVersion, plaintext)
 
   if (!isGenuineMultiField) {
     // Legacy or single-default-field v2 — AC-6: byte-for-byte unchanged bare-string shape. When
@@ -858,4 +882,49 @@ export async function listVersionHistory(
     abandonedAt: row.abandonedAt?.toISOString() ?? null,
     schemaVersion: row.schemaVersion,
   }))
+}
+
+export type GenerateCredentialTotpResult =
+  | { status: 'found'; code: GeneratedTotpCode; versionNumber: number; fieldKey: string }
+  | { status: 'not_found' }
+  // The named key is not a `totp` field of the current version (absent, or another kind): both
+  // answer the same, so the route cannot be used to probe which keys exist.
+  | { status: 'unknown_field'; key: string }
+  // The field exists but holds no seed that can produce codes (for example after an import, which
+  // withholds seeds).
+  | { status: 'seed_unavailable'; fieldKey: string }
+
+function isTotpFieldNamed(
+  candidate: { kind?: string; key: string },
+  normalizedName: string
+): boolean {
+  return candidate.kind === 'totp' && normalizeFieldKey(candidate.key) === normalizedName
+}
+
+/**
+ * Story 72.10 (P5): the current one-time code of a `totp` field. The seed is decrypted in memory,
+ * turned into a code and dropped; only the code (valid for the rest of its period) leaves.
+ */
+export async function generateCredentialTotp(
+  tx: Tx,
+  params: { credentialId: string; projectId: string; field: string }
+): Promise<GenerateCredentialTotpResult> {
+  const credential = await findCredentialInProject(tx, params)
+  if (!credential) return { status: 'not_found' }
+  const row = await selectCurrentVersionMeta(tx, params.credentialId)
+  if (!row?.encryptedValue) return { status: 'not_found' }
+  const wanted = normalizeFieldKey(params.field)
+  const declared = fieldMetaForResponse(row.schemaVersion, row.fieldMeta).find((entry) =>
+    isTotpFieldNamed(entry, wanted)
+  )
+  if (!declared) return { status: 'unknown_field', key: params.field }
+  const plaintext = await withSecret(row.encryptedValue, (buf) =>
+    Promise.resolve(buf.toString('utf8'))
+  )
+  const stored = parseFieldsFromPlaintext(row.schemaVersion, plaintext).find((entry) =>
+    isTotpFieldNamed(entry, wanted)
+  )
+  const code = stored ? generateTotpCode(stored.value) : null
+  if (!stored || !code) return { status: 'seed_unavailable', fieldKey: declared.key }
+  return { status: 'found', code, versionNumber: Number(row.versionNumber), fieldKey: stored.key }
 }

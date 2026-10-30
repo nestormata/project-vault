@@ -42,6 +42,7 @@ function baseData(overrides: Partial<ManageData> = {}): ManageData {
     canManage: true,
     dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
     fieldMeta: [{ key: 'value', sensitive: true }],
+    hasTotpField: false,
     activeRotationId: null,
     ...overrides,
   }
@@ -57,6 +58,7 @@ function noAccessData(): Data {
     canManage: false,
     dependencies: null,
     fieldMeta: null,
+    hasTotpField: false,
     activeRotationId: null,
   }
 }
@@ -71,6 +73,7 @@ function sealedData(): Data {
     canManage: true,
     dependencies: null,
     fieldMeta: null,
+    hasTotpField: false,
     activeRotationId: null,
     vaultSealed: true,
   }

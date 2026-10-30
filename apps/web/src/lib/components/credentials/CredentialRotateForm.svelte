@@ -27,6 +27,7 @@
     credentialId: pageData.credentialId,
     fieldMeta: pageData.fieldMeta ?? null,
     activeRotationId: pageData.activeRotationId ?? null,
+    hasTotpField: pageData.hasTotpField,
   }))
 </script>
 

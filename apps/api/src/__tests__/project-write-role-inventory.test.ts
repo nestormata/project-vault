@@ -45,6 +45,7 @@ const PROJECT_WRITE_ROLE_MATRIX: Record<string, 'member' | 'admin' | 'owner' | n
   'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/retire':
     'member',
   'POST /api/v1/projects/:projectId/credentials/:credentialId/shares': 'member',
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/totp': 'member',
   // A sharer later demoted to viewer may still narrow exposure; the handler's sharer-or-org-admin
   // rule is the authorization for this route.
   'POST /api/v1/projects/:projectId/credentials/:credentialId/shares/:shareId/revoke': null,

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4'
 import {
   CREDENTIAL_TEMPLATES,
+  FIELD_KINDS,
   FIELD_KEY_PATTERN,
   FIELD_KEY_MAX_LENGTH,
   FIELD_VALUE_MAX_LENGTH,
@@ -26,6 +27,10 @@ const FieldKeySchema = z
     message: 'Field key may only contain letters, numbers, spaces, and _ . -',
   })
 
+// Story 72.10 (P5): optional so every stored and every legacy body still validates; `text` is the
+// default and is never persisted.
+export const FieldKindSchema = z.enum(FIELD_KINDS).meta({ id: 'FieldKind' })
+
 /** A single named field carrying its value (used in create/edit request bodies and the reveal
  *  response). `value` may be empty (a blank field is allowed). */
 export const FieldSchema = z
@@ -33,6 +38,7 @@ export const FieldSchema = z
     key: FieldKeySchema,
     value: z.string().max(FIELD_VALUE_MAX_LENGTH),
     sensitive: z.boolean(),
+    kind: FieldKindSchema.optional(),
   })
   .strict()
   .meta({ id: 'Field' })
@@ -44,6 +50,7 @@ export const FieldMetaSchema = z
     key: FieldKeySchema,
     sensitive: z.boolean(),
     template: CredentialTemplateSchema.optional(),
+    kind: FieldKindSchema.optional(),
   })
   .strict()
   .meta({ id: 'FieldMeta' })

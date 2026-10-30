@@ -3,7 +3,7 @@
 // re-implements them and none reads another region's state. Everything here is a function of its
 // arguments: no module-level variable, no store, no clock.
 import type { FieldMeta } from '@project-vault/shared'
-import { DEFAULT_FIELD_KEY } from '@project-vault/shared'
+import { CREDENTIAL_TEMPLATE_MAIN_FIELD, DEFAULT_FIELD_KEY } from '@project-vault/shared'
 import { ApiClientError } from '$lib/api/client.js'
 import type { CredentialPointProps } from '$lib/components/composition/injection-points.js'
 import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
@@ -56,7 +56,18 @@ export function fieldMetaOf(
 /** Anything but the one default field renders the multi-field editor. */
 export function isMultiFieldCredential(fieldMeta: readonly FieldMeta[]): boolean {
   const first = fieldMeta[0]
-  return fieldMeta.length > 1 || (first?.key ?? DEFAULT_FIELD_KEY) !== DEFAULT_FIELD_KEY
+  // Story 72.10: a field with a kind (multiline, one-time password) needs its own row.
+  return (
+    fieldMeta.length > 1 ||
+    (first?.key ?? DEFAULT_FIELD_KEY) !== DEFAULT_FIELD_KEY ||
+    fieldMeta.some((entry) => entry.kind !== undefined)
+  )
+}
+
+/** Story 72.10: whether this field is the main field of its template (label only; no ordering). */
+export function isMainField(meta: Pick<FieldMeta, 'key' | 'template'>): boolean {
+  if (!meta.template) return false
+  return CREDENTIAL_TEMPLATE_MAIN_FIELD[meta.template] === meta.key.trim().toLowerCase()
 }
 
 export type CredentialPointExtras = Omit<CredentialPointProps, 'routeId' | 'params'>

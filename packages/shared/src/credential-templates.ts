@@ -47,6 +47,28 @@ export const CREDENTIAL_TEMPLATE_FIELDS: Record<CredentialTemplate, readonly Tem
   custom: [],
 }
 
+/**
+ * Story 72.10 (P5): the kind of a field, beyond the `sensitive` boolean (which stays the one
+ * secret-versus-visible switch: a visible value is shown without an audited reveal, a sensitive
+ * one is masked until revealed). `text` is the default and is never written to storage, so every
+ * existing credential reads and exports exactly as before. `multiline` only changes how the value
+ * is typed and shown. `totp` holds a one-time-password SEED: it is always sensitive, write-only
+ * (no read, export, share or history path returns it) and the server derives the 6 to 8 digit code
+ * from it on request.
+ */
+export const FIELD_KINDS = ['text', 'multiline', 'totp'] as const
+export type FieldKind = (typeof FIELD_KINDS)[number]
+
+/** The main field of each template: the value most users came for (copied first, labelled "Main").
+ *  `custom` has none. Presentation only: it never changes what is stored. */
+export const CREDENTIAL_TEMPLATE_MAIN_FIELD: Record<CredentialTemplate, string | null> = {
+  login: 'password',
+  db_connection: 'password',
+  api_key: 'key',
+  secure_note: 'note',
+  custom: null,
+}
+
 export const CREDENTIAL_TEMPLATE_LABELS: Record<CredentialTemplate, string> = {
   login: 'Login',
   db_connection: 'Database Connection',
