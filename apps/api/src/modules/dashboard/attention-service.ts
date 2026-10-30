@@ -84,39 +84,33 @@ const invitationsWhere = (viewer: AttentionViewer) =>
     gt(projectInvitations.expiresAt, sql`now()`)
   )
 
-async function countOf(query: Promise<Array<{ count: number }>>): Promise<number> {
-  const [row] = await query
-  return Number(row?.count ?? 0)
-}
+/**
+ * `count(*) over ()` is evaluated before LIMIT, so every returned row carries the true total for
+ * the same WHERE (one query per kind, no second count query to drift from the first). An empty
+ * page means the total is zero.
+ */
+const totalSql = sql<number>`count(*) over ()`
+
+const totalOf = (rows: ReadonlyArray<{ total: number }>) => Number(rows[0]?.total ?? 0)
 
 async function expiringShares(tx: Tx, viewer: AttentionViewer) {
-  const where = sharesWhere(viewer)
-  const [rows, total] = await Promise.all([
-    tx
-      .select({
-        id: credentialShares.id,
-        dueAt: credentialShares.expiresAt,
-        projectId: projects.id,
-        projectName: projects.name,
-        credentialId: credentials.id,
-        credentialName: credentials.name,
-        recipientEmail: credentialShares.recipientEmail,
-      })
-      .from(credentialShares)
-      .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
-      .innerJoin(projects, eq(credentials.projectId, projects.id))
-      .where(where)
-      .orderBy(asc(credentialShares.expiresAt), asc(credentialShares.id))
-      .limit(ATTENTION_ITEMS_PER_KIND),
-    countOf(
-      tx
-        .select({ count: sql<number>`count(*)` })
-        .from(credentialShares)
-        .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
-        .innerJoin(projects, eq(credentials.projectId, projects.id))
-        .where(where)
-    ),
-  ])
+  const rows = await tx
+    .select({
+      total: totalSql,
+      id: credentialShares.id,
+      dueAt: credentialShares.expiresAt,
+      projectId: projects.id,
+      projectName: projects.name,
+      credentialId: credentials.id,
+      credentialName: credentials.name,
+      recipientEmail: credentialShares.recipientEmail,
+    })
+    .from(credentialShares)
+    .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
+    .innerJoin(projects, eq(credentials.projectId, projects.id))
+    .where(sharesWhere(viewer))
+    .orderBy(asc(credentialShares.expiresAt), asc(credentialShares.id))
+    .limit(ATTENTION_ITEMS_PER_KIND)
   const items: AttentionItem[] = rows.map((row) => ({
     kind: 'expiring_share',
     id: row.id,
@@ -127,35 +121,25 @@ async function expiringShares(tx: Tx, viewer: AttentionViewer) {
     credentialName: row.credentialName,
     recipientEmail: row.recipientEmail,
   }))
-  return { items, total }
+  return { items, total: totalOf(rows) }
 }
 
 async function expiringCertificates(tx: Tx, viewer: AttentionViewer) {
-  const where = certificatesWhere(viewer)
-  const nowMs = Date.now()
-  const [rows, total] = await Promise.all([
-    tx
-      .select({
-        id: certRecords.id,
-        dueAt: certRecords.expiresAt,
-        projectId: projects.id,
-        projectName: projects.name,
-        domain: certRecords.domain,
-        expired: sql<boolean>`${certRecords.expiresAt} <= now()`,
-      })
-      .from(certRecords)
-      .innerJoin(projects, eq(certRecords.projectId, projects.id))
-      .where(where)
-      .orderBy(asc(certRecords.expiresAt), asc(certRecords.id))
-      .limit(ATTENTION_ITEMS_PER_KIND),
-    countOf(
-      tx
-        .select({ count: sql<number>`count(*)` })
-        .from(certRecords)
-        .innerJoin(projects, eq(certRecords.projectId, projects.id))
-        .where(where)
-    ),
-  ])
+  const rows = await tx
+    .select({
+      total: totalSql,
+      id: certRecords.id,
+      dueAt: certRecords.expiresAt,
+      projectId: projects.id,
+      projectName: projects.name,
+      domain: certRecords.domain,
+      expired: sql<boolean>`${certRecords.expiresAt} <= now()`,
+    })
+    .from(certRecords)
+    .innerJoin(projects, eq(certRecords.projectId, projects.id))
+    .where(certificatesWhere(viewer))
+    .orderBy(asc(certRecords.expiresAt), asc(certRecords.id))
+    .limit(ATTENTION_ITEMS_PER_KIND)
   const items: AttentionItem[] = rows.flatMap((row) =>
     row.dueAt
       ? [
@@ -166,39 +150,30 @@ async function expiringCertificates(tx: Tx, viewer: AttentionViewer) {
             projectId: row.projectId,
             projectName: row.projectName,
             domain: row.domain,
-            expired: row.expired ?? row.dueAt.getTime() <= nowMs,
+            expired: row.expired,
           },
         ]
       : []
   )
-  return { items, total }
+  return { items, total: totalOf(rows) }
 }
 
 async function pendingInvitations(tx: Tx, viewer: AttentionViewer) {
-  const where = invitationsWhere(viewer)
-  const [rows, total] = await Promise.all([
-    tx
-      .select({
-        id: projectInvitations.id,
-        dueAt: projectInvitations.expiresAt,
-        projectId: projects.id,
-        projectName: projects.name,
-        email: projectInvitations.email,
-        roleToAssign: projectInvitations.roleToAssign,
-      })
-      .from(projectInvitations)
-      .innerJoin(projects, eq(projectInvitations.projectId, projects.id))
-      .where(where)
-      .orderBy(asc(projectInvitations.expiresAt), asc(projectInvitations.id))
-      .limit(ATTENTION_ITEMS_PER_KIND),
-    countOf(
-      tx
-        .select({ count: sql<number>`count(*)` })
-        .from(projectInvitations)
-        .innerJoin(projects, eq(projectInvitations.projectId, projects.id))
-        .where(where)
-    ),
-  ])
+  const rows = await tx
+    .select({
+      total: totalSql,
+      id: projectInvitations.id,
+      dueAt: projectInvitations.expiresAt,
+      projectId: projects.id,
+      projectName: projects.name,
+      email: projectInvitations.email,
+      roleToAssign: projectInvitations.roleToAssign,
+    })
+    .from(projectInvitations)
+    .innerJoin(projects, eq(projectInvitations.projectId, projects.id))
+    .where(invitationsWhere(viewer))
+    .orderBy(asc(projectInvitations.expiresAt), asc(projectInvitations.id))
+    .limit(ATTENTION_ITEMS_PER_KIND)
   const items: AttentionItem[] = rows.map((row) => ({
     kind: 'pending_invitation',
     id: row.id,
@@ -208,7 +183,7 @@ async function pendingInvitations(tx: Tx, viewer: AttentionViewer) {
     email: row.email,
     roleToAssign: row.roleToAssign as 'admin' | 'member' | 'viewer',
   }))
-  return { items, total }
+  return { items, total: totalOf(rows) }
 }
 
 /** Flat list ordered by due instant, ties by id (string order, stable across kinds). */

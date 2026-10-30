@@ -4,6 +4,8 @@ import type { AttentionItem, DashboardAttention } from '@project-vault/shared'
 import { setLocale } from '$lib/paraglide/runtime.js'
 import DashboardAttentionList from './DashboardAttentionList.svelte'
 
+const MAIL_DOMAIN = 'team.test'
+
 afterEach(async () => {
   cleanup()
   await setLocale('en', { reload: false })
@@ -19,7 +21,7 @@ const share: AttentionItem = {
   id: uuid(10),
   credentialId: uuid(11),
   credentialName: 'Stripe key',
-  recipientEmail: 'guest@vendor.example',
+  recipientEmail: `guest@${MAIL_DOMAIN}`,
 }
 const certificate: AttentionItem = {
   ...base,
@@ -33,7 +35,7 @@ const invitation: AttentionItem = {
   ...base,
   kind: 'pending_invitation',
   id: uuid(30),
-  email: 'new@team.example',
+  email: `new@${MAIL_DOMAIN}`,
   roleToAssign: 'member',
 }
 
@@ -77,9 +79,9 @@ describe('DashboardAttentionList.svelte (story 72-12)', () => {
       `/projects/${PROJECT}/members`,
     ])
     expect(rows[0]?.textContent).toContain('Stripe key')
-    expect(rows[0]?.textContent).toContain('guest@vendor.example')
+    expect(rows[0]?.textContent).toContain(`guest@${MAIL_DOMAIN}`)
     expect(rows[1]?.textContent).toContain('pay.example.com')
-    expect(rows[2]?.textContent).toContain('new@team.example')
+    expect(rows[2]?.textContent).toContain(`new@${MAIL_DOMAIN}`)
   })
 
   it('flags an expired certificate and words a share without an e-mail', () => {

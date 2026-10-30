@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { AttentionItem } from '@project-vault/shared'
 import { EMPTY_ATTENTION, getDashboardAttention, mergeAttention } from './attention-service.js'
 
+const MAIL_DOMAIN = 'team.test'
+
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const P = uuid(170)
 const cert = (id: string, dueAt: string): AttentionItem => ({
@@ -19,7 +21,7 @@ const invitation = (id: string, dueAt: string): AttentionItem => ({
   dueAt,
   projectId: P,
   projectName: 'P',
-  email: 'a@b.example',
+  email: `a@${MAIL_DOMAIN}`,
   roleToAssign: 'member',
 })
 

@@ -1,4 +1,5 @@
-import { test } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
 // Story 72.11 (V14): the four appearances every Epic 72 UI journey runs under, so "390 px" and
 // "dark" are checked by the suite instead of by hand. Reused by later Epic 72 stories.
@@ -44,4 +45,22 @@ export function describeEachAppearance(
       register(appearance)
     })
   }
+}
+
+/**
+ * PV has no dark scheme of its own (epic 72 D2): what must hold is that the browser really runs in
+ * the requested scheme and size, and that the page still lays out.
+ */
+export async function expectAppearanceApplied(page: Page, appearance: Appearance): Promise<void> {
+  const dark = await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)
+  expect(dark).toBe(appearance.colorScheme === 'dark')
+  expect(page.viewportSize()?.width).toBe(appearance.viewport.width)
+}
+
+/** Nothing scrolls sideways (the 390 px rule). */
+export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  )
+  expect(overflow).toBeLessThanOrEqual(0)
 }

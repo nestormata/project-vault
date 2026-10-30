@@ -25,6 +25,8 @@ import {
   createCredentialViaApi,
 } from '../credentials/credential-route-test-helpers.js'
 
+const MAIL_DOMAIN = 'team.test'
+
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
@@ -332,18 +334,18 @@ describe('GET /api/v1/dashboard/attention (story 72-12)', () => {
     const certExpired = await addCertificate(owner.orgId, project, 'gone.example', inMs(-DAY))
 
     const invPending = await addInvitation(owner.orgId, project, owner.userId, {
-      email: 'pending@x.test',
+      email: `pending@${MAIL_DOMAIN}`,
     })
     await addInvitation(owner.orgId, project, owner.userId, {
-      email: 'revoked@x.test',
+      email: `revoked@${MAIL_DOMAIN}`,
       revokedAt: new Date(),
     })
     await addInvitation(owner.orgId, project, owner.userId, {
-      email: 'accepted@x.test',
+      email: `accepted@${MAIL_DOMAIN}`,
       acceptedAt: new Date(),
     })
     await addInvitation(owner.orgId, project, owner.userId, {
-      email: 'expired@x.test',
+      email: `expired@${MAIL_DOMAIN}`,
       expiresAt: inMs(-HOUR),
     })
 
@@ -359,7 +361,7 @@ describe('GET /api/v1/dashboard/attention (story 72-12)', () => {
     expect(byId.get(certIn)).toMatchObject({ kind: 'expiring_certificate', expired: false })
     expect(byId.get(invPending)).toMatchObject({
       kind: 'pending_invitation',
-      email: 'pending@x.test',
+      email: `pending@${MAIL_DOMAIN}`,
     })
     expect(byId.get(shareIn)).toMatchObject({
       kind: 'expiring_share',
@@ -394,8 +396,8 @@ describe('GET /api/v1/dashboard/attention (story 72-12)', () => {
     const aliveCert = await addCertificate(owner.orgId, alive, 'alive.example', inMs(DAY))
     await addCertificate(owner.orgId, gone, 'gone.example', inMs(DAY))
     await addCertificate(owner.orgId, archived, 'archived.example', inMs(DAY))
-    await addInvitation(owner.orgId, gone, owner.userId, { email: 'gone@x.test' })
-    await addInvitation(owner.orgId, archived, owner.userId, { email: 'archived@x.test' })
+    await addInvitation(owner.orgId, gone, owner.userId, { email: `gone@${MAIL_DOMAIN}` })
+    await addInvitation(owner.orgId, archived, owner.userId, { email: `archived@${MAIL_DOMAIN}` })
     await withOrg(owner.orgId, async (tx) => {
       await tx.update(projects).set({ deletedAt: new Date() }).where(eq(projects.id, gone))
       await tx.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, archived))

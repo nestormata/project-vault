@@ -6,6 +6,8 @@ import {
   DashboardAttentionSchema,
 } from './dashboard-attention.js'
 
+const MAIL_DOMAIN = 'team.test'
+
 const ID = `00000000-0000-4000-8000-${'000000000001'}`
 const base = { id: ID, projectId: ID, projectName: 'P', dueAt: '2026-11-01T00:00:00.000Z' }
 
@@ -27,7 +29,7 @@ describe('dashboard attention schema', () => {
           recipientEmail: null,
         },
         { ...base, kind: 'expiring_certificate', domain: 'a.example', expired: true },
-        { ...base, kind: 'pending_invitation', email: 'a@b.example', roleToAssign: 'member' },
+        { ...base, kind: 'pending_invitation', email: `a@${MAIL_DOMAIN}`, roleToAssign: 'member' },
       ],
       counts: { expiringShares: 1, expiringCertificates: 1, pendingInvitations: 1 },
     }
