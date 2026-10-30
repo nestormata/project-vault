@@ -41,12 +41,12 @@ for the marker lint. Panel era types: `UIPanel`, `UIPanelContext`, `UIPanelResul
 `ModuleActionContext`, `ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`,
 `ModuleDataResult`, `ModuleDataRouteHandler`, `ModuleDataRouteDeclaration`, `ExtensionNavItem`.
 Manifest fields: `uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`. Hooks: `uiPanel`,
-`moduleAction`, `moduleData`, plus the `'ui-panel'` capability member. Replacements are
-`ExtensionRequestContext`, `ExtensionActionResult`, composed UI and M7 `apiRoutes`.
+`moduleAction`, `moduleData`, plus the `'ui-panel'` capability member. Use `ExtensionRequestContext`,
+`ExtensionActionResult`, composed UI and M7 `apiRoutes` instead.
 
 - earliest-removal: 4.0.0
 - notice-window-ends: 2027-01-14
-- Notified: 2026-10-14, recipient CentralizeMe maintainer (the 3.30.0 notice stands).
+- Notified: 2026-10-14, CentralizeMe maintainer (3.30.0 notice, unchanged by this release).
 
 ## 3.37.0 — 2026-10-25
 
