@@ -33,6 +33,8 @@ export default mergeConfig(baseVitestConfig, {
         'src/utils/archive-authority.ts',
         // Story 72-11: the share display status shared by the API and the web.
         'src/utils/share-display-status.ts',
+        // Story 72-12: the dashboard attention list schema shared by the API and the web.
+        'src/schemas/dashboard-attention.ts',
         'src/validation/rotation-cron-description.ts',
         'src/schemas/vault.ts',
         // Story 43.13 AC-5: fourth addition to this manual allowlist (see the comment above).
