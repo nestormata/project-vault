@@ -29,8 +29,22 @@ npm's `next` dist-tag: `@project-vault/web-host@1.7.0` and `@project-vault/compo
   (no new table). Existing rows keep their behaviour: shares stay link-only and projects stay live.
 - **New optional environment variable `WEB_SHELL_VARIANT`** (`header` by default, `rail` for the
   left-rail and bottom-bar shell). Unset keeps today's header shell.
-- `.env.example` now single-quotes `AUTH_DUMMY_PASSWORD_HASH`. If you copied the old unquoted line,
-  `docker compose` prints "variable is not set" warnings; quote it the same way.
+- `.env.example` now single-quotes `AUTH_DUMMY_PASSWORD_HASH` (see Sitewide hygiene below). If you copied the
+  old unquoted line, `docker compose` treats the `$argon2id`, `$v` ... segments as variables and the container
+  receives a mangled hash; quote the value the same way.
+- **Every new external share created through PV's own route now requires the recipient to verify an emailed
+  6-digit code before the reveal** (Story 72-11). The deployment's email delivery must work, or recipients
+  cannot open new shares. Existing shares and shares an extension creates through the host stay link-only.
+- **Editing a project is narrowed to the archive rule** (Story 72-9): `PATCH /api/v1/projects/{id}` now needs
+  the project owner row or an org owner; an org `admin` without the owner row gets `403`. A caller that relied
+  on admin edit (for example a Settings tab in a composed product) breaks until it adapts.
+  `project.updated` now carries `{ authorizedVia, changedFields }` (field names only).
+- **Composed hosts:** web-host 1.7.0 pins `undici` 8.12.3 exactly (a major bump from 7.x); a host must match
+  it or `pv-compose` compatibility fails. The new `?purpose` query (72-8), the share and project routes and
+  the TOTP route change the OpenAPI document, so refresh the composed snapshot. A header policy that itself
+  sets `cache-control` on the routes listed under Story 72-8 now fails at boot. Story 72-5 changes
+  `shell/GlobalSearch.svelte`, so a pack that replaces it sees `hostSha256` drift: drop the replacement or
+  run `pv-compose --accept-host`.
 - **Project viewers are read-only on every project write** (Story 69-17). A user invited to a project
   as `viewer` can no longer create secrets, service endpoints and so on; the API answers
   `403 insufficient_project_role`.
@@ -66,22 +80,28 @@ npm's `next` dist-tag: `@project-vault/web-host@1.7.0` and `@project-vault/compo
   Migration 0106.
 - **Credential field kinds and a TOTP kind** (Story 72-10, Epic 72). Credential fields take an optional
   `kind` (`text`, `multiline`, `totp`); custom fields can be added when a credential is created. A TOTP
-  seed is write-only and never comes back from a reveal, share, export or rotation read; codes come from
+  seed is write-only and never comes back from a reveal, share, export or rotation read, so a project
+  export and import does not carry TOTP seeds, and rotating a whole secret that has a `totp` field is refused
+  (`unknown_field_key`; break-glass answers `422 totp_rotation_unsupported`); codes come from
   `POST /api/v1/projects/{projectId}/credentials/{credentialId}/totp`, audited as `credential.value_revealed`
   with `purpose: "totp"` and limited to 60 per minute per user. No migration.
 - **Reveal contract and audit detail** (Story 72-8, Epic 72). A revealed value hides after 30 seconds,
   when the tab is hidden, before navigation and on unmount; Extend is a new server reveal. The credential
-  detail, rotate, new, import and share pages send `cache-control: no-store`.
+  detail, rotate, new and import pages, the machine-user detail page, `/shares/[token]` and
+  `/external-shares/[token]` send `cache-control: no-store`.
   `credential.version_created` carries `changedFields` (names only) and
   `GET .../credentials/{id}/value` accepts `?purpose=view|copy`, recorded on `credential.value_revealed`.
   Event types and the export format are unchanged.
+- **Dialog, confirm dialog and command palette actions** (Story 72-5, Epic 72). New `ui/Dialog` and
+  `ConfirmDialog`; twelve destructive confirmations move off `window.confirm`; the global search gains palette
+  Actions and recents. `shell/GlobalSearch.svelte` changes, so a pack that replaces it sees `hostSha256` drift.
 - **Shared form controls and the stronger control border** (Stories 72-2 to 72-4, Epic 72, web-host MINOR).
   Fourteen new theme-token keys (semantic colours, text on accent, focus ring, strong border, density,
   motion, font family), a base `:root` block and a contrast guard that checks the focus ring and strong
   border at 3:1. New `Button`, `Field`, `TextField`, `Textarea`, `Select` and `ChoiceGroup` components under
   `apps/web/src/lib/components/ui/`, and every form control and outlined button across the route families
-  moves from `border-slate-300` to the strong border token (`#64748b` fallback). Class changes only: no
-  element or ARIA change, but a composed host's recorded render snapshots of the touched pages change. See
+  moves from `border-slate-300` to the strong border token (`#64748b` fallback). Class changes only (plus one
+  placeholder text on the share form): no element or ARIA change, but a composed host's recorded render snapshots of the touched pages change. See
   `docs/composition-kit.md` (Theme tokens (M6), Shared controls (M4)).
 - **Add an existing organization user to a project** (Story 72-14, Epic 72). `POST /api/v1/projects/{projectId}/members`
   with `{ userId, role }` (`viewer`, `member` or `admin`) adds an active user of the organization to a project in one call,
