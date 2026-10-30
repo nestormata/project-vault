@@ -25,8 +25,10 @@ import {
   EXTERNAL_SHARE_MAX_REVEAL_ATTEMPTS,
   EXTERNAL_SHARE_MAX_TTL_MS,
   EXTERNAL_SHARE_MISS_FLOOR_MS,
+  EXTERNAL_SHARE_VERIFICATION_PROOF_TTL_MS,
   MAX_PENDING_EXTERNAL_SHARES_PER_FIELD,
 } from './schema.js'
+import { verificationProofMatches } from './verification.js'
 
 /**
  * Story 17.2 AC-7/AC-8, Task 1.1: RLS exception — module-level documentation of the "org unknown
@@ -40,9 +42,13 @@ import {
  * `public-status-page-routes.ts`). Exactly ONE query in this entire module runs on the admin
  * connection (`getAdminDb()`) — the initial point-lookup by the unique hashed-token index below,
  * in `adminLookupByTokenHash`. Every other query in this module re-scopes via `withOrg(orgId,
- * ...)` once that lookup has resolved which org the share belongs to.
+ * ...)` once that lookup has resolved which org the share belongs to. Story 72-11's verification
+ * routes (`external-verification-service.ts`) reuse this same single lookup rather than adding a
+ * second admin-connection query.
  */
-async function adminLookupByTokenHash(tokenHash: string): Promise<CredentialShareRow | null> {
+export async function adminLookupByTokenHash(
+  tokenHash: string
+): Promise<CredentialShareRow | null> {
   const [row] = await getAdminDb()
     .select()
     .from(credentialShares)
@@ -197,6 +203,10 @@ export async function createExternalCredentialShare(
       recipientUserId: null,
       recipientEmail: input.recipientEmail.trim().toLowerCase(),
       singleUse: true,
+      // Story 72-11 V2: a share created through PV's native route requires the recipient to verify
+      // the emailed address. A host-created share stays link-only: the extension owns delivery and
+      // the host methods cannot carry a proof.
+      verificationRequired: input.hostCreated !== true,
     })
     .returning()
   if (!share) throw new Error('createExternalCredentialShare: insert returned no row')
@@ -207,7 +217,7 @@ export async function createExternalCredentialShare(
 /** AC-9: "sharer display name — not email", derived from the email local-part (there is no
  *  dedicated display-name column on `users`) so an unauthenticated party never learns the
  *  sharer's actual address. */
-function displayNameFromEmail(email: string | null): string {
+export function displayNameFromEmail(email: string | null): string {
   if (!email) return 'A teammate'
   return email.split('@')[0] ?? email
 }
@@ -290,14 +300,50 @@ async function recordLosingAttempt(tx: Tx, share: CredentialShareRow): Promise<C
     current.status !== 'revoked' &&
     current.revealAttemptCount >= EXTERNAL_SHARE_MAX_REVEAL_ATTEMPTS
   ) {
-    const [revoked] = await tx
-      .update(credentialShares)
-      .set({ status: 'revoked', revokedAt: new Date() })
-      .where(and(eq(credentialShares.id, current.id), sql`${credentialShares.status} <> 'revoked'`))
-      .returning()
-    return revoked ?? current
+    return (await lockShareAfterAttemptCap(tx, current, 'reveal_attempts_exhausted')) ?? current
   }
   return current
+}
+
+export type AttemptCapLockReason = 'reveal_attempts_exhausted' | 'verification_attempts_exhausted'
+
+/**
+ * Story 72-11 V4/V10: closes a share whose attempt cap was crossed: revoked, `locked_at` set (the
+ * display shows `locked`), any pending code cleared, and one system audit row in the
+ * same transaction. Guarded by `status <> 'revoked'`, so a parallel burst revokes and audits once.
+ * Returns the locked row, or `undefined` when another transaction already closed it.
+ */
+export async function lockShareAfterAttemptCap(
+  tx: Tx,
+  share: CredentialShareRow,
+  reason: AttemptCapLockReason
+): Promise<CredentialShareRow | undefined> {
+  const now = new Date()
+  const [locked] = await tx
+    .update(credentialShares)
+    .set({
+      status: 'revoked',
+      revokedAt: now,
+      lockedAt: now,
+      verificationCodeHash: null,
+      verificationCodeExpiresAt: null,
+    })
+    .where(and(eq(credentialShares.id, share.id), sql`${credentialShares.status} <> 'revoked'`))
+    .returning()
+  if (!locked) return undefined
+  await writeSystemAuditEntryOrFailClosed(tx, {
+    orgId: locked.orgId,
+    eventType: AuditEvent.CREDENTIAL_SHARE_REVOKED,
+    resourceId: locked.id,
+    resourceType: 'credential_share',
+    payload: {
+      credentialId: locked.credentialId,
+      recipientType: locked.recipientType,
+      attributeKeys: locked.attributeKeys,
+      reason,
+    },
+  })
+  return locked
 }
 
 /**
@@ -316,8 +362,9 @@ type RevealOutcome = { result: RevealExternalShareResult; deferred?: DeferredLos
 
 type DeferredAttemptLogger = Parameters<typeof operationalLog>[0]
 
-/** In-process registry of scheduled post-response tasks, so tests can await them
- *  (`flushPendingLosingAttempts`) and graceful shutdown can drain them with a bounded wait. */
+/** In-process registry of scheduled post-response tasks (65-4's losing attempts and 72-11's
+ *  verification-code sends), so tests can await them (`flushPendingLosingAttempts`) and graceful
+ *  shutdown can drain them with a bounded wait. */
 const pendingLosingAttempts = new Set<Promise<void>>()
 
 /** One `withOrg` transaction: lazy expiry (when due, guarded by `status = 'active'` so a parallel
@@ -348,21 +395,24 @@ function safeDeferredFailureFields(error: unknown): Record<string, unknown> {
   return { errorName: name, ...(code === undefined ? {} : { errorCode: code }) }
 }
 
+export type DeferredTaskFailure = { eventType: string; message: string }
+
 /** Never rejects: a failed post-response write is logged (redacted, no ids) and dropped, never
  *  reaching the reply and never an unhandled rejection for the fault-containment handler. */
-async function runDeferredLosingAttempt(
-  deferred: DeferredLosingAttempt,
-  logger: DeferredAttemptLogger
+async function runDeferredTask(
+  work: () => Promise<void>,
+  logger: DeferredAttemptLogger,
+  failure: DeferredTaskFailure
 ): Promise<void> {
   try {
-    await applyDeferredLosingAttempt(deferred)
+    await work()
   } catch (error) {
     try {
       operationalLog(
         logger,
         'error',
-        OperationalEvent.CREDENTIAL_SHARE_LOSING_ATTEMPT_WRITE_FAILED,
-        'Deferred external share losing-attempt write failed',
+        failure.eventType,
+        failure.message,
         safeDeferredFailureFields(error)
       )
     } catch {
@@ -371,13 +421,26 @@ async function runDeferredLosingAttempt(
   }
 }
 
+/** Schedules one tracked post-response task. The task must carry no secret in what it logs: a
+ *  failure is reported only through `failure` plus the redacted error class and driver code. */
+export function scheduleDeferredExternalShareTask(
+  work: () => Promise<void>,
+  logger: DeferredAttemptLogger,
+  failure: DeferredTaskFailure
+): void {
+  const task = runDeferredTask(work, logger, failure)
+  pendingLosingAttempts.add(task)
+  void task.then(() => pendingLosingAttempts.delete(task))
+}
+
 function scheduleLosingAttempt(
   deferred: DeferredLosingAttempt,
   logger: DeferredAttemptLogger
 ): void {
-  const task = runDeferredLosingAttempt(deferred, logger)
-  pendingLosingAttempts.add(task)
-  void task.then(() => pendingLosingAttempts.delete(task))
+  scheduleDeferredExternalShareTask(() => applyDeferredLosingAttempt(deferred), logger, {
+    eventType: OperationalEvent.CREDENTIAL_SHARE_LOSING_ATTEMPT_WRITE_FAILED,
+    message: 'Deferred external share losing-attempt write failed',
+  })
 }
 
 function drainPendingLosingAttempts(): Promise<void> {
@@ -470,9 +533,37 @@ async function resolveLostExternalClaim(tx: Tx, share: CredentialShareRow): Prom
   return { result: { status: terminal ?? 'already_viewed' }, deferred }
 }
 
+/** Story 72-11 V8: a gated share opens only with the proof of a confirm made in the last 15
+ *  minutes. Constant-time compare; an expired or missing proof is the same as a wrong one. */
+function hasValidVerificationProof(share: CredentialShareRow, proof: string | undefined): boolean {
+  const verifiedAt = share.verifiedAt?.getTime()
+  if (
+    verifiedAt === undefined ||
+    verifiedAt + EXTERNAL_SHARE_VERIFICATION_PROOF_TTL_MS <= Date.now()
+  ) {
+    return false
+  }
+  return verificationProofMatches(proof, share.verificationProofHash)
+}
+
+/** Story 72-11 V8: the gated-share miss. Same answer as an unknown token (`not_found`), and the
+ *  attempt is counted through the deferred AC-22 path like every other losing reveal. */
+function gatedShareMiss(share: CredentialShareRow): RevealOutcome {
+  return {
+    result: { status: 'not_found' },
+    deferred: { orgId: share.orgId, shareId: share.id, expireIfDue: true },
+  }
+}
+
+export type RevealExternalShareOptions = {
+  /** Story 72-11 V8: the one-time proof from a successful verification confirm. */
+  proof?: string
+}
+
 export async function revealExternalShare(
   rawToken: string,
-  logger: DeferredAttemptLogger = {}
+  logger: DeferredAttemptLogger = {},
+  options: RevealExternalShareOptions = {}
 ): Promise<RevealExternalShareResult> {
   const tokenHash = hashShareToken(rawToken)
   const row = await adminLookupByTokenHash(tokenHash)
@@ -485,6 +576,10 @@ export async function revealExternalShare(
       .where(eq(credentialShares.id, row.id))
       .limit(1)
     if (!current) return { result: { status: 'not_found' } }
+    // Story 72-11 V8: the link alone (or with a wrong or missing proof) never opens a gated share.
+    if (current.verificationRequired && !hasValidVerificationProof(current, options.proof)) {
+      return gatedShareMiss(current)
+    }
 
     const precheck = precheckExternalShareClaimable(current)
     if ('outcome' in precheck) return precheck.outcome
@@ -529,6 +624,8 @@ export async function revealExternalShare(
         attributeKeys: share.attributeKeys,
         viewCount: claimed.viewCount,
         recipientType: 'external',
+        // Story 72-11: a gated share's view is the verified recipient's (never the code or proof).
+        ...(share.verificationRequired ? { recipientVerified: true } : {}),
       },
     })
 
@@ -565,11 +662,12 @@ export function findExternalShareWithMissFloor(rawToken: string): Promise<FindEx
 /** The reveal step with its misses held like `findExternalShareWithMissFloor`'s. */
 export function revealExternalShareWithMissFloor(
   rawToken: string,
-  logger?: DeferredAttemptLogger
+  logger?: DeferredAttemptLogger,
+  options?: RevealExternalShareOptions
 ): Promise<RevealExternalShareResult> {
   return withMinResponseTime(
     EXTERNAL_SHARE_MISS_FLOOR_MS,
-    () => revealExternalShare(rawToken, logger),
+    () => revealExternalShare(rawToken, logger, options),
     { isMiss: isExternalRevealMiss }
   )
 }

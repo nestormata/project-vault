@@ -187,15 +187,45 @@ const boundedShareScopeResponseShape = {
 // Story 17.2 AC-9: metadata only — credential name, sharer *display name* (not email, so an
 // unauthenticated party never learns an org member's address), field if scoped, expiry. No
 // `sharedByEmail` field at all (unlike 17.1's authenticated-recipient metadata response).
+//
+// Story 72-11 AC7: for a share that requires recipient verification the metadata is exactly
+// credential name, sharer display name, expiry and status, plus `verificationRequired: true` and
+// the masked recipient address; `credentialId` and the scope fields are omitted (optional here).
+// A link-only share keeps the full shape above plus `verificationRequired: false`.
 export const ExternalShareMetadataResponseSchema = z.object({
   data: z.object({
-    credentialId: z.uuid(),
+    credentialId: z.uuid().optional(),
     credentialName: z.string(),
     sharedByDisplayName: z.string(),
-    ...boundedShareScopeResponseShape,
+    fieldKey: boundedShareScopeResponseShape.fieldKey.optional(),
+    attributeKeys: boundedShareScopeResponseShape.attributeKeys.optional(),
+    action: boundedShareScopeResponseShape.action.optional(),
     expiresAt: z.iso.datetime(),
     status: CredentialShareStatusSchema,
+    verificationRequired: z.boolean(),
+    maskedRecipient: z.string().optional(),
   }),
+})
+
+// Story 72-11 V5: the send route's single answer for every token class.
+export const ExternalShareVerificationRequestResponseSchema = z.object({
+  data: z.object({ maskedRecipient: z.string(), cooldownSeconds: z.number().int() }),
+})
+
+// Story 72-11 V7/V8: a successful confirm returns the one-time proof the reveal requires.
+export const ExternalShareVerificationConfirmResponseSchema = z.object({
+  data: z.object({ proof: z.string() }),
+})
+
+// Story 72-11: request bodies of the verification confirm and the reveal. They are parsed inside
+// the floor-held handler (never by Fastify), so a malformed body answers exactly like a wrong code
+// or a missing proof instead of an early, distinguishable validation error.
+export const ExternalShareVerificationConfirmBodySchema = z.object({
+  code: z.string().trim().max(32),
+})
+
+export const ExternalShareRevealBodySchema = z.object({
+  proof: z.string().min(1).max(128).optional(),
 })
 
 export type CreateExternalCredentialShareBody = z.infer<

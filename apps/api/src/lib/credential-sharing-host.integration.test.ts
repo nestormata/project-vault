@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { withOrg } from '@project-vault/db'
+import { credentialShares } from '@project-vault/db/schema'
 import type { CredentialSharingHost, ExtensionManifest } from '@project-vault/extension-api'
 import {
   CredentialSharingNoMachineUserError,
@@ -11,7 +14,10 @@ import {
 } from '../__tests__/helpers/auth-test-helpers.js'
 import { firstRejection, redeemInBatches } from '../__tests__/helpers/redeem-in-batches.js'
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
-import { createMembershipTestHelpers } from '../__tests__/helpers/membership-test-helpers.js'
+import {
+  createMembershipTestHelpers,
+  MEMBERSHIP_TEST_LOGIN_SECRET,
+} from '../__tests__/helpers/membership-test-helpers.js'
 import {
   bootCredentialRouteApp,
   createCredentialTestProject,
@@ -142,6 +148,56 @@ describe('buildCredentialSharingHost — real-Postgres integration (Story 20.12 
     // Single-use — a second reveal attempt must fail, never double-reveal.
     const secondReveal = await host.revealShare(created.token)
     expect(secondReveal.status).toBe('already_viewed')
+  })
+
+  it('Story 72-11 V2: a host-created share stays link-only, and a natively created (gated) share is not_found through both host methods without counting an attempt', async () => {
+    __resetCredentialSharingHostRateLimitForTests()
+    __resetCredentialSharingOrgRateLimitForTests()
+    const owner = await registerOwner(app, 'gated')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'gated')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'gated-credential',
+      value: 'gated-secret-value',
+    })
+    await provisionMachineUserForExtension(app, owner.cookies, projectId)
+    const host = buildCredentialSharingHost(MANIFEST)
+
+    const hostCreated = await host.createExternalShare({
+      organizationId: owner.orgId,
+      projectId,
+      credentialId: credential.id,
+      recipientEmail: RECIPIENT_EMAIL,
+      expiresAt: futureIso(),
+      fieldKey: 'value',
+    })
+    expect(hostCreated.status).toBe('ok')
+    if (hostCreated.status !== 'ok') return
+    const [hostRow] = await withOrg(owner.orgId, (tx) =>
+      tx.select().from(credentialShares).where(eq(credentialShares.id, hostCreated.share.id))
+    )
+    expect(hostRow?.verificationRequired).toBe(false)
+
+    const native = await app.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/external-shares`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {
+        recipientEmail: 'gated-recipient@vendor.example',
+        expiresAt: futureIso(),
+        fieldKey: 'value',
+        password: MEMBERSHIP_TEST_LOGIN_SECRET,
+      },
+    })
+    expect(native.statusCode).toBe(201)
+    const { id: nativeId, token } = native.json<{ data: { id: string; token: string } }>().data
+
+    await expect(host.findShareByToken(token)).resolves.toEqual({ status: 'not_found' })
+    await expect(host.revealShare(token)).resolves.toEqual({ status: 'not_found' })
+    await flushPendingLosingAttempts()
+    const [nativeRow] = await withOrg(owner.orgId, (tx) =>
+      tx.select().from(credentialShares).where(eq(credentialShares.id, nativeId))
+    )
+    expect(nativeRow).toMatchObject({ status: 'active', viewCount: 0, revealAttemptCount: 0 })
   })
 
   it('AC3 edge case: a syntactically-invalid raw token (garbage/non-hex) resolves to not_found on both methods, never throws', async () => {

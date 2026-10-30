@@ -34423,17 +34423,20 @@
                             "expired",
                             "superseded"
                           ]
+                        },
+                        "verificationRequired": {
+                          "type": "boolean"
+                        },
+                        "maskedRecipient": {
+                          "type": "string"
                         }
                       },
                       "required": [
-                        "credentialId",
                         "credentialName",
                         "sharedByDisplayName",
-                        "fieldKey",
-                        "attributeKeys",
-                        "action",
                         "expiresAt",
-                        "status"
+                        "status",
+                        "verificationRequired"
                       ],
                       "additionalProperties": false
                     }
@@ -34447,6 +34450,136 @@
             }
           },
           "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/external-shares/access/{token}/verification": {
+      "post": {
+        "tags": [
+          "Sharing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "token",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "maskedRecipient": {
+                          "type": "string"
+                        },
+                        "cooldownSeconds": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "maskedRecipient",
+                        "cooldownSeconds"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/external-shares/access/{token}/verification/confirm": {
+      "post": {
+        "tags": [
+          "Sharing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "token",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "proof": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "proof"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
             "description": "Default Response",
             "content": {
               "application/json": {
