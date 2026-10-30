@@ -29,6 +29,15 @@ export const EXTERNAL_SHARE_MAX_REVEAL_ATTEMPTS = 5
 // headroom while staying far below the 250 ms ceiling. A floor cannot hide a tail that exceeds it.
 export const EXTERNAL_SHARE_MISS_FLOOR_MS = 100
 
+// Story 72-11 (guest recipient verification, decisions V4/V5/V8): a native external share asks the
+// recipient for a 6-digit code emailed to the shared address before the reveal. The code space is
+// only 10^6, so the attempt budget is per share across codes and reserved before every compare.
+export const EXTERNAL_SHARE_VERIFICATION_CODE_TTL_MS = 10 * 60 * 1000
+export const EXTERNAL_SHARE_VERIFICATION_MAX_ATTEMPTS = 5
+export const EXTERNAL_SHARE_VERIFICATION_RESEND_COOLDOWN_SECONDS = 60
+export const EXTERNAL_SHARE_VERIFICATION_MAX_SENDS = 5
+export const EXTERNAL_SHARE_VERIFICATION_PROOF_TTL_MS = 15 * 60 * 1000
+
 // Story 17.3 AC-2: mirrors the limit/offset (not page-based) convention the AC explicitly asks
 // for — default 25, clamp (never reject) an over-large limit to 100, matching this codebase's
 // existing "clamp, don't 400, on an over-large but otherwise well-formed limit" convention

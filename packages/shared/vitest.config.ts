@@ -31,6 +31,8 @@ export default mergeConfig(baseVitestConfig, {
         'src/utils/service-provisioned-email.ts',
         // Story 69.20: the archive rule shared by the API and the web (archive-authority.test.ts).
         'src/utils/archive-authority.ts',
+        // Story 72-11: the share display status shared by the API and the web.
+        'src/utils/share-display-status.ts',
         'src/validation/rotation-cron-description.ts',
         'src/schemas/vault.ts',
         // Story 43.13 AC-5: fourth addition to this manual allowlist (see the comment above).
