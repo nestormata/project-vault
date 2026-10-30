@@ -29,7 +29,7 @@ import {
   parseDwEntries,
 } from './lib/deferred-work-ledger.js'
 import { isTrackedInDeferredWork } from './lib/followup-review-gate.js'
-import { readOverlayFile, runOverlayGuard, toRepoPath } from './lib/scan-utils.js'
+import { readOverlayFile, runOverlayGuards, toRepoPath } from './lib/scan-utils.js'
 import {
   type BodyLine,
   dispositionHits,
@@ -609,9 +609,10 @@ function report(findings: TradeoffFindings): void {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const root = process.cwd()
-  runOverlayGuard(CHECK_NAME, root, SPRINT_STATUS_PATH, () => {
-    runOverlayGuard(CHECK_NAME, root, DEFERRED_WORK_PATH, () => {
-      report(scanReviewTradeoffLedger(root))
-    })
-  })
+  runOverlayGuards(
+    CHECK_NAME,
+    root,
+    [{ relPath: SPRINT_STATUS_PATH }, { relPath: DEFERRED_WORK_PATH }],
+    () => report(scanReviewTradeoffLedger(root))
+  )
 }

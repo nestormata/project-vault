@@ -28,6 +28,7 @@
     "check-deferred-work-triggers": "tsx scripts/check-deferred-work-triggers.ts",
     "warn-fired-dw-triggers": "tsx scripts/warn-fired-dw-triggers.ts",
     "check-review-tradeoff-ledger": "tsx scripts/check-review-tradeoff-ledger.ts",
+    "check-unrun-check-destinations": "tsx scripts/check-unrun-check-destinations.ts",
     "next-dw-id": "tsx scripts/next-dw-id.ts",
     "check-story-references": "tsx scripts/check-story-references.ts",
     "check-psc-tbd-tracking": "tsx scripts/check-psc-tbd-tracking.ts",

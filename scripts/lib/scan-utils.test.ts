@@ -1,8 +1,9 @@
 import { chmodSync, mkdirSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { useFixtureRoots, writeFixture, writeFixtureSymlink } from './fixture-test-helpers.js'
 import {
+  runOverlayGuards,
   detectOverlayInput,
   formatLineRefs,
   inspectOverlayInput,
@@ -232,5 +233,37 @@ describe('formatLineRefs (Story 43.11)', () => {
     expect(formatLineRefs([3])).toBe(':3')
     expect(formatLineRefs([3, 7])).toBe(':3 and :7')
     expect(formatLineRefs([3, 7, 19])).toBe(':3, :7 and :19')
+  })
+})
+
+describe('runOverlayGuards (Story 63.4)', () => {
+  const makeRoot = useFixtureRoots('scan-utils-guards-', [])
+
+  function capture(root: string, inputs: { relPath: string }[]) {
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const run = vi.fn()
+    try {
+      runOverlayGuards('check-x', root, inputs, run)
+      return { run, out: write.mock.calls.map((c) => String(c[0])).join('') }
+    } finally {
+      write.mockRestore()
+    }
+  }
+
+  it('runs the guard only when every input is readable', () => {
+    const root = makeRoot()
+    writeFixture(root, 'a.txt', 'a')
+    writeFixture(root, 'b.txt', 'b')
+    expect(capture(root, [{ relPath: 'a.txt' }, { relPath: 'b.txt' }]).run).toHaveBeenCalledOnce()
+  })
+
+  it('reports SKIPPED for the first absent input and never runs the guard', () => {
+    const root = makeRoot()
+    writeFixture(root, 'a.txt', 'a')
+    const { run, out } = capture(root, [{ relPath: 'a.txt' }, { relPath: 'b.txt' }])
+    expect(run).not.toHaveBeenCalled()
+    expect(out).toBe(
+      'check-x: SKIPPED — b.txt not found (private overlay not attached); nothing checked\n'
+    )
   })
 })

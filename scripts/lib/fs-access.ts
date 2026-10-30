@@ -8,7 +8,7 @@
 // Their roots are the current repository or a root a test passes in, and file names are joined
 // from fixed repo-relative constants or from listings of those roots; no path comes from a
 // network request or from end-user input.
-import { existsSync, readdirSync, readFileSync, statSync, type Stats } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, type Stats } from 'node:fs'
 
 /**
  * Reads a UTF-8 text file.
@@ -40,4 +40,12 @@ export function listNames(path: string): string[] {
  */
 export function statPath(path: string): Stats {
   return statSync(path)
+}
+
+/**
+ * Resolves a path through every symlink.
+ * Reason: a path a guard found under the checked root, resolved to confirm it stays inside it.
+ */
+export function realPath(path: string): string {
+  return realpathSync(path)
 }
