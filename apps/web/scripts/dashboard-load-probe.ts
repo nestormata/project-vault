@@ -5,8 +5,8 @@ import { randomUUID } from 'node:crypto'
 import { createServer } from 'vite'
 
 const PROJECT_ID = randomUUID()
-const SLOW_READ_MS = 50
-const SETTLE_MS = 250
+const SLOW_READ_MS = 200
+const SETTLE_MS = 400
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {

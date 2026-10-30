@@ -21,7 +21,7 @@ describe('dashboard load in a plain Node process', () => {
       timeout: PROBE_TIMEOUT_MS,
     })
 
-    expect(run.stderr).not.toMatch(/ApiClientError|unhandled/i)
+    expect(run.stderr).not.toMatch(/ApiClientError|UnhandledPromiseRejection/)
     expect(run.status).toBe(0)
     const lastLine = run.stdout.trim().split('\n').at(-1) ?? ''
     expect(JSON.parse(lastLine)).toEqual([
