@@ -60,6 +60,7 @@ describe('external share verification helpers (Story 72-11)', () => {
   it('V6: masks the address to first character, three stars, @, first character, three stars', () => {
     expect(maskRecipientEmail('nestor@gmail.com')).toBe('n***@g***')
     expect(maskRecipientEmail('X@Y.example')).toBe('x***@y***')
+    expect(maskRecipientEmail('_a@é.example')).toBe('x***@x***')
   })
 
   it('V6: an unknown token gets a mask of the same shape, deterministic per token', () => {

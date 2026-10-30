@@ -128,6 +128,7 @@ export async function requestExternalShareVerification(
 ): Promise<RequestVerificationResult> {
   const row = await adminLookupByTokenHash(hashShareToken(rawToken))
   const external = row?.recipientType === 'external' ? row : null
+  const live = external?.verificationRequired === true && external.status === 'active'
   if (external?.verificationRequired) {
     const target = { orgId: external.orgId, shareId: external.id }
     scheduleDeferredExternalShareTask(
@@ -140,7 +141,10 @@ export async function requestExternalShareVerification(
     )
   }
   return {
-    maskedRecipient: maskedRecipientFor(rawToken, external?.recipientEmail ?? null),
+    maskedRecipient: maskedRecipientFor(
+      rawToken,
+      external && live ? external.recipientEmail : null
+    ),
     cooldownSeconds: EXTERNAL_SHARE_VERIFICATION_RESEND_COOLDOWN_SECONDS,
   }
 }

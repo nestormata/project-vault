@@ -65,11 +65,19 @@ export function maskRecipientEmail(email: string): string {
   const at = normalized.lastIndexOf('@')
   const local = at > 0 ? normalized.slice(0, at) : normalized
   const domain = at > 0 ? normalized.slice(at + 1) : ''
-  return `${local.charAt(0) || 'x'}***@${domain.charAt(0) || 'x'}***`
+  return `${maskInitial(local)}***@${maskInitial(domain)}***`
 }
 
 const LOWERCASE_LETTER_COUNT = 26
+const MASK_ALPHABET_SIZE = LOWERCASE_LETTER_COUNT + 10
 const LOWERCASE_A = 97
+
+/** The one visible character of a mask part, limited to the alphabet a synthetic mask draws from,
+ *  so a real mask can never be told from a fake one by the kind of character it shows. */
+function maskInitial(part: string): string {
+  const first = part.charAt(0)
+  return /^[a-z0-9]$/.test(first) ? first : 'x'
+}
 
 /** V6: the mask for a token that resolves to no external recipient: the same shape, derived from a
  *  keyed HMAC of the token (a fixed server key, domain separated from the share-token hash), so
@@ -78,8 +86,12 @@ function syntheticMaskForToken(rawToken: string): string {
   const digest = createHmac('sha256', env.INVITATION_TOKEN_HMAC_SECRET)
     .update(`credential_share_mask:${rawToken}`)
     .digest()
-  const pick = (byte: number | undefined) =>
-    String.fromCodePoint(LOWERCASE_A + ((byte ?? 0) % LOWERCASE_LETTER_COUNT))
+  const pick = (byte: number | undefined) => {
+    const n = (byte ?? 0) % MASK_ALPHABET_SIZE
+    return n < LOWERCASE_LETTER_COUNT
+      ? String.fromCodePoint(LOWERCASE_A + n)
+      : String(n - LOWERCASE_LETTER_COUNT)
+  }
   return `${pick(digest[0])}***@${pick(digest[1])}***`
 }
 
