@@ -1,6 +1,11 @@
 import { index, integer, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 /**
+ * RETIRED by Story 73.1: no code reads or writes this table since the prepare/exchange-claim/
+ * confirm routes were removed (the nonce-bound flow uses `handoff_nonces`). It stays declared
+ * only so the drizzle snapshot matches the database until a reviewed migration drops it: a
+ * `DROP TABLE` is refused by the guarded in-place migrator.
+ *
  * Story 30.2 Task 2: server-side pending-handoff state created by `POST /auth/handoff/prepare`
  * (AC3.7) and consumed by `POST /auth/handoff/confirm` (AC4.11). Deliberately a dedicated table
  * rather than reusing `sso_login_states` — that table is provider-generic SSO CSRF state (a
