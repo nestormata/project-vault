@@ -517,6 +517,40 @@ days) are fixed, evaluated on the database clock.
 Consumers: a CentralizeMe `openapi.composed.json` needs the new route; CentralizeMe can read it to fill the dashboard
 org-summary region by M3. The native card renders only when the list is not empty.
 
+## Project members: add an existing organization user
+
+`POST /api/v1/projects/{projectId}/members` adds a user who is already an active member of the caller's organization to
+the project, with no invitation e-mail. Body (strict, unknown keys are rejected):
+`{ "userId": "<uuid>", "role": "viewer" | "member" | "admin" }`. `owner` cannot be assigned here (use
+`POST …/transfer-ownership`). Success is `201` with `{ "data": { userId, email, displayName, role } }`, the same row
+shape as `GET …/members`.
+
+| Status | Code                        | When                                                                                                                                         |
+| ------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `201`  |                             | Added. Exactly one `project.member_added` audit event (resource `project_membership`, id = the added user, payload `{ projectId, role }`).   |
+| `403`  | `insufficient_project_role` | Caller's effective project role is below `admin` (the route declares `minimumProjectRole: 'admin'`). No audit row.                           |
+| `403`  | `insufficient_role`         | MFA not enrolled (strict, the grace period is ignored, as for invitations), or the role is above the caller's own.                           |
+| `404`  | `project_not_found`         | The project does not exist, is in another organization or is soft-deleted.                                                                   |
+| `404`  | `user_not_found`            | The user does not exist, belongs to another organization, or is deactivated. The body is identical in all three cases (no existence oracle). |
+| `409`  | `already_member`            | The user already has a row on the project, including the loser of two concurrent identical requests.                                         |
+| `410`  | `project_archived`          | The project is archived. Unarchive it first.                                                                                                 |
+| `422`  | `validation_error`          | Bad body: not a uuid, `owner` or an unknown role, an unknown key, a missing field.                                                           |
+| `429`  | `rate_limit_exceeded`       | More than 30 requests per minute per user; the body carries `retryAfter: 60` (no header).                                                    |
+
+**Re-issuing the request.** A second `POST` for a user who is already a member answers `409 already_member`, never a
+silent `200`, and changes nothing (the existing role is kept; use `PUT /api/v1/org/users/{userId}/projects/{projectId}/role`
+to change it). Treat `409` as "already done" if the caller only needs the user to have access.
+
+**Who may call.** An organization `owner` or `admin` (no project row needed) or a project `admin` or `owner`, the same rule
+as `GET` and `DELETE …/members`. Adding never removes or demotes anyone, so the last-owner rules are untouched.
+
+**No project-scoped candidate list.** There is deliberately no route that lists "active organization users not on this
+project" for a project admin. `GET /api/v1/org/users` is org `admin`/`owner` only; a project admin who is not an org
+admin therefore cannot enumerate candidates and must know the `userId` (Story 72-14, decision M2: a new directory read
+would widen who can enumerate organization members). A UI that offers a picker must be fed by an org admin's read.
+
+Consumers: a CentralizeMe `openapi.composed.json` needs the new route.
+
 ## See also
 
 - [`machine-users.md`](machine-users.md) — machine users, API keys, and the CI/CD retrieval flow.

@@ -1158,6 +1158,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'user.pseudonymized',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  'POST /api/v1/projects/:projectId/members': {
+    action: 'mutation',
+    auditEvent: 'project.member_added',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
   'DELETE /api/v1/projects/:projectId/members/:userId': {
     action: 'mutation',
     auditEvent: 'project.member_removed',

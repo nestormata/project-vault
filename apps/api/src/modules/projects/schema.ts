@@ -152,6 +152,23 @@ export const ProjectMembersListResponseSchema = z
   })
   .meta({ id: 'ProjectMembersListResponse' })
 
+// Story 72-14: add an existing org user to a project. `owner` is not assignable here.
+export const AddProjectMemberBodySchema = z
+  .object({ userId: z.uuid(), role: z.enum(['viewer', 'member', 'admin']) })
+  .strict()
+  .meta({ id: 'AddProjectMemberBody' })
+
+export const AddProjectMemberResponseSchema = z
+  .object({
+    data: z.object({
+      userId: z.uuid(),
+      email: z.string(),
+      displayName: z.string(),
+      role: projectMemberRoleEnum,
+    }),
+  })
+  .meta({ id: 'AddProjectMemberResponse' })
+
 export const TransferOwnershipResponseSchema = z
   .object({
     data: z.object({

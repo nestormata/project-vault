@@ -28,6 +28,7 @@ export class InvalidAsOfError extends Error {
 const REPLAY_EVENT_TYPES = [
   AuditEvent.USER_REGISTERED,
   AuditEvent.PROJECT_INVITATION_ACCEPTED,
+  AuditEvent.PROJECT_MEMBER_ADDED,
   AuditEvent.PROJECT_MEMBER_ROLE_CHANGED,
   AuditEvent.PROJECT_MEMBER_REMOVED,
   AuditEvent.PROJECT_OWNERSHIP_TRANSFERRED,
@@ -259,6 +260,21 @@ function applyProjectInvitationAccepted(
   }
 }
 
+/** `project.member_added` (72-14) — the (resourceId user, payload.projectId) triple's membership
+ * starts at this event with `payload.role` (`resourceId` is the added user, as for role changes). */
+function applyProjectMemberAdded(
+  row: ReplayRow,
+  payload: Record<string, unknown>,
+  state: ReplayState
+): void {
+  const userId = row.resourceId
+  const projectId = payload['projectId']
+  const role = payload['role']
+  if (userId && typeof projectId === 'string' && typeof role === 'string') {
+    state.projectState.set(projectStateKey(userId, projectId), { role, grantedAt: row.createdAt })
+  }
+}
+
 /** `project.member_role_changed` — role changes to `payload.newRole` from this event onward. */
 function applyProjectMemberRoleChanged(
   row: ReplayRow,
@@ -340,6 +356,7 @@ function applyReplayRow(row: ReplayRow, state: ReplayState, lookups: InvitationL
     [AuditEvent.USER_REGISTERED]: () => applyUserRegistered(row, state),
     [AuditEvent.PROJECT_INVITATION_ACCEPTED]: () =>
       applyProjectInvitationAccepted(row, payload, state, lookups),
+    [AuditEvent.PROJECT_MEMBER_ADDED]: () => applyProjectMemberAdded(row, payload, state),
     [AuditEvent.PROJECT_MEMBER_ROLE_CHANGED]: () =>
       applyProjectMemberRoleChanged(row, payload, state),
     [AuditEvent.PROJECT_MEMBER_REMOVED]: () => applyProjectMemberRemoved(row, payload, state),

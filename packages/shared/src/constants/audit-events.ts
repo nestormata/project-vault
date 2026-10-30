@@ -45,6 +45,7 @@ export const AuditEvent = {
   // 'machine_user': the caller (CentralizeMe) authenticates with a static shared secret, not a
   // resolvable human actor token or PV machine-user key.
   ORG_SESSIONS_REVOKED_BY_SERVICE: 'org.sessions_revoked_by_service',
+  PROJECT_MEMBER_ADDED: 'project.member_added',
   PROJECT_MEMBER_ROLE_CHANGED: 'project.member_role_changed',
   PROJECT_MEMBER_REMOVED: 'project.member_removed',
   PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
