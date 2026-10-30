@@ -58,15 +58,15 @@ describe('migration 0107 (credential_shares guest verification columns)', () => 
         'verification_attempt_count', 'verification_send_count', 'verification_sent_at',
         'verification_proof_hash', 'verified_at', 'locked_at'
       )`
-    const byName = Object.fromEntries(rows.map((row) => [row.column_name, row]))
-    expect(byName['verification_required']).toEqual({
+    const byName = new Map(rows.map((row) => [row.column_name, row]))
+    expect(byName.get('verification_required')).toEqual({
       column_name: 'verification_required',
       data_type: 'boolean',
       is_nullable: 'NO',
       column_default: 'false',
     })
     for (const name of ['verification_attempt_count', 'verification_send_count']) {
-      expect(byName[name]).toEqual({
+      expect(byName.get(name)).toEqual({
         column_name: name,
         data_type: 'integer',
         is_nullable: 'NO',
@@ -74,8 +74,8 @@ describe('migration 0107 (credential_shares guest verification columns)', () => 
       })
     }
     for (const name of ['verification_code_hash', 'verification_proof_hash']) {
-      expect(byName[name]?.data_type).toBe('text')
-      expect(byName[name]?.is_nullable).toBe('YES')
+      expect(byName.get(name)?.data_type).toBe('text')
+      expect(byName.get(name)?.is_nullable).toBe('YES')
     }
     for (const name of [
       'verification_code_expires_at',
@@ -83,8 +83,8 @@ describe('migration 0107 (credential_shares guest verification columns)', () => 
       'verified_at',
       'locked_at',
     ]) {
-      expect(byName[name]?.data_type).toBe('timestamp with time zone')
-      expect(byName[name]?.is_nullable).toBe('YES')
+      expect(byName.get(name)?.data_type).toBe('timestamp with time zone')
+      expect(byName.get(name)?.is_nullable).toBe('YES')
     }
   })
 
