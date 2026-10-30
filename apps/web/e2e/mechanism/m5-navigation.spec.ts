@@ -30,7 +30,14 @@ const TOP_LEVEL = ':scope > a, :scope > details > summary'
 const MOCK_BILLING = 'Mock Billing'
 
 /** The primary nav after the delta, for an owner who is not the platform operator. */
-const PRIMARY_ORDER = ['Notifications', 'Projects', MOCK_BILLING, MOCK_SETTINGS, 'Dashboard']
+const PRIMARY_ORDER = [
+  'Notifications',
+  'Projects',
+  MOCK_BILLING,
+  'Shares',
+  MOCK_SETTINGS,
+  'Dashboard',
+]
 
 /** The project nav after the delta (labels from PV's messages). */
 const PROJECT_ORDER = [
