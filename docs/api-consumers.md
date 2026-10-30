@@ -492,6 +492,31 @@ still gets the plain `404`/`403` body with no `reason`. Branch on `reason` when 
 Consumers: a CentralizeMe `openapi.composed.json` needs the `GET /api/v1/shares` route, the three summary fields,
 the `displayStatus` query parameter and the `reason` property on the share error bodies (`ShareApiError`).
 
+## Dashboard attention list
+
+Story 72-12 (additive; no breaking change; `GET /api/v1/dashboard` is unchanged).
+
+`GET /api/v1/dashboard/attention` (session, organization floor `viewer`) answers `{ data: { items, counts } }`:
+what needs attention for the caller. `items` is one flat list ordered by `dueAt` ascending (ties by `id`), at most
+10 per kind; `counts` (`expiringShares`, `expiringCertificates`, `pendingInvitations`) are the true totals, so a
+renderer can say "and 4 more". Every item has `kind`, `id`, `projectId`, `projectName` and `dueAt`.
+
+| `kind`                 | Rows                                                                                            | Extra fields                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `expiring_share`       | Active, not locked, `expiresAt` in the next 7 days (an already expired share is not attention). | `credentialId`, `credentialName`, `recipientEmail` (or `null`) |
+| `expiring_certificate` | `expiresAt` set and within 30 days, INCLUDING already expired ones.                             | `domain`, `expired`                                            |
+| `pending_invitation`   | Not accepted, not revoked, not yet expired.                                                     | `email`, `roleToAssign`                                        |
+
+**Authorization.** Every item is one the caller can already read elsewhere. Shares: an org `admin` or `owner` sees
+every share of the organization, a `member` only shares they are the effective sharer of, in a project they belong to
+(the rule of `GET /api/v1/shares`). Certificates: an admin or owner sees every project, a `member` only projects they
+hold a `project_memberships` row for. Invitations: org `admin` and `owner` only. An org `viewer` gets `items: []` and
+zero counts with `200`, never `403`. Soft-deleted and archived projects contribute nothing. The horizons (7 and 30
+days) are fixed, evaluated on the database clock.
+
+Consumers: a CentralizeMe `openapi.composed.json` needs the new route; CentralizeMe can read it to fill the dashboard
+org-summary region by M3. The native card renders only when the list is not empty.
+
 ## See also
 
 - [`machine-users.md`](machine-users.md) — machine users, API keys, and the CI/CD retrieval flow.
