@@ -1,6 +1,7 @@
 import postgres from 'postgres'
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { enrollMfaViaApi, registerAndLoginViaApi, registerViaInvitation } from '../fixtures/auth.js'
+import { confirmDialog } from '../fixtures/confirm-dialog.js'
 import {
   createCredentialViaApi,
   createInvitationViaApi,
@@ -113,10 +114,10 @@ function userRow(page: Page, displayName: string) {
 }
 
 async function deactivateFromUsersPage(page: Page, displayName: string): Promise<void> {
-  page.once('dialog', (dialog) => void dialog.accept())
   await userRow(page, displayName)
     .getByRole('button', { name: /deactivate account/i })
     .click()
+  await confirmDialog(page, 'Deactivate user?', 'Deactivate')
 }
 
 async function expectBlocked(page: Page, fixture: Fixture): Promise<void> {
@@ -166,13 +167,15 @@ test.describe('J30 — deactivation blocked by an active rotation (FR102)', () =
       await deactivateFromUsersPage(page, fixture.xDisplayName)
       await expectBlocked(page, fixture)
 
-      page.once('dialog', (dialog) => {
-        expect(dialog.message()).toMatch(/staged and stale rotations will be abandoned/i)
-        void dialog.accept()
-      })
       await userRow(page, fixture.xDisplayName)
         .getByRole('button', { name: /abandon unfinished rotations and deactivate/i })
         .click()
+      await confirmDialog(
+        page,
+        'Abandon rotations and deactivate user?',
+        'Abandon and deactivate',
+        /staged and stale rotations will be abandoned/i
+      )
 
       await expect(userRow(page, fixture.xDisplayName).getByText('Deactivated')).toBeVisible()
       await expectRotationResolved(fixture)

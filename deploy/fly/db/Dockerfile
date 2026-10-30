@@ -9,7 +9,7 @@
 # digest, Sonar S8431-clean, same form as node). The weekly base-image-refresh workflow keeps it
 # current (scripts/refresh-base-image.sh --image postgres) and the guard
 # scripts/check-base-image-digest.test.ts rejects a floating tag here.
-FROM postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea AS runner
+FROM postgres@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36 AS runner
 
 # The stock entrypoint drops root with gosu, a Go binary whose bundled stdlib carries fixable
 # HIGH/CRITICAL CVEs that the image scan gate blocks on (Story 43.16 AC-13). su-exec (Alpine's small
