@@ -130,6 +130,22 @@ async function victimHoldingNonce(page: Page, victim: SeededHandoffUser): Promis
   return lastHit().nonce
 }
 
+/** A victim browser opens `/auth/claim#<token>`: it must end in the error state, signed out, with
+ *  exactly `eventType` recorded and no session for any of `users`. */
+async function expectVictimRejected(
+  page: Page,
+  token: string,
+  eventType: string,
+  ...users: SeededHandoffUser[]
+): Promise<void> {
+  const since = await dbNow(sql)
+  await page.goto(`${pvOrigin}/auth/claim#${token}`)
+  await expectErrorState(page)
+  await expectRejectedWith(since, [eventType])
+  await expectSignedOut(page)
+  for (const user of users) expect(await countSessions(sql, user.userId)).toBe(0)
+}
+
 /** `/auth/start` through the real redirect chain; resolves on the /auth/claim document. */
 async function startHandoff(
   page: Page
@@ -243,14 +259,8 @@ test.describe('J31 — login CSRF: an attacker token in a victim browser (AC4)',
     const attackerContext = await browser.newContext()
     try {
       const { minted } = await attackerToken(attackerContext, attacker)
-      const since = await dbNow(sql)
 
-      await page.goto(`${pvOrigin}/auth/claim#${minted?.token ?? ''}`)
-
-      await expectErrorState(page)
-      await expectRejectedWith(since, ['handoff_nonce_missing'])
-      await expectSignedOut(page)
-      expect(await countSessions(sql, attacker.userId)).toBe(0)
+      await expectVictimRejected(page, minted?.token ?? '', 'handoff_nonce_missing', attacker)
       expect(await isJtiBurned(sql, minted?.jti ?? '')).toBe(false)
     } finally {
       await attackerContext.close()
@@ -267,15 +277,14 @@ test.describe('J31 — login CSRF: an attacker token in a victim browser (AC4)',
     try {
       const { minted } = await attackerToken(attackerContext, attacker)
       await victimHoldingNonce(page, victim)
-      const since = await dbNow(sql)
 
-      await page.goto(`${pvOrigin}/auth/claim#${minted?.token ?? ''}`)
-
-      await expectErrorState(page)
-      await expectRejectedWith(since, ['handoff_nonce_mismatch'])
-      await expectSignedOut(page)
-      expect(await countSessions(sql, attacker.userId)).toBe(0)
-      expect(await countSessions(sql, victim.userId)).toBe(0)
+      await expectVictimRejected(
+        page,
+        minted?.token ?? '',
+        'handoff_nonce_mismatch',
+        attacker,
+        victim
+      )
     } finally {
       await attackerContext.close()
     }
@@ -291,14 +300,8 @@ test.describe('J31 — login CSRF: an attacker token in a victim browser (AC4)',
     try {
       const { nonce, minted } = await attackerToken(attackerContext, attacker)
       await context.addCookies([{ name: 'pv-handoff-nonce', value: nonce, url: pvOrigin }])
-      const since = await dbNow(sql)
 
-      await page.goto(`${pvOrigin}/auth/claim#${minted?.token ?? ''}`)
-
-      await expectErrorState(page)
-      await expectRejectedWith(since, ['handoff_nonce_missing'])
-      await expectSignedOut(page)
-      expect(await countSessions(sql, attacker.userId)).toBe(0)
+      await expectVictimRejected(page, minted?.token ?? '', 'handoff_nonce_missing', attacker)
     } finally {
       await attackerContext.close()
     }
