@@ -2,6 +2,11 @@ import { expect, test } from '@playwright/test'
 import { registerAndLoginViaApi } from '../fixtures/auth.js'
 import { createProjectViaApi } from '../fixtures/api.js'
 import { createLoginTemplateCredentialViaUi } from '../fixtures/credentials-ui.js'
+import {
+  completeGuestCodeStep,
+  openGuestShare,
+  tokenFromShareUrl,
+} from '../fixtures/guest-verification.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
@@ -14,7 +19,8 @@ const PASSWORD_VALUE = 'j12-super-secret-password'
 // external-recipient share form (no second org member needed): create a Login-template
 // credential, create a default (attributeKeys omitted) external share, confirm the recipient
 // sees only the non-sensitive field, then create a second share explicitly naming the sensitive
-// field and confirm the recipient sees it too.
+// field and confirm the recipient sees it too. Story 72.11: the recipient first completes the
+// emailed-code step (see fixtures/guest-verification.ts).
 
 test.describe('J12 — bounded/scoped credential sharing', () => {
   test('AC-2/AC-9: default share excludes the sensitive field; naming it explicitly includes it', async ({
@@ -63,7 +69,7 @@ test.describe('J12 — bounded/scoped credential sharing', () => {
       .locator('code', { hasText: '/external-shares/' })
       .textContent()
     expect(defaultShareCode).toBeTruthy()
-    const defaultToken = new URL(defaultShareCode as string).pathname.split('/').pop() as string
+    const defaultToken = tokenFromShareUrl(defaultShareCode as string)
 
     // --- Share #2: explicitly opt the sensitive `password` field in ---
     await passwordRow.getByRole('checkbox').click()
@@ -75,13 +81,17 @@ test.describe('J12 — bounded/scoped credential sharing', () => {
     const explicitShareCode = await page
       .locator('code', { hasText: '/external-shares/' })
       .textContent()
-    const explicitToken = new URL(explicitShareCode as string).pathname.split('/').pop() as string
+    const explicitToken = tokenFromShareUrl(explicitShareCode as string)
 
     // --- Recipient side: default share reveals only the non-sensitive field ---
     const recipientContext = await context.browser()?.newContext()
     if (!recipientContext) throw new Error('unreachable — browser() only null after browser close')
     const recipientPage = await recipientContext.newPage()
-    await recipientPage.goto(`/external-shares/${defaultToken}`)
+    await openGuestShare(recipientPage, defaultToken)
+    await completeGuestCodeStep(recipientPage, {
+      recipientEmail: 'j12-recipient@example.com',
+      rawToken: defaultToken,
+    })
     await recipientPage.getByRole('button', { name: 'Reveal' }).click()
     await expect(recipientPage.getByText('username', { exact: true })).toBeVisible()
     await expect(recipientPage.getByText(USERNAME_VALUE, { exact: true })).toBeVisible()
@@ -90,7 +100,11 @@ test.describe('J12 — bounded/scoped credential sharing', () => {
 
     // --- Recipient side: explicit share reveals the named sensitive field too ---
     const recipientPage2 = await recipientContext.newPage()
-    await recipientPage2.goto(`/external-shares/${explicitToken}`)
+    await openGuestShare(recipientPage2, explicitToken)
+    await completeGuestCodeStep(recipientPage2, {
+      recipientEmail: 'j12-recipient-2@example.com',
+      rawToken: explicitToken,
+    })
     await recipientPage2.getByRole('button', { name: 'Reveal' }).click()
     await expect(recipientPage2.getByText('username', { exact: true })).toBeVisible()
     await expect(recipientPage2.getByText(USERNAME_VALUE, { exact: true })).toBeVisible()
