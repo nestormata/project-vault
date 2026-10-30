@@ -3,7 +3,7 @@
   import { m } from '$lib/paraglide/messages.js'
   import { getDashboardEmptyStateCopy } from './dashboard-copy.js'
 
-  type CardStatus = 'loading' | 'ready' | 'error'
+  type CardStatus = 'loading' | 'ready' | 'forbidden' | 'error'
   type MonitoringCard = { status: CardStatus; count: number }
   type MonitoringCardInput = MonitoringCard | PromiseLike<MonitoringCard>
 
@@ -65,6 +65,8 @@
         >
           {m.dashboard_placeholder_loading_certificates()}
         </p>
+      {:else if certificateState.status === 'forbidden'}
+        <p class="mt-2 text-sm text-slate-600">{m.dashboard_placeholder_certs_forbidden()}</p>
       {:else if certificateState.status === 'error'}
         <p class="mt-2 text-sm text-amber-700">{m.dashboard_placeholder_certs_unavailable()}</p>
       {:else}
@@ -94,6 +96,8 @@
         >
           {m.dashboard_placeholder_loading_domains()}
         </p>
+      {:else if domainState.status === 'forbidden'}
+        <p class="mt-2 text-sm text-slate-600">{m.dashboard_placeholder_domains_forbidden()}</p>
       {:else if domainState.status === 'error'}
         <p class="mt-2 text-sm text-amber-700">{m.dashboard_placeholder_domains_unavailable()}</p>
       {:else}

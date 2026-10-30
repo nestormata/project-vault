@@ -204,6 +204,70 @@ describe('/dashboard +page.server.ts', () => {
     expect(result.vaultSealed).toBeFalsy()
   })
 
+  // Story 72-20 AC-4: an organization `viewer` gets 403 `insufficient_role` on both asset reads.
+  it('reports a 403 on both asset reads as forbidden and still loads the page', async () => {
+    listProjectsMock.mockResolvedValue({
+      items: [{ id: projectId, name: 'Payments', description: null }],
+      total: 1,
+      page: 1,
+      limit: 20,
+      hasNext: false,
+    })
+    const denied = () => new ApiClientError(403, { code: 'insufficient_role' }, 'Insufficient role')
+    listCertificatesMock.mockRejectedValue(denied())
+    listDomainsMock.mockRejectedValue(denied())
+
+    const result = expectLoaded(await load(makeEvent()))
+
+    expect(result.selectedProject?.id).toBe(projectId)
+    expect(result.dashboard).toEqual({ upcomingRotations: [] })
+    await expect(result.monitoringAssets.certificates).resolves.toEqual({
+      status: 'forbidden',
+      count: 0,
+    })
+    await expect(result.monitoringAssets.domains).resolves.toEqual({
+      status: 'forbidden',
+      count: 0,
+    })
+  })
+
+  it('keeps the error state for a 500 and reports a 403 on one read independently', async () => {
+    listProjectsMock.mockResolvedValue({
+      items: [{ id: projectId, name: 'Payments', description: null }],
+      total: 1,
+      page: 1,
+      limit: 20,
+      hasNext: false,
+    })
+    listCertificatesMock.mockRejectedValue(new ApiClientError(500, null, 'boom'))
+    listDomainsMock.mockRejectedValue(new ApiClientError(403, null, 'no'))
+
+    const result = expectLoaded(await load(makeEvent()))
+
+    await expect(result.monitoringAssets.certificates).resolves.toEqual({
+      status: 'error',
+      count: 0,
+    })
+    await expect(result.monitoringAssets.domains).resolves.toEqual({
+      status: 'forbidden',
+      count: 0,
+    })
+  })
+
+  it('does not read assets for a caller with no project', async () => {
+    listProjectsMock.mockResolvedValue({ items: [], total: 0, page: 1, limit: 20, hasNext: false })
+
+    const result = expectLoaded(await load(makeEvent()))
+
+    expect(listCertificatesMock).not.toHaveBeenCalled()
+    expect(listDomainsMock).not.toHaveBeenCalled()
+    await expect(result.monitoringAssets.certificates).resolves.toEqual({
+      status: 'ready',
+      count: 0,
+    })
+    await expect(result.monitoringAssets.domains).resolves.toEqual({ status: 'ready', count: 0 })
+  })
+
   it('keeps certificate/domain data when the dashboard query fails, including an unavailable alert state', async () => {
     listProjectsMock.mockResolvedValue({
       items: [{ id: projectId, name: 'Payments', description: null }],

@@ -42,15 +42,6 @@ function settledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
   return result.status === 'fulfilled' ? result.value : fallback
 }
 
-function streamedAssetState<T>(
-  promise: Promise<T[]>
-): Promise<{ status: 'ready'; count: number } | { status: 'error'; count: 0 }> {
-  return promise.then(
-    (items) => ({ status: 'ready' as const, count: items.length }),
-    () => ({ status: 'error' as const, count: 0 })
-  )
-}
-
 /** A failed read: an API error response, or a network failure surfacing as a fetch TypeError. */
 function isReadFailure(error: unknown): boolean {
   return error instanceof ApiClientError || error instanceof TypeError
@@ -76,12 +67,32 @@ function projectDashboardRequest(fetch: typeof globalThis.fetch, projectId: stri
   return projectId ? nullOn404(getProjectDashboard(fetch, projectId)) : Promise.resolve(null)
 }
 
-function assetRequest<T>(
+type AssetCardState =
+  | { status: 'ready'; count: number }
+  | { status: 'forbidden'; count: 0 }
+  | { status: 'error'; count: 0 }
+
+function isApi403(error: unknown): boolean {
+  return error instanceof ApiClientError && error.status === 403
+}
+
+/**
+ * Story 72-20: an asset read is converted to a card state where the promise is created, before the
+ * load's first `await`. A rejection handled only in the return would be unhandled while the other
+ * reads are in flight, and Node ends the web process on an unhandled rejection. An organization
+ * `viewer` gets a 403 here, which is a role limit (`forbidden`), not a failure (`error`).
+ */
+function assetState<T>(
   fetch: typeof globalThis.fetch,
   projectId: string | undefined,
   request: (fetch: typeof globalThis.fetch, projectId: string) => Promise<T[]>
-) {
-  return projectId ? request(fetch, projectId) : Promise.resolve([])
+): Promise<AssetCardState> {
+  if (!projectId) return Promise.resolve({ status: 'ready', count: 0 })
+  return request(fetch, projectId).then(
+    (items): AssetCardState => ({ status: 'ready', count: items.length }),
+    (error): AssetCardState =>
+      isApi403(error) ? { status: 'forbidden', count: 0 } : { status: 'error', count: 0 }
+  )
 }
 
 function isMissingProject(
@@ -108,8 +119,8 @@ const ownLoad = (async ({ fetch, url }) => {
 
   const orgDashboardPromise = nullOn404(getOrgDashboard(fetch))
   const projectDashboardPromise = projectDashboardRequest(fetch, projectId)
-  const certificatesPromise = assetRequest(fetch, projectId, listCertificates)
-  const domainsPromise = assetRequest(fetch, projectId, listDomains)
+  const certificates = assetState(fetch, projectId, listCertificates)
+  const domains = assetState(fetch, projectId, listDomains)
   const attentionPromise = attentionState(fetch)
 
   const [[orgResult, dashboardResult], attention] = await Promise.all([
@@ -133,10 +144,10 @@ const ownLoad = (async ({ fetch, url }) => {
     alertStatus: dashboard === null ? ('error' as const) : ('ready' as const),
     monitoringAssets: {
       // Leave these promises unresolved so SvelteKit streams the card data after the page shell
-      // renders. Each promise converts its own failure into an unavailable state, preserving the
-      // independent card degradation contract.
-      certificates: streamedAssetState(certificatesPromise),
-      domains: streamedAssetState(domainsPromise),
+      // renders. Each promise converts its own failure into a card state where it is created, so
+      // the cards degrade independently.
+      certificates,
+      domains,
     },
   }
 }) satisfies PageServerLoad

@@ -70,6 +70,14 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Fixed
 
+- **An organization viewer no longer ends the web process on `/dashboard`** (Story 72-20, Epic 72, patch-level). The
+  dashboard load attached its rejection handlers to the certificate and domain reads only in its return, so the 403 a
+  `viewer` gets was an unhandled rejection while other reads were in flight, and Node 24 exits on that (the browser saw
+  `ERR_CONNECTION_RESET`, for every user of the process). Each read now converts its own failure where it starts. A 403
+  shows "Certificates are not available for your role." and "Domains are not available for your role." (English and
+  Spanish); other failures keep the unavailable message. A host that pins PV by release (CentralizeMe) needs the
+  release carrying this fix before it retires its own dashboard override.
+
 - The `migrate` image's pnpm is updated to 11.28.8, whose bundled `undici` (6.29.1) fixes
   CVE-2026-109869 (HIGH, denial of service via an unhandled stream error). Building from source
   now needs pnpm 11.28.8 or newer.

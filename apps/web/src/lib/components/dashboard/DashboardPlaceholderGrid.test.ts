@@ -63,6 +63,21 @@ describe('DashboardPlaceholderGrid (Story 18.12)', () => {
     expect(screen.queryByText('No certificate or domain records added yet.')).toBeNull()
   })
 
+  it('Story 72-20: a forbidden read shows the role message, not the unavailable or empty copy', () => {
+    render(DashboardPlaceholderGrid, {
+      props: {
+        hasCredentials: true,
+        certificates: { status: 'forbidden', count: 0 },
+        domains: { status: 'forbidden', count: 0 },
+      },
+    })
+
+    expect(screen.getByText('Certificates are not available for your role.')).toBeTruthy()
+    expect(screen.getByText('Domains are not available for your role.')).toBeTruthy()
+    expect(screen.queryByText('Certificates unavailable right now.')).toBeNull()
+    expect(screen.queryByText('No certificate or domain records added yet.')).toBeNull()
+  })
+
   it('AC-5: loading state shows skeleton copy instead of an empty state', () => {
     render(DashboardPlaceholderGrid, {
       props: {
