@@ -82,6 +82,31 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
+ * Inserts the membership row in a savepoint. Returns `false` when the `(project_id, user_id)`
+ * primary key lost a concurrent double add (the caller's transaction stays usable), `true` on
+ * insert. Split out so the 23505 path is testable deterministically.
+ */
+export async function insertProjectMembershipOrConflict(
+  tx: Tx,
+  input: { orgId: string; projectId: string; userId: string; role: AddMemberRole }
+): Promise<boolean> {
+  try {
+    await tx.transaction((inner) =>
+      inner.insert(projectMemberships).values({
+        orgId: input.orgId,
+        projectId: input.projectId,
+        userId: input.userId,
+        role: input.role,
+      })
+    )
+  } catch (error) {
+    if (isUniqueViolation(error)) return false
+    throw error
+  }
+  return true
+}
+
+/**
  * Story 72-14: add an EXISTING active user of the caller's org to a project. Callers MUST have run
  * the project-exists/archived checks and the manage-members authorization first. The target is
  * looked up through `org_memberships` (RLS-scoped to the ambient org, `status = 'active'`), so a
@@ -117,23 +142,13 @@ export async function addExistingOrgUserToProject(
       )
     )
     .limit(1)
+    // Share lock: a concurrent deactivation waits for this add instead of racing the read.
+    .for('share')
   if (!target) return { status: 'user_not_found' }
 
   if (await getProjectMembershipRole(tx, input)) return { status: 'already_member' }
 
-  try {
-    await tx.transaction((inner) =>
-      inner.insert(projectMemberships).values({
-        orgId: input.orgId,
-        projectId: input.projectId,
-        userId: input.userId,
-        role: input.role,
-      })
-    )
-  } catch (error) {
-    if (isUniqueViolation(error)) return { status: 'already_member' }
-    throw error
-  }
+  if (!(await insertProjectMembershipOrConflict(tx, input))) return { status: 'already_member' }
   return {
     status: 'added',
     member: {

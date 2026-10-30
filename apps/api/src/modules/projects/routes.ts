@@ -70,7 +70,7 @@ import {
   removeProjectMembership,
 } from './member-management.js'
 import { effectiveProjectRoleForCaller, requireProjectVisible } from './project-access.js'
-import { requireMfaEnrollmentStrict } from '../auth/mfa-enforcement.js'
+import { rejectIfUserNotMfaEnrolled, requireMfaEnrollmentStrict } from '../auth/mfa-enforcement.js'
 import {
   findDeleteBlockers,
   listDeletedProjects,
@@ -92,10 +92,27 @@ import { operationalLog } from '../../lib/logger.js'
 import { raceWithTimeout } from '../../lib/race-with-timeout.js'
 import { EXTENSION_CALLOUT_TIMEOUT_MS } from '../../lib/extension-callout-timeout.js'
 import { orgRoleOrDeny } from '../../lib/auth-role.js'
+import type { OrgRole } from '../../plugins/require-org-role.js'
 
 const PROJECT_URL = '/:projectId'
 // Story 72-14: refusals of the add-member route; the target-not-found body is the same for a
 // nonexistent, cross-org and deactivated user (no existence oracle).
+/**
+ * 72-14: the strict MFA gate on the route only covers org owner/admin. A project admin/owner with
+ * a lower org role can also grant access, so they need MFA enrollment too (grace ignored). Returns
+ * the caller's effective role, or `null` after sending the 403 `mfa_required`.
+ */
+async function resolveRoleOrRejectUnenrolledProjectAdmin(
+  secureCtx: SecureRouteContext,
+  reply: FastifyReply,
+  projectId: string
+): Promise<OrgRole | null> {
+  const role = await effectiveProjectRoleForCaller(secureCtx.tx, secureCtx.auth, projectId)
+  const grantsAccess = role === 'admin' || role === 'owner'
+  if (grantsAccess && (await rejectIfUserNotMfaEnrolled(reply, secureCtx.auth.userId))) return null
+  return role
+}
+
 const ADD_MEMBER_REFUSALS = {
   role_above_caller: {
     status: 403,
@@ -1155,6 +1172,7 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
         .from(projects)
         .where(eq(projects.id, params.projectId))
         .limit(1)
+        .for('share')
       if (!project || project.deletedAt !== null) return reply.status(404).send(PROJECT_NOT_FOUND)
       if (project.archivedAt !== null) return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
 
@@ -1167,6 +1185,13 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
         return reply
       }
 
+      const callerEffectiveRole = await resolveRoleOrRejectUnenrolledProjectAdmin(
+        secureCtx,
+        reply,
+        params.projectId
+      )
+      if (callerEffectiveRole === null) return reply
+
       const parsed = parseBody(AddProjectMemberBodySchema, req, reply)
       if (!parsed.success) return reply
 
@@ -1175,11 +1200,7 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
         projectId: params.projectId,
         userId: parsed.data.userId,
         role: parsed.data.role,
-        callerEffectiveRole: await effectiveProjectRoleForCaller(
-          secureCtx.tx,
-          secureCtx.auth,
-          params.projectId
-        ),
+        callerEffectiveRole,
       })
       if (result.status !== 'added') {
         return reply

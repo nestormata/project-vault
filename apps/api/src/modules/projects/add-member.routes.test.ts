@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { withOrg } from '@project-vault/db'
-import { orgMemberships, projects } from '@project-vault/db/schema'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { getDb, withOrg } from '@project-vault/db'
+import { orgMemberships, projects, users } from '@project-vault/db/schema'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -14,7 +14,11 @@ import { archiveAuditRowsFor } from '../../__tests__/helpers/archive-audit-test-
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { forEachSequential } from '../../lib/for-each-sequential.js'
-import { addExistingOrgUserToProject } from './member-management.js'
+import * as humanEntry from '../audit/human-entry.js'
+import {
+  addExistingOrgUserToProject,
+  insertProjectMembershipOrConflict,
+} from './member-management.js'
 import { bootProjectRouteTestApp } from './project-route-test-bootstrap.js'
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
@@ -318,6 +322,84 @@ describe('POST /api/v1/projects/:projectId/members (Story 72-14)', () => {
     })
     expect(res.statusCode).toBe(403)
     expect(res.json()).toMatchObject({ code: 'mfa_required' })
+  })
+
+  it.each(['viewer', 'member'])(
+    'refuses a project admin with org role %s who is not MFA-enrolled: 403 mfa_required, no write',
+    async (orgRole) => {
+      const owner = await registerOwner(app, `pamfa-${orgRole}-owner`)
+      const project = await createProject(app, owner.cookies, `pamfa-${orgRole}-proj`)
+      const admin = await addUserToOrg(app, owner.orgId, `pamfa-${orgRole}`, { orgRole })
+      await addProjectMember(owner.orgId, project, admin.userId, 'admin')
+      await getDb().update(users).set({ mfaEnrolledAt: null }).where(eq(users.id, admin.userId))
+      const jordan = await addUserToOrg(app, owner.orgId, `pamfa-${orgRole}-jordan`)
+
+      const res = await addMember(app, admin.cookies, project, {
+        userId: jordan.userId,
+        role: 'viewer',
+      })
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toMatchObject({ code: 'mfa_required' })
+      expect(await projectRoleOf(owner.orgId, project, jordan.userId)).toBeUndefined()
+      expect(await addedAuditCount(owner.orgId, jordan.userId)).toBe(0)
+
+      await getDb()
+        .update(users)
+        .set({ mfaEnrolledAt: new Date() })
+        .where(eq(users.id, admin.userId))
+      const retry = await addMember(app, admin.cookies, project, {
+        userId: jordan.userId,
+        role: 'viewer',
+      })
+      expect(retry.statusCode).toBe(201)
+    }
+  )
+
+  it('reaches the unique-violation path deterministically and keeps the outer transaction usable', async () => {
+    const owner = await registerOwner(app, 'u23505-owner')
+    const project = await createProject(app, owner.cookies, 'u23505-proj')
+    const jordan = await addUserToOrg(app, owner.orgId, 'u23505-jordan')
+    const input = {
+      orgId: owner.orgId,
+      projectId: project,
+      userId: jordan.userId,
+      role: 'member' as const,
+    }
+
+    const outcome = await withOrg(owner.orgId, async (tx) => {
+      const first = await insertProjectMembershipOrConflict(tx, input)
+      const second = await insertProjectMembershipOrConflict(tx, input)
+      const usable = await addExistingOrgUserToProject(tx, {
+        ...input,
+        userId: owner.userId,
+        callerEffectiveRole: 'owner',
+      })
+      return { first, second, usable }
+    })
+    expect(outcome.first).toBe(true)
+    expect(outcome.second).toBe(false)
+    expect(outcome.usable).toStrictEqual({ status: 'already_member' })
+    expect(await projectRoleOf(owner.orgId, project, jordan.userId)).toBe('member')
+  })
+
+  it('rolls the insert back when the audit write fails', async () => {
+    const owner = await registerOwner(app, 'auditfail-owner')
+    const project = await createProject(app, owner.cookies, 'auditfail-proj')
+    const jordan = await addUserToOrg(app, owner.orgId, 'auditfail-jordan')
+    const spy = vi
+      .spyOn(humanEntry, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error('audit store down'))
+    try {
+      const res = await addMember(app, owner.cookies, project, {
+        userId: jordan.userId,
+        role: 'member',
+      })
+      expect(res.statusCode).toBeGreaterThanOrEqual(500)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(await projectRoleOf(owner.orgId, project, jordan.userId)).toBeUndefined()
+    expect(await addedAuditCount(owner.orgId, jordan.userId)).toBe(0)
   })
 
   it('rate-limits at 30 per minute with the body-shape 429', async () => {
