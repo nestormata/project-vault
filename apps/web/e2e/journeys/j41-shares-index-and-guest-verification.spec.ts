@@ -9,7 +9,10 @@ import {
   GUEST_TEST_CODE,
   GUEST_WRONG_CODE,
   createExternalShareViaUi,
+  actUntilAnswered,
   openGuestShare,
+  sendGuestCode,
+  submitGuestCode,
   plantVerificationCode,
   tokenFromShareUrl,
 } from '../fixtures/guest-verification.js'
@@ -51,6 +54,8 @@ async function startAsSharer(page: Page, context: BrowserContext): Promise<Share
     field1Value: USERNAME_VALUE,
     field2Value: PASSWORD_VALUE,
   })
+  // `createLoginTemplateCredentialViaUi` resolves on `/credentials/new` already: wait for the id.
+  await expect(page).toHaveURL(/\/credentials\/[0-9a-f-]{36}$/)
   const credentialId = new URL(page.url()).pathname.split('/').pop() as string
   return { projectId: project.id, credentialId, credentialName }
 }
@@ -82,21 +87,13 @@ function indexRow(page: Page, credentialName: string) {
   return page.getByRole('listitem').filter({ hasText: credentialName })
 }
 
-async function submitCode(page: Page, code: string): Promise<void> {
-  const answered = page.waitForResponse((response) =>
-    response.url().includes('/verification/confirm')
-  )
-  await page.getByLabel('6-digit code').fill(code)
-  await page.getByRole('button', { name: 'Verify code' }).click()
-  await answered
-}
-
 describeEachAppearance('J41 shares index and guest verification', (appearance) => {
   test('AC1/AC2/AC5/AC6: index lists the share, the guest verifies the emailed code, the share reads Opened', async ({
     page,
     context,
     browser,
   }) => {
+    test.slow()
     const sharer = await startAsSharer(page, context)
     const recipientEmail = `j41-${randomUUID().slice(0, 8)}@vendor.example`
     const link = await createExternalShareViaUi(page, {
@@ -131,7 +128,7 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     await expect(guest.getByRole('button', { name: REVEAL_BUTTON })).toHaveCount(0)
 
     // Send the code: resend is disabled with a visible countdown.
-    await guest.getByRole('button', { name: 'Send code' }).click()
+    await sendGuestCode(guest)
     const resend = guest.getByRole('button', { name: /Resend code in \d+ s/ })
     await expect(resend).toBeDisabled()
     const secondsLeft = async () =>
@@ -144,9 +141,9 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     await plantVerificationCode({ recipientEmail, rawToken: token, sendCount: 1 })
 
     // A wrong code shows one generic message; a right code unlocks the reveal.
-    await submitCode(guest, GUEST_WRONG_CODE)
+    await submitGuestCode(guest, GUEST_WRONG_CODE)
     await expect(guest.getByRole('alert')).toContainText(WRONG_CODE_TEXT)
-    await submitCode(guest, GUEST_TEST_CODE)
+    await submitGuestCode(guest, GUEST_TEST_CODE)
     await guest.getByRole('button', { name: REVEAL_BUTTON }).click()
     await expect(guest.getByText(USERNAME_VALUE, { exact: true })).toBeVisible()
     await expectNoHorizontalOverflow(guest)
@@ -169,6 +166,7 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     context,
     browser,
   }) => {
+    test.slow()
     const sharer = await startAsSharer(page, context)
     const recipientEmail = `j41-lock-${randomUUID().slice(0, 8)}@vendor.example`
     const token = tokenFromShareUrl(
@@ -178,26 +176,28 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     const guestContext = await newGuest(browser, appearance)
     const guest = await guestContext.newPage()
     await openGuestShare(guest, token)
-    await guest.getByRole('button', { name: 'Send code' }).click()
+    await sendGuestCode(guest)
     await plantVerificationCode({ recipientEmail, rawToken: token, sendCount: 1 })
 
     // Five failed attempts, one after another (the cap is per share and each is counted).
     await Array.from({ length: 5 }).reduce<Promise<void>>(
       (previous) =>
         previous.then(async () => {
-          await submitCode(guest, GUEST_WRONG_CODE)
+          await submitGuestCode(guest, GUEST_WRONG_CODE)
           await expect(guest.getByRole('alert')).toContainText(WRONG_CODE_TEXT)
         }),
       Promise.resolve()
     )
     // Even the right code no longer works.
-    await submitCode(guest, GUEST_TEST_CODE)
+    await submitGuestCode(guest, GUEST_TEST_CODE)
     await expect(guest.getByRole('alert')).toContainText(WRONG_CODE_TEXT)
     await expect(guest.getByRole('button', { name: REVEAL_BUTTON })).toHaveCount(0)
 
-    // A fresh visit gets the same dead-link page as an unknown token: nothing to continue with.
+    // A fresh visit shows the closed link and nothing to continue with: no code step, no reveal.
     await guest.reload()
-    await expect(guest.getByText(/invalid, has expired, or has already been used/)).toBeVisible()
+    await expect(guest.getByText('This link is no longer active.')).toBeVisible()
+    await expect(guest.getByLabel('6-digit code')).toHaveCount(0)
+    await expect(guest.getByRole('button', { name: REVEAL_BUTTON })).toHaveCount(0)
     await expect(guest.getByRole('button', { name: 'Send code' })).toHaveCount(0)
     await guestContext.close()
 
@@ -233,6 +233,7 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     context,
     browser,
   }) => {
+    test.slow()
     await startAsSharer(page, context)
     const recipientEmail = `j41-kbd-${randomUUID().slice(0, 8)}@vendor.example`
     const token = tokenFromShareUrl(
@@ -246,7 +247,7 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     // Tab to "Send code", Enter sends it.
     await guest.keyboard.press('Tab')
     await expect(guest.getByRole('button', { name: 'Send code' })).toBeFocused()
-    await guest.keyboard.press('Enter')
+    await actUntilAnswered(guest, 'send', () => guest.keyboard.press('Enter'))
     await expect(guest.getByRole('button', { name: /Resend code in \d+ s/ })).toBeDisabled()
     await plantVerificationCode({ recipientEmail, rawToken: token, sendCount: 1 })
 
@@ -257,7 +258,7 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     await guest.keyboard.type(GUEST_TEST_CODE)
     await guest.keyboard.press('Tab')
     await expect(guest.getByRole('button', { name: 'Verify code' })).toBeFocused()
-    await guest.keyboard.press('Enter')
+    await actUntilAnswered(guest, 'confirm', () => guest.keyboard.press('Enter'))
 
     // The reveal step is the next stop for the keyboard too.
     const reveal = guest.getByRole('button', { name: REVEAL_BUTTON })

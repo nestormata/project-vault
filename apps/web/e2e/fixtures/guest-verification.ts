@@ -99,6 +99,58 @@ export async function openGuestShare(page: Page, rawToken: string): Promise<void
   )
 }
 
+/** Which of the two guest verification routes a request belongs to. */
+type GuestRoute = 'send' | 'confirm'
+
+function isGuestRoute(url: string, route: GuestRoute): boolean {
+  const path = new URL(url).pathname
+  return path.endsWith(route === 'send' ? '/verification' : '/verification/confirm')
+}
+
+// The send route allows 10 and the confirm route 20 requests a minute per IP, and the web proxy
+// does not forward the client address, so every journey of the suite shares one bucket. A run of
+// several appearances can reach it: a 429 means "not counted, try again after the window", never a
+// product failure. Waiting out the window keeps the journeys deterministic; callers use
+// `test.slow()` for the extra time.
+const RATE_LIMIT_WINDOW_WAIT_MS = 20_000
+const RATE_LIMIT_RETRIES = 4
+
+/**
+ * Runs `act` (the click or key press that fires one guest verification request) and returns once
+ * the request was answered by something other than 429. After a 429 it waits and acts again.
+ */
+export async function actUntilAnswered(
+  page: Page,
+  route: GuestRoute,
+  act: () => Promise<void>,
+  retriesLeft = RATE_LIMIT_RETRIES
+): Promise<void> {
+  const answered = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && isGuestRoute(response.url(), route)
+  )
+  await act()
+  const status = (await answered).status()
+  if (status !== 429) return
+  if (retriesLeft === 0) throw new Error(`guest ${route} stayed rate limited`)
+  await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_WINDOW_WAIT_MS))
+  await actUntilAnswered(page, route, act, retriesLeft - 1)
+}
+
+/** Presses "Send code" (waiting out a rate limit) and returns once the request was answered. */
+export async function sendGuestCode(page: Page): Promise<void> {
+  await actUntilAnswered(page, 'send', () =>
+    page.getByRole('button', { name: 'Send code' }).click()
+  )
+}
+
+/** Types `code` and presses "Verify code" (waiting out a rate limit); returns once answered. */
+export async function submitGuestCode(page: Page, code: string): Promise<void> {
+  await actUntilAnswered(page, 'confirm', async () => {
+    await page.getByLabel('6-digit code').fill(code)
+    await page.getByRole('button', { name: 'Verify code' }).click()
+  })
+}
+
 interface GuestCodeStep {
   recipientEmail: string
   rawToken: string
@@ -111,15 +163,14 @@ interface GuestCodeStep {
  */
 export async function completeGuestCodeStep(page: Page, step: GuestCodeStep): Promise<void> {
   const code = step.code ?? GUEST_TEST_CODE
-  await page.getByRole('button', { name: 'Send code' }).click()
+  await sendGuestCode(page)
   await plantVerificationCode({
     recipientEmail: step.recipientEmail,
     rawToken: step.rawToken,
     sendCount: 1,
     code,
   })
-  await page.getByLabel('6-digit code').fill(code)
-  await page.getByRole('button', { name: 'Verify code' }).click()
+  await submitGuestCode(page, code)
   await expect(page.getByRole('button', { name: 'Reveal secret' })).toBeVisible()
 }
 
