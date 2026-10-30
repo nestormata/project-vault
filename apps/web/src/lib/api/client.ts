@@ -9,6 +9,8 @@ export type ApiFailure = {
   // pages tell it apart from coded errors by its `status` field (Story 68.1: typed, was implicit).
   status?: string
   code?: string
+  // Story 72.11: the closed `reason` of a sharer-side share error (additive next to `code`).
+  reason?: string
   error?: string
   message?: string
   details?: unknown
@@ -19,6 +21,7 @@ export type ApiFailure = {
 export class ApiClientError extends Error {
   readonly status: number
   readonly code?: string
+  readonly reason?: string
   readonly details?: unknown
   readonly body: ApiFailure | null
 
@@ -27,6 +30,7 @@ export class ApiClientError extends Error {
     this.name = 'ApiClientError'
     this.status = status
     this.code = body?.code ?? body?.error
+    this.reason = body?.reason
     this.details = body?.details
     this.body = body
   }

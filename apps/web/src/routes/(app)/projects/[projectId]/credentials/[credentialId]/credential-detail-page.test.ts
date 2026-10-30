@@ -2142,6 +2142,7 @@ describe('credential detail +page.svelte', () => {
         firstViewedAt: null,
         viewCount: 0,
         status: 'revoked',
+        displayStatus: 'revoked',
       })
       render(CredentialDetailPage, {
         props: {
@@ -2335,6 +2336,7 @@ describe('credential detail +page.svelte', () => {
           firstViewedAt: null,
           viewCount: 0,
           status: 'revoked',
+          displayStatus: 'revoked',
         })
         render(CredentialDetailPage, {
           props: {

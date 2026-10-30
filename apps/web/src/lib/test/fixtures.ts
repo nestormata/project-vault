@@ -105,6 +105,9 @@ export function sampleShare(
     firstViewedAt: null,
     viewCount: 0,
     status: 'active',
+    displayStatus: 'active',
+    lockedAt: null,
+    verificationRequired: false,
     ...overrides,
   }
 }

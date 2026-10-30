@@ -8,6 +8,8 @@
     revealShareValue,
   } from '$lib/components/credential-shares/reveal-state.svelte.js'
   import ShareRevealContent from '$lib/components/credential-shares/ShareRevealContent.svelte'
+  import ExternalShareVerification from '$lib/components/credential-shares/ExternalShareVerification.svelte'
+  import { m } from '$lib/paraglide/messages.js'
   import SharedCredentialSummary from '$lib/components/credential-shares/SharedCredentialSummary.svelte'
 
   let {
@@ -22,13 +24,21 @@
     children?: Snippet
   } = $props()
 
+  // Story 72.11 V8: the proof of a verified gated share lives in this component's memory only (never
+  // the URL, web storage or a cookie); it is sent in the reveal body and dropped once used.
+  let proof = $state<string | null>(null)
+  const needsVerification = $derived(metadata?.verificationRequired === true && proof === null)
+
   async function onReveal(): Promise<void> {
     if (reveal.revealing || !metadata) return
+    const heldProof = proof ?? undefined
     await revealShareValue(
       reveal,
-      () => revealExternalCredentialShare(fetch, token),
+      () => revealExternalCredentialShare(fetch, token, heldProof),
       mapShareRevealError
     )
+    // Dropped on success only: a failed reveal keeps it so the page shows the terminal reason.
+    if (reveal.revealedValue !== null) proof = null
   }
   // Story 17.2 AC-9: two-step reveal, never on first request — this only fires on Priya's
   // explicit "Reveal secret" button click, mirroring 17.1's own reveal-page pattern. Unlike
@@ -48,15 +58,24 @@
     <SharedCredentialSummary
       sharedByLabel={metadata.sharedByDisplayName}
       credentialName={metadata.credentialName}
-      fieldKey={metadata.fieldKey}
-      attributeKeys={metadata.attributeKeys}
+      fieldKey={metadata.fieldKey ?? null}
+      attributeKeys={metadata.attributeKeys ?? null}
       expiresAt={metadata.expiresAt}
       expiryNote="single view only"
     />
 
     {#if metadata.status !== 'active'}
       <p class="mt-4 text-sm text-red-700">This link is no longer active.</p>
+    {:else if needsVerification && reveal.revealedValue === null}
+      <ExternalShareVerification
+        {token}
+        maskedRecipient={metadata.maskedRecipient ?? ''}
+        onVerified={(verifiedProof) => (proof = verifiedProof)}
+      />
     {:else}
+      {#if metadata.verificationRequired && reveal.revealedValue === null}
+        <p class="mt-4 text-sm text-emerald-800" role="status">{m.guest_verify_verified()}</p>
+      {/if}
       <ShareRevealContent
         revealedValue={reveal.revealedValue}
         valueFormat={reveal.revealedValueFormat}

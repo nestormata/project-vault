@@ -36,7 +36,7 @@ describe('PrimaryNav variant="bottom"', () => {
     const inMore = within(more())
       .getAllByRole('link')
       .map((a) => a.textContent?.trim())
-    expect(inMore).toEqual(['Health', 'Settings', 'Platform Admin'])
+    expect(inMore).toEqual(['Shares', 'Health', 'Settings', 'Platform Admin'])
     // Search is an action: it is in More, a button.
     expect(within(more()).getByRole('button', { name: /search/i })).toBeTruthy()
   })

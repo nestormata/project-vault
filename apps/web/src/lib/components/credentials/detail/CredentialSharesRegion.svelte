@@ -59,5 +59,7 @@
     {sharesPage}
     {sharesStatus}
     {orgMembers}
+    {pointProps}
+    {data}
   /><InjectionPoint name="credential.detail.shares" props={pointProps} {data} />
 </section>

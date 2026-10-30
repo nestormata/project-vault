@@ -11,6 +11,7 @@
   } from '$lib/api/credential-shares.js'
   import type { OrgUser } from '$lib/api/org-users.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import CredentialShareFieldHelp from './CredentialShareFieldHelp.svelte'
   import {
     archivedBannerFor,
     canRevealCredential,
@@ -20,6 +21,11 @@
     type CredentialPointExtras,
   } from '$lib/credentials/credential-detail-helpers.js'
   import { formatDateTime } from '$lib/components/rotations/rotation-copy.js'
+  import { shareErrorReasonMessage } from '$lib/api/share-error-reason.js'
+  import {
+    shareDisplayStatusBadgeClass,
+    shareDisplayStatusLabel,
+  } from '$lib/credentials/share-display-status.js'
   import { resetOn, withItem } from '$lib/utils/reset-on.js'
 
   // Story 69.2: the native sharer UI (create with step-up, one-time link, status filter, list,
@@ -39,6 +45,8 @@
     sharesPage,
     sharesStatus,
     orgMembers,
+    pointProps,
+    data,
   }: {
     credential: CredentialDetail
     projectId: string
@@ -51,6 +59,9 @@
     sharesPage?: number
     sharesStatus?: string | null
     orgMembers?: OrgUser[]
+    // Story 72.11: the region's point props and contributed data, for the field-help point only.
+    pointProps: CredentialPointExtras
+    data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 
   // Story 68.1 AC-3: display-once secrets and in-progress forms are cleared when the record changes
@@ -271,8 +282,11 @@
       if (!isCurrentCredential(requestKey)) return
       // Story 28.5 AC4/AC6: share creation now rejects with 410 against an archived secret.
       const archivedBanner = archivedBannerFor(error)
+      // Story 72.11 AC3: a typed `reason` wins over the raw API text, localized.
       shareError =
-        archivedBanner ?? (error instanceof Error ? error.message : 'Could not create share.')
+        archivedBanner ??
+        shareErrorReasonMessage(error) ??
+        (error instanceof Error ? error.message : 'Could not create share.')
     } finally {
       // Cleared after every attempt, success or failure — never retained beyond the single
       // submit, including when step-up itself is what failed.
@@ -290,7 +304,9 @@
       const updated = await revokeCredentialShare(fetch, projectId, credentialId, shareId)
       shareItems = shareItems.map((item) => (item.id === shareId ? updated : item))
     } catch (error) {
-      shareError = error instanceof Error ? error.message : 'Could not revoke share.'
+      shareError =
+        shareErrorReasonMessage(error) ??
+        (error instanceof Error ? error.message : 'Could not revoke share.')
     } finally {
       revokingShareId = null
     }
@@ -460,6 +476,7 @@
       {/each}
     </div>
     <FormHelpText id="share-attribute-keys-help" kind="checkbox" />
+    <CredentialShareFieldHelp {pointProps} {data} />
   </fieldset>
 
   {#if shareRecipientType === 'external'}
@@ -560,10 +577,8 @@
         <span class="text-slate-600">
           {share.firstViewedAt ? `viewed ${formatDateTime(share.firstViewedAt)}` : 'not viewed'}
         </span>
-        <span
-          class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold uppercase text-slate-700"
-        >
-          {share.status}
+        <span class="{shareDisplayStatusBadgeClass(share.displayStatus)} uppercase">
+          {shareDisplayStatusLabel(share.displayStatus)}
         </span>
         {#if share.status === 'active'}
           <button
