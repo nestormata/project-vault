@@ -349,6 +349,48 @@ for "copied" or "field changed" from its own UI actions: show only what the audi
 TOTP generation are rate-limited **per user** (a bucket per signed-in user, not per IP), and a refused reveal
 is indistinguishable from a missing credential for a caller who cannot see the project.
 
+## Projects: edit, links, delete with a grace period and restore
+
+Story 72-9. **Edit.** `PATCH /api/v1/projects/{projectId}` takes `name`, `description` and, new, `urls`
+(an array that replaces the whole list; `[]` clears it). Each URL is trimmed, absolute `http` or `https`,
+at most 2048 characters, without `user:password@`; at most 10, no case-insensitive duplicates. The overview
+(`GET .../{projectId}`) and the PATCH response return `urls`. **Who may edit:** an organization floor of `member`, then the project `owner` row, the organization `owner` or
+an organization `admin` (the archive rule plus the org admin; `projectEditAuthority` in `@project-vault/shared`),
+checked **before** the body is validated and before any archived or missing state is read, so a caller without
+it gets `403 insufficient_role` whatever they send. A project member who does not own the project, and an org
+viewer, get `403`. Delete and restore stay narrower (below). An archived project still answers `410`. The audit
+row is `project.updated` (it already existed) and its payload is now `{ authorizedVia, changedFields }`, with
+`authorizedVia` one of `project_owner`, `org_owner` or `org_admin`, and `changedFields` the **names** of the
+fields whose stored value differs (`name`, `description`, `urls`), never the values.
+
+**Delete.** `DELETE /api/v1/projects/{projectId}` (project owner or organization owner, MFA, 10 per minute)
+is a soft delete with a **30-day grace period** (`PROJECT_DELETE_GRACE_DAYS` in `@project-vault/shared`).
+Authorization is checked first (`403`, then `404` for a project the caller cannot see). The same two blockers as
+archive apply (`409 active_rotations`, `409 active_machine_user_keys`); active shares do **not** block, they are
+**revoked at delete time**, one `credential.share_revoked` row each with `reason: "project_deleted"`. The response is
+`{ id, name, slug, deletedAt, purgeAfter, revokedShareCount }`. The project is also archived (an existing archive
+time is kept), and from that moment **every route under `/projects/{projectId}` answers `404 project_not_found`**
+(reads and writes, PV's and an extension's), `GET /api/v1/projects` never lists it (not even with
+`includeArchived`), and the extension project-membership check denies it. The one exception is restore.
+Audit: `project.deleted` with `{ authorizedVia, purgeAfter, revokedShareCount, wasArchived }`.
+
+**Restore.** `POST /api/v1/projects/{projectId}/restore` (same authority and MFA; `409 not_deleted` otherwise)
+clears the deletion and returns the project **archived**: unarchive is a separate, explicit step. Shares revoked
+at delete time stay revoked. `GET /api/v1/projects/deleted` lists the deleted projects the caller may restore
+(an organization owner sees all of them, anyone else the projects they own). Audit: `project.restored`.
+
+**Purge.** The hourly `projects/purge-deleted` job (one transaction per organization and project, RLS bound)
+erases the data of a deleted project once `purgeAfter` has passed: its secrets with versions and shares,
+rotations, machine users and keys, monitoring records, invitations and memberships. The `projects` row stays as a
+**tombstone** (`purged_at` set; name `Purged project`, slug `purged-{id}`, no description, tags or links), because
+`audit_log_entries.project_id` references it and the audit log is append-only; the old slug is free again. The job
+writes `project.purged` in the same transaction as the erase. Audit rows are never touched. A purged project
+cannot be restored.
+
+Consumers: a CentralizeMe `openapi.composed.json` needs the new `urls` field, the `DELETE`, `restore` and `deleted`
+routes. The edit authority is not part of the OpenAPI document. Project export (`.../export`) does not carry `urls`, and a deleted project
+cannot be exported (`404`).
+
 ## See also
 
 - [`machine-users.md`](machine-users.md) — machine users, API keys, and the CI/CD retrieval flow.

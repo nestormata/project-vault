@@ -18,6 +18,10 @@ const effectiveProjectRoleForCaller = vi.fn()
 vi.mock('../modules/projects/project-access.js', () => ({
   effectiveProjectRoleForCaller: (...args: unknown[]) => effectiveProjectRoleForCaller(...args),
 }))
+const isProjectDeleted = vi.fn(async (..._args: unknown[]) => false)
+vi.mock('../modules/projects/project-lifecycle.js', () => ({
+  isProjectDeleted: (...args: unknown[]) => isProjectDeleted(...args),
+}))
 
 /**
  * Story 69.17 (DW-606) — the secureRoute project-role gate: every PV write under `:projectId`
@@ -67,6 +71,8 @@ function invoke(route: StubRoute, warn = vi.fn()) {
 
 beforeEach(() => {
   effectiveProjectRoleForCaller.mockReset()
+  isProjectDeleted.mockReset()
+  isProjectDeleted.mockResolvedValue(false)
 })
 
 describe('secureRoute project-role gate (Story 69.17)', () => {
@@ -130,6 +136,49 @@ describe('secureRoute project-role gate (Story 69.17)', () => {
 
     expect(handler).toHaveBeenCalledOnce()
     expect(effectiveProjectRoleForCaller).not.toHaveBeenCalled()
+  })
+
+  it('answers 404 project_not_found for a soft-deleted project on a read, before the handler (72-9)', async () => {
+    isProjectDeleted.mockResolvedValue(true)
+    const { route, handler } = register({ method: 'GET' })
+
+    const { reply } = await invoke(route)
+
+    expect(reply.statusCode).toBe(404)
+    expect(reply.body).toMatchObject({ code: 'project_not_found' })
+    expect(handler).not.toHaveBeenCalled()
+    expect(isProjectDeleted).toHaveBeenCalledWith(expect.anything(), PROJECT_ID)
+  })
+
+  it('answers 404 for a soft-deleted project on a write before the role gate runs (72-9)', async () => {
+    isProjectDeleted.mockResolvedValue(true)
+    const { route, handler } = register()
+
+    const { reply } = await invoke(route)
+
+    expect(reply.statusCode).toBe(404)
+    expect(handler).not.toHaveBeenCalled()
+    expect(effectiveProjectRoleForCaller).not.toHaveBeenCalled()
+  })
+
+  it('lets a route that opts in with includeDeletedProject reach its handler (72-9)', async () => {
+    isProjectDeleted.mockResolvedValue(true)
+    effectiveProjectRoleForCaller.mockResolvedValue('owner')
+    const { route, handler } = register({ security: { includeDeletedProject: true } })
+
+    await invoke(route)
+
+    expect(handler).toHaveBeenCalledOnce()
+    expect(isProjectDeleted).not.toHaveBeenCalled()
+  })
+
+  it('does not look for a deleted project on a route without :projectId (72-9)', async () => {
+    const { route, handler } = register({ url: '/:projectIdentifier/things' })
+
+    await invoke(route)
+
+    expect(handler).toHaveBeenCalledOnce()
+    expect(isProjectDeleted).not.toHaveBeenCalled()
   })
 
   it('never gates a write without a :projectId segment', async () => {

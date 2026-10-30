@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
 import { projectMemberships, projects } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
@@ -194,7 +194,8 @@ async function queryProjectInOrgAndMembershipRole(
         projectMemberships,
         and(eq(projectMemberships.projectId, projects.id), eq(projectMemberships.userId, userId))
       )
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      // Story 72-9: a soft-deleted project is not found, so every extension check is denied.
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1)
   )
   const [row] = rows

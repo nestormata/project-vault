@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { ProjectOverview } from '@project-vault/shared'
+  import { resolve } from '$app/paths'
+  import { page } from '$app/state'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
+  import { externalUrlParts } from './project-settings-logic.js'
+  import { canArchiveInProject } from '$lib/projects/project-write-access.js'
   import ArchivedBadge from './ArchivedBadge.svelte'
   import { formatDate } from '$lib/datetime.js'
 
@@ -10,6 +14,9 @@
     project,
     data,
   }: { project: ProjectOverview; data?: Record<string, readonly unknown[]> | undefined } = $props()
+
+  // Story 72-9: the settings page edits the project; its link shows when the API would allow it.
+  const canManage = $derived(canArchiveInProject(page.data.user?.orgRole, project))
 </script>
 
 <!-- @region project.detail.summary -->
@@ -31,8 +38,34 @@
         </li>
       {/each}
     </ul>
+  {/if}
+  {#if project.urls.length > 0}
+    <ul class="mt-3 space-y-1 text-sm">
+      {#each project.urls as url (url)}
+        {@const parts = externalUrlParts(url)}
+        {#if parts}
+          <li>
+            <a
+              class="break-all font-medium text-slate-800 underline"
+              href={`${parts.scheme}://${parts.rest}`}
+              target="_blank"
+              rel="noopener noreferrer">{url}</a
+            >
+          </li>
+        {/if}
+      {/each}
+    </ul>
   {/if}<InjectionPoint name="project.detail.summary" props={{ project }} {data} />
   <p class="mt-3 text-sm text-slate-500">
     Created {formatDate(project.createdAt)} · Your role: {project.role}
+    {#if canManage}
+      ·
+      <a
+        class="font-medium text-slate-800 underline"
+        href={resolve(`/projects/${project.id}/settings`)}
+      >
+        Project settings
+      </a>
+    {/if}
   </p>
 </div>

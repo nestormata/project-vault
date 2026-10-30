@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import { orgMemberships, projectMemberships, projects, users } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
@@ -66,7 +66,7 @@ export function invitationTokenRoutes(fastify: FastifyApp): Promise<void> {
         tx
           .select({ name: projects.name })
           .from(projects)
-          .where(eq(projects.id, invitation.projectId))
+          .where(and(eq(projects.id, invitation.projectId), isNull(projects.deletedAt)))
           .limit(1)
       )
       const [existingUser] = await getDb()

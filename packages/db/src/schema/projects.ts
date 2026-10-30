@@ -23,6 +23,20 @@ export const projects = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+    // Story 72-9: reference links for the project (http/https only, validated by the API).
+    urls: jsonb('urls')
+      .notNull()
+      .default(sql`'[]'::jsonb`)
+      .$type<string[]>(),
+    // Story 72-9: soft delete with a grace period. A deleted project is also archived
+    // (`archived_at` is set at delete time), so every archive-aware reader already hides it; the
+    // API treats it as not found, and the purge job removes the row once `purge_after` passes.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references(() => users.id, { onDelete: 'set null' }),
+    purgeAfter: timestamp('purge_after', { withTimezone: true }),
+    // Story 72-9: set when the purge job erased the data; the row stays as a tombstone because
+    // audit_log_entries.project_id references it and the audit log is append-only.
+    purgedAt: timestamp('purged_at', { withTimezone: true }),
   },
   (t) => ({
     orgSlugUnique: uniqueIndex('idx_projects_org_slug').on(t.orgId, t.slug),
@@ -30,5 +44,8 @@ export const projects = pgTable(
       .on(t.creationRequestId)
       .where(sql`${t.creationRequestId} IS NOT NULL`),
     orgCreatedIdx: index('idx_projects_org_created').on(t.orgId, t.createdAt.desc()),
+    purgeDueIdx: index('idx_projects_purge_due')
+      .on(t.purgeAfter)
+      .where(sql`${t.deletedAt} IS NOT NULL AND ${t.purgedAt} IS NULL`),
   })
 )

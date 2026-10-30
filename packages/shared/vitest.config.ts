@@ -25,6 +25,8 @@ export default mergeConfig(baseVitestConfig, {
         'src/schemas/auth.ts',
         'src/schemas/org-sso-domains.ts',
         'src/schemas/password-strength.ts',
+        // Story 72-9: the project URL rules shared by the API and the web.
+        'src/schemas/projects.ts',
         'src/utils/absolute-url.ts',
         'src/utils/service-provisioned-email.ts',
         // Story 69.20: the archive rule shared by the API and the web (archive-authority.test.ts).

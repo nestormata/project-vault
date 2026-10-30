@@ -47,6 +47,12 @@
     >
       {includeArchived ? 'Hide archived' : 'Show archived'}
     </button>
+    <a
+      class="text-center text-sm font-medium text-slate-600 underline"
+      href={resolve('/projects/deleted')}
+    >
+      Deleted projects
+    </a>
   </div>
 </div>
 {@render children?.()}

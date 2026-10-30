@@ -1,8 +1,10 @@
 import {
   ProjectArchiveStateSchema,
   ProjectDashboardSchema,
+  DeletedProjectSchema,
   ProjectDetailSchema,
   ProjectOverviewSchema,
+  ProjectUrlsSchema,
   ProjectSummarySchema,
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
@@ -34,6 +36,8 @@ export const PatchProjectBodySchema = z
   .object({
     name: z.string().trim().min(1).max(128).optional(),
     description: z.string().max(512).trim().nullable().optional(),
+    // Story 72-9: replaces the whole list (an empty array clears it).
+    urls: ProjectUrlsSchema.optional(),
     slug: z.string().optional(),
   })
   .strict()
@@ -73,10 +77,33 @@ export const PatchProjectResponseSchema = z
       name: z.string(),
       slug: z.string(),
       description: z.string().nullable(),
+      urls: z.array(z.string()),
       updatedAt: z.iso.datetime(),
     }),
   })
   .meta({ id: 'PatchProjectResponse' })
+
+// Story 72-9: soft delete with a grace period.
+export const DeleteProjectResponseSchema = z
+  .object({
+    data: z.object({
+      id: z.uuid(),
+      name: z.string(),
+      slug: z.string(),
+      deletedAt: z.iso.datetime(),
+      purgeAfter: z.iso.datetime(),
+      revokedShareCount: z.number().int().nonnegative(),
+    }),
+  })
+  .meta({ id: 'DeleteProjectResponse' })
+
+export const RestoreProjectResponseSchema = z
+  .object({ data: ProjectArchiveStateSchema })
+  .meta({ id: 'RestoreProjectResponse' })
+
+export const DeletedProjectsListResponseSchema = z
+  .object({ data: z.object({ items: z.array(DeletedProjectSchema) }) })
+  .meta({ id: 'DeletedProjectsListResponse' })
 
 export const ProjectTagUpdateResponseSchema = z
   .object({ data: z.object({ id: z.uuid(), tags: z.array(z.string()) }) })

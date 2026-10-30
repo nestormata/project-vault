@@ -1,0 +1,56 @@
+<script lang="ts">
+  import { PROJECT_DELETE_GRACE_DAYS } from '@project-vault/shared'
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
+  import ProjectDeleteZone from '$lib/components/projects/ProjectDeleteZone.svelte'
+  import ProjectSettingsNotFound from '$lib/components/projects/ProjectSettingsNotFound.svelte'
+  import ProjectSettingsForm from '$lib/components/projects/ProjectSettingsForm.svelte'
+  import ProjectSettingsHeader from '$lib/components/projects/ProjectSettingsHeader.svelte'
+  import { canArchiveInProject, canEditProject } from '$lib/projects/project-write-access.js'
+
+  let { data } = $props()
+
+  // The same rules as the API; they only decide which controls show. Edit: project owner, org owner
+  // or org admin. Delete: project owner or org owner.
+  const canEdit = $derived(canEditProject(data.orgRole, data.project))
+  const canManage = $derived(canArchiveInProject(data.orgRole, data.project))
+</script>
+
+<svelte:head>
+  <title
+    >{data.project
+      ? `Settings: ${data.project.name} | Project Vault`
+      : 'Project settings | Project Vault'}</title
+  >
+</svelte:head>
+
+<InjectionPoint name="project.settings.before" data={data.__inject} />
+<InjectionPoint name="project.settings.header.actions" data={data.__inject} />
+<section class="mx-auto max-w-2xl space-y-6">
+  {#if data.notFound || !data.project}
+    <!-- @region project.settings.not-found -->
+    <ProjectSettingsNotFound>
+      <InjectionPoint name="project.settings.not-found" data={data.__inject} />
+    </ProjectSettingsNotFound>
+  {:else}
+    {@const project = data.project}
+    <!-- @region project.settings.header -->
+    <ProjectSettingsHeader projectId={project.id} name={project.name} {canEdit} {canManage}>
+      <InjectionPoint name="project.settings.header" data={data.__inject} />
+    </ProjectSettingsHeader>
+
+    {#if canEdit}
+      <!-- @region project.settings.form -->
+      <ProjectSettingsForm {project} data={data.__inject}>
+        <InjectionPoint name="project.settings.form" data={data.__inject} />
+      </ProjectSettingsForm>
+    {/if}
+
+    {#if canManage}
+      <!-- @region project.settings.delete -->
+      <ProjectDeleteZone {project} graceDays={PROJECT_DELETE_GRACE_DAYS}>
+        <InjectionPoint name="project.settings.delete" data={data.__inject} />
+      </ProjectDeleteZone>
+    {/if}
+  {/if}
+</section>
+<InjectionPoint name="project.settings.after" data={data.__inject} />

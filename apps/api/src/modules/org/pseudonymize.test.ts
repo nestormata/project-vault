@@ -308,9 +308,7 @@ describe('POST /api/v1/org/users/:userId/pseudonymize', () => {
       })
       expect(res.statusCode).toBe(403)
     }
-  }, // Story 10.4: 4 real user registrations + 3 sequential requests; previously relied on the
-  // global testTimeout default (raised 45s->60s) but has still been observed timing out at
-  // exactly that boundary under this session's shared-machine contention.
+  }, // exactly that boundary under this session's shared-machine contention. // global testTimeout default (raised 45s->60s) but has still been observed timing out at // Story 10.4: 4 real user registrations + 3 sequential requests; previously relied on the
   90_000)
 
   it('AC-20 edge case: 404 (not 403) for a target who only belongs to a different org', async () => {

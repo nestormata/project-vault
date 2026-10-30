@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   canArchiveInProject,
+  canEditProject,
   canWriteInProject,
   effectiveProjectRole,
 } from './project-write-access.js'
@@ -92,5 +93,28 @@ describe('canArchiveInProject (Story 69.20, DW-618)', () => {
     expect(canArchiveInProject('owner', null)).toBe(false)
     expect(canArchiveInProject('owner', undefined)).toBe(false)
     expect(canArchiveInProject(undefined, { role: 'owner' })).toBe(false)
+  })
+})
+
+describe('canEditProject (Story 72-9)', () => {
+  it.each([
+    ['member', 'owner', true],
+    ['admin', 'owner', true],
+    ['owner', 'member', true],
+    ['admin', 'admin', true],
+    ['admin', 'member', true],
+    ['admin', 'viewer', true],
+    ['member', 'admin', false],
+    ['member', 'member', false],
+    ['member', 'viewer', false],
+    ['viewer', 'viewer', false],
+    ['viewer', 'owner', false],
+  ] as const)('org %s with project role %s -> %s', (orgRole, projectRole, expected) => {
+    expect(canEditProject(orgRole, { role: projectRole })).toBe(expected)
+  })
+
+  it('hides the form without a project or an org role', () => {
+    expect(canEditProject('admin', null)).toBe(false)
+    expect(canEditProject(undefined, { role: 'owner' })).toBe(false)
   })
 })

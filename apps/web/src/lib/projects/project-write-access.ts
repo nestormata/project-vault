@@ -1,4 +1,4 @@
-import { archiveAuthority } from '@project-vault/shared'
+import { archiveAuthority, projectEditAuthority } from '@project-vault/shared'
 
 export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
 
@@ -38,4 +38,10 @@ export function canArchiveInProject(
   project: ProjectWithRole
 ): boolean {
   return project != null && archiveAuthority(orgRole, project.role) !== null
+}
+
+/** Story 72-9: the project settings form shows when the API allows an edit (`projectEditAuthority`:
+ * the archive rule plus the org admin). Delete keeps `canArchiveInProject`. */
+export function canEditProject(orgRole: OrgRole | undefined, project: ProjectWithRole): boolean {
+  return project != null && projectEditAuthority(orgRole, project.role) !== null
 }

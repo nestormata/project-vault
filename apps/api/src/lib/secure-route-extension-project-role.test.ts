@@ -20,6 +20,10 @@ const effectiveProjectRoleForCaller = vi.fn()
 vi.mock('../modules/projects/project-access.js', () => ({
   effectiveProjectRoleForCaller: (...args: unknown[]) => effectiveProjectRoleForCaller(...args),
 }))
+const isProjectDeleted = vi.fn(async (..._args: unknown[]) => false)
+vi.mock('../modules/projects/project-lifecycle.js', () => ({
+  isProjectDeleted: (...args: unknown[]) => isProjectDeleted(...args),
+}))
 // Added routes take no `db` option; the gate and the handler run on this stub transaction.
 vi.mock('@project-vault/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@project-vault/db')>()),
@@ -96,6 +100,8 @@ function registerOverride(declaration: Record<string, unknown>, apiVersion: stri
 
 beforeEach(() => {
   effectiveProjectRoleForCaller.mockReset()
+  isProjectDeleted.mockReset()
+  isProjectDeleted.mockResolvedValue(false)
 })
 
 describe('resolveProjectRoleGate (Story 69.18 decision table)', () => {

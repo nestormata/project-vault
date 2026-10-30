@@ -19,6 +19,7 @@ const baseProject = {
   archivedAt: null,
   tags: [] as string[],
   memberCount: 1,
+  urls: [],
 }
 
 describe('project overview +page.svelte (AC-1/AC-2/AC-5)', () => {

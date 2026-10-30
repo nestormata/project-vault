@@ -743,6 +743,13 @@
       "when": 1791920009508,
       "tag": "0105_credential_share_acting_user",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1793258729884,
+      "tag": "0106_project_urls_and_soft_delete",
+      "breakpoints": true
     }
   ]
 }
