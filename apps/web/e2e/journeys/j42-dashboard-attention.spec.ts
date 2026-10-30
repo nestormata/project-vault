@@ -1,12 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
-import { enrollMfaViaApi, registerAndLoginViaApi, signInInvitee } from '../fixtures/auth.js'
-import {
-  createCredentialViaApi,
-  createInvitationViaApi,
-  createProjectViaApi,
-} from '../fixtures/api.js'
+import { registerAndLoginViaApi } from '../fixtures/auth.js'
+import { createCredentialViaApi, createProjectViaApi } from '../fixtures/api.js'
 import {
   describeEachAppearance,
   expectAppearanceApplied,
@@ -18,8 +14,8 @@ import {
   seedShare,
   userIdByEmail,
 } from '../fixtures/dashboard-attention.js'
-import { extractTokenFromAcceptUrl, readLatestInvitationAcceptUrl } from '../fixtures/db.js'
 import { gotoHydrated } from '../fixtures/hydration.js'
+import { inviteAndSignIn } from '../fixtures/invited-user.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
@@ -90,16 +86,13 @@ async function inviteMember(
   owner: Owner,
   browser: { newContext: () => Promise<BrowserContext> }
 ): Promise<{ memberPage: Page; memberId: string }> {
-  await enrollMfaViaApi(ownerContext)
-  const memberEmail = uniqueEmail('j42-member')
-  await createInvitationViaApi(ownerContext, owner.projectId, {
-    email: memberEmail,
+  const { page, email } = await inviteAndSignIn(ownerContext, browser, {
+    projectId: owner.projectId,
     role: 'member',
+    label: 'j42-member',
+    password: MEMBER_PASSWORD,
   })
-  const token = extractTokenFromAcceptUrl(await readLatestInvitationAcceptUrl(memberEmail))
-  const memberContext = await browser.newContext()
-  const memberPage = await signInInvitee(memberContext, memberEmail, token, MEMBER_PASSWORD)
-  return { memberPage, memberId: await userIdByEmail(memberEmail) }
+  return { memberPage: page, memberId: await userIdByEmail(email) }
 }
 
 describeEachAppearance('J42 dashboard attention', (appearance) => {
