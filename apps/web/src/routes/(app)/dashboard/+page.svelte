@@ -24,7 +24,11 @@
   <DashboardVaultSealed data={data?.__inject} />
 {:else}
   {#if data.orgDashboard}
-    <OrgSummarySection orgDashboard={data.orgDashboard} data={data?.__inject} />
+    <OrgSummarySection
+      orgDashboard={data.orgDashboard}
+      attention={data.attention}
+      data={data?.__inject}
+    />
   {/if}
 
   {#if data.selectedProject && data.dashboard}

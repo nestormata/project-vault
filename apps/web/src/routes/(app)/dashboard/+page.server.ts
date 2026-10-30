@@ -1,7 +1,11 @@
 import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { listCertificates } from '$lib/api/certificates.js'
-import { getOrgDashboard } from '$lib/api/dashboard.js'
+import {
+  getDashboardAttention,
+  getOrgDashboard,
+  type DashboardAttentionState,
+} from '$lib/api/dashboard.js'
 import { listDomains } from '$lib/api/domains.js'
 import { getProjectDashboard, listAllProjects } from '$lib/api/projects.js'
 import type { PageServerLoad } from './$types.js'
@@ -47,6 +51,19 @@ function streamedAssetState<T>(
   )
 }
 
+/**
+ * Story 72-12: the attention read never rejects. Its failure is converted to `{ status: 'error' }`
+ * where the promise is created (a rejected read renders as no card, never as a failed page), so no
+ * code path can leave it unhandled. A dead session was already redirected by the project list read
+ * that runs before this one.
+ */
+function attentionState(fetch: typeof globalThis.fetch): Promise<DashboardAttentionState> {
+  return getDashboardAttention(fetch).then(
+    (attention) => ({ status: 'ready' as const, ...attention }),
+    () => ({ status: 'error' as const })
+  )
+}
+
 function projectDashboardRequest(fetch: typeof globalThis.fetch, projectId: string | undefined) {
   return projectId ? nullOn404(getProjectDashboard(fetch, projectId)) : Promise.resolve(null)
 }
@@ -85,10 +102,11 @@ const ownLoad = (async ({ fetch, url }) => {
   const projectDashboardPromise = projectDashboardRequest(fetch, projectId)
   const certificatesPromise = assetRequest(fetch, projectId, listCertificates)
   const domainsPromise = assetRequest(fetch, projectId, listDomains)
+  const attentionPromise = attentionState(fetch)
 
-  const [orgResult, dashboardResult] = await Promise.allSettled([
-    orgDashboardPromise,
-    projectDashboardPromise,
+  const [[orgResult, dashboardResult], attention] = await Promise.all([
+    Promise.allSettled([orgDashboardPromise, projectDashboardPromise]),
+    attentionPromise,
   ])
 
   const orgDashboard = settledValue(orgResult, null)
@@ -101,6 +119,7 @@ const ownLoad = (async ({ fetch, url }) => {
     selectedProject: effectiveSelectedProject,
     dashboard,
     orgDashboard,
+    attention,
     orgDashboardError: orgResult.status === 'rejected',
     dashboardError: dashboardResult.status === 'rejected',
     alertStatus: dashboard === null ? ('error' as const) : ('ready' as const),

@@ -89,6 +89,7 @@ function baseDashboardData(dashboardOverrides: Partial<ProjectDashboard> = {}): 
     ...appLayoutData(),
     projects: { items: [PAYMENTS], total: 1, page: 1, limit: 20, hasNext: false },
     orgDashboard: null,
+    attention: { status: 'error' },
     orgDashboardError: false,
     dashboardError: false,
     selectedProject: PAYMENTS,

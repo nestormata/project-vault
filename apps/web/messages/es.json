@@ -373,5 +373,19 @@
   "guest_verify_unavailable": "No se pudo comprobar el código en este momento. Inténtalo de nuevo en un momento.",
   "guest_verify_verified": "Correo verificado. Ahora puedes revelar el secreto.",
   "guest_verify_lost_proof": "Se necesita verificar de nuevo. Solicita un código nuevo.",
-  "shares_index_filter_current": "filtro actual"
+  "shares_index_filter_current": "filtro actual",
+  "dashboard_attention_heading": "Requiere atención",
+  "dashboard_attention_kind_share": "Compartido",
+  "dashboard_attention_kind_certificate": "Certificado",
+  "dashboard_attention_kind_invitation": "Invitación",
+  "dashboard_attention_expired_flag": "Vencido",
+  "dashboard_attention_share_to_recipient": "El acceso compartido de {credential} para {recipient} en {project} vence pronto.",
+  "dashboard_attention_share_anonymous": "Un acceso compartido de {credential} en {project} vence pronto.",
+  "dashboard_attention_certificate_expiring": "El certificado de {domain} en {project} vence pronto.",
+  "dashboard_attention_certificate_expired": "El certificado de {domain} en {project} ya venció.",
+  "dashboard_attention_invitation_pending": "La invitación de {email} a {project} aún no ha sido aceptada.",
+  "dashboard_attention_link_share": "Ver secreto",
+  "dashboard_attention_link_certificate": "Ver certificados",
+  "dashboard_attention_link_invitation": "Ver miembros",
+  "dashboard_attention_more": "y {count} más"
 }

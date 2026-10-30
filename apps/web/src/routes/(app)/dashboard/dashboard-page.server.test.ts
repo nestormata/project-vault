@@ -5,6 +5,7 @@ const getOrgDashboardMock = vi.hoisted(() => vi.fn())
 const getProjectDashboardMock = vi.hoisted(() => vi.fn())
 const listCertificatesMock = vi.hoisted(() => vi.fn())
 const listDomainsMock = vi.hoisted(() => vi.fn())
+const getAttentionMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/projects.js', () => ({
   listAllProjects: listProjectsMock,
@@ -14,6 +15,7 @@ vi.mock('$lib/api/projects.js', () => ({
 
 vi.mock('$lib/api/dashboard.js', () => ({
   getOrgDashboard: getOrgDashboardMock,
+  getDashboardAttention: getAttentionMock,
 }))
 
 vi.mock('$lib/api/certificates.js', () => ({
@@ -43,6 +45,11 @@ describe('/dashboard +page.server.ts', () => {
     getProjectDashboardMock.mockReset()
     listCertificatesMock.mockReset()
     listDomainsMock.mockReset()
+    getAttentionMock.mockReset()
+    getAttentionMock.mockResolvedValue({
+      items: [],
+      counts: { expiringShares: 0, expiringCertificates: 0, pendingInvitations: 0 },
+    })
     getOrgDashboardMock.mockResolvedValue(null)
     getProjectDashboardMock.mockResolvedValue({ upcomingRotations: [] })
     listCertificatesMock.mockResolvedValue([])
@@ -319,5 +326,77 @@ describe('/dashboard +page.server.ts', () => {
     listProjectsMock.mockRejectedValue(new ApiClientError(500, null, 'boom'))
 
     await expect(load(makeEvent())).rejects.toThrow('boom')
+  })
+  // Story 72-12 AC5: the attention read is awaited with the other reads and its failure is handled
+  // where the promise is created, so it can never fail the page.
+  describe('attention read (story 72-12)', () => {
+    const oneProject = {
+      items: [{ id: projectId, name: 'Payments', description: null }],
+      total: 1,
+      page: 1,
+      limit: 20,
+      hasNext: false,
+    }
+
+    it('hands the list to the page as a ready state', async () => {
+      listProjectsMock.mockResolvedValue(oneProject)
+      const attention = {
+        items: [],
+        counts: { expiringShares: 0, expiringCertificates: 2, pendingInvitations: 0 },
+      }
+      getAttentionMock.mockResolvedValue(attention)
+
+      const result = expectLoaded(await load(makeEvent()))
+
+      expect(result.attention).toEqual({ status: 'ready', ...attention })
+    })
+
+    it('still loads the page and the other cards when the attention read rejects', async () => {
+      listProjectsMock.mockResolvedValue(oneProject)
+      getOrgDashboardMock.mockResolvedValue({ totalCredentials: 4 })
+      getAttentionMock.mockRejectedValue(new ApiClientError(403, { message: 'no' }, 'no'))
+
+      const result = expectLoaded(await load(makeEvent()))
+
+      expect(result.attention).toEqual({ status: 'error' })
+      expect(result.orgDashboard).toEqual({ totalCredentials: 4 })
+      expect(result.selectedProject?.id).toBe(projectId)
+      expect(result.dashboard).toEqual({ upcomingRotations: [] })
+    })
+
+    it('does not leave an unhandled rejection when another read fails first', async () => {
+      const unhandled = vi.fn()
+      process.on('unhandledRejection', unhandled)
+      listProjectsMock.mockResolvedValue(oneProject)
+      getAttentionMock.mockRejectedValue(new Error('attention down'))
+      getProjectDashboardMock.mockRejectedValue(new Error('dashboard down'))
+
+      const result = expectLoaded(await load(makeEvent()))
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      process.off('unhandledRejection', unhandled)
+
+      expect(unhandled).not.toHaveBeenCalled()
+      expect(result.attention).toEqual({ status: 'error' })
+    })
+
+    it('does not read attention for a vault-sealed load and works for a project-less caller', async () => {
+      listProjectsMock.mockRejectedValueOnce(
+        new ApiClientError(503, { status: 'sealed', message: 'sealed' }, 'sealed')
+      )
+      const sealed = expectLoaded(await load(makeEvent()))
+      expect(sealed.vaultSealed).toBe(true)
+      expect(getAttentionMock).not.toHaveBeenCalled()
+
+      listProjectsMock.mockResolvedValue({
+        items: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        hasNext: false,
+      })
+      const empty = expectLoaded(await load(makeEvent()))
+      expect(empty.selectedProject).toBeNull()
+      expect(empty.attention?.status).toBe('ready')
+    })
   })
 })

@@ -374,5 +374,19 @@
   "guest_verify_unavailable": "The code could not be checked right now. Please try again in a moment.",
   "guest_verify_verified": "Email address verified. You can now reveal the secret.",
   "guest_verify_lost_proof": "Verification is needed again. Request a new code.",
-  "shares_index_filter_current": "current filter"
+  "shares_index_filter_current": "current filter",
+  "dashboard_attention_heading": "Needs attention",
+  "dashboard_attention_kind_share": "Share",
+  "dashboard_attention_kind_certificate": "Certificate",
+  "dashboard_attention_kind_invitation": "Invitation",
+  "dashboard_attention_expired_flag": "Expired",
+  "dashboard_attention_share_to_recipient": "Share of {credential} to {recipient} in {project} expires soon.",
+  "dashboard_attention_share_anonymous": "A share of {credential} in {project} expires soon.",
+  "dashboard_attention_certificate_expiring": "Certificate for {domain} in {project} expires soon.",
+  "dashboard_attention_certificate_expired": "Certificate for {domain} in {project} has expired.",
+  "dashboard_attention_invitation_pending": "Invitation for {email} to {project} has not been accepted yet.",
+  "dashboard_attention_link_share": "View secret",
+  "dashboard_attention_link_certificate": "View certificates",
+  "dashboard_attention_link_invitation": "View members",
+  "dashboard_attention_more": "and {count} more"
 }
