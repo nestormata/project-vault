@@ -11,6 +11,8 @@ import {
   CredentialSharingNotAuthorizedError,
   CredentialSharingOrgRateLimitedError,
   CredentialSharingRateLimitedError,
+  CredentialSharingStepUpRequiredError,
+  CredentialSharingTotpEnrollmentRequiredError,
 } from '@project-vault/extension-api'
 import type { CredentialShareRow } from '../modules/credential-shares/service.js'
 import {
@@ -35,6 +37,8 @@ import {
   revealExternalShare,
 } from '../modules/credential-shares/external-service.js'
 import { writeMachineAuditEntry } from '../modules/audit/machine-entry.js'
+import { hasConfirmedTotpEnrollment } from '../modules/auth/mfa.js'
+import { verifyStepUp } from '../modules/credential-shares/step-up.js'
 import { isMachineKeyLive } from '../modules/machine-users/key-validity.js'
 import { resolveActiveOrgRoleInTx } from '../plugins/authenticate.js'
 import type { OrgRole } from '../plugins/require-org-role.js'
@@ -43,6 +47,7 @@ import { withMinResponseTime } from './min-response-time.js'
 import { forEachSequential } from './for-each-sequential.js'
 import { getRequestContext } from './request-context.js'
 import { roleRank } from './secure-route.js'
+import { declaresApiVersionAtLeast } from './secure-route-project-role.js'
 
 /**
  * Story 20.12 AC5 — a per-extension in-flight cap for every `credentialSharing` method. Distinct
@@ -462,6 +467,32 @@ async function requireActingUser(
   return acting.status === 'ok' ? acting : null
 }
 
+/** The first `@project-vault/extension-api` release whose `createExternalShare` needs a step-up. */
+export const EXTERNAL_SHARE_STEP_UP_SINCE = '3.38.0'
+
+/**
+ * Story 72.21 — the acting user re-authenticates with a current code from his or her confirmed PV
+ * TOTP enrollment (`verifyStepUp`'s TOTP branch: replay-protected, the native share form's check)
+ * before anything is written. The password factor is never offered here (D2). Throws, so the
+ * caller's transaction rolls back.
+ */
+async function requireExternalShareStepUp(
+  tx: Tx,
+  actingUserId: string | undefined,
+  totpCode: unknown
+): Promise<void> {
+  const methodName = 'createExternalShare'
+  if (actingUserId === undefined) throw new CredentialSharingStepUpRequiredError(methodName)
+  if (!(await hasConfirmedTotpEnrollment(tx, actingUserId))) {
+    throw new CredentialSharingTotpEnrollmentRequiredError(methodName)
+  }
+  if (typeof totpCode !== 'string' || totpCode === '') {
+    throw new CredentialSharingStepUpRequiredError(methodName)
+  }
+  const stepUp = await verifyStepUp(tx, { userId: actingUserId, totpCode })
+  if (stepUp.status !== 'ok') throw new CredentialSharingStepUpRequiredError(methodName)
+}
+
 type ViewerScope = { status: 'all' } | { status: 'none' } | { status: 'own'; userId: string }
 
 /** List methods: admin/owner sees all, a member only their own, anyone else nothing (no error). */
@@ -588,6 +619,11 @@ export function buildCredentialSharingHost(
     ...(overrides.now !== undefined ? { now: overrides.now } : {}),
   }
 
+  const stepUpRequired = declaresApiVersionAtLeast(
+    manifest.apiVersion,
+    EXTERNAL_SHARE_STEP_UP_SINCE
+  )
+
   return {
     async createExternalShare(params) {
       return callOutOfRequestMethod('createExternalShare', params.organizationId, hostContext, () =>
@@ -607,6 +643,9 @@ export function buildCredentialSharingHost(
             'createExternalShare',
             false
           )
+          if (stepUpRequired) {
+            await requireExternalShareStepUp(tx, acting?.userId, params.totpCode)
+          }
 
           const result = await createExternalCredentialShare(tx, {
             orgId: params.organizationId,
