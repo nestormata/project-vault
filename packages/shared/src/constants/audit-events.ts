@@ -247,7 +247,7 @@ export type AuditEvent = {
 /**
  * Story 30.2 AC6.21: the full `handoff_*` rejection-matrix/lifecycle event taxonomy for
  * the CentralizeMe->PV handoff-token landing flow. A new dedicated grouping (not folded into
- * `AuditEvent` above) because these are 22 distinctly-named events, not one event with a `reason`
+ * `AuditEvent` above) because these are distinctly-named events, not one event with a `reason`
  * payload field (unlike `SSO_LOGIN_REJECTED`'s single-event-plus-reason convention) — the claim
  * contract's rejection matrix names each one individually and AC6.21 requires each to exist as
  * its own named constant.
@@ -285,6 +285,13 @@ export const HandoffEvent = {
   HANDOFF_SESSION_CLAIMS_UNAVAILABLE: 'handoff_session_claims_unavailable',
   HANDOFF_MFA_COMPLETED: 'handoff_mfa_completed',
   HANDOFF_LOGIN_SUCCEEDED: 'handoff_login_succeeded',
+  // Story 73.1: outcomes of the browser-bound nonce check on `POST /auth/handoff/claim`, written
+  // to `platform_security_events` like the other pre-org rejections.
+  HANDOFF_NONCE_MISSING: 'handoff_nonce_missing',
+  HANDOFF_NONCE_UNKNOWN: 'handoff_nonce_unknown',
+  HANDOFF_NONCE_REUSED: 'handoff_nonce_reused',
+  HANDOFF_NONCE_EXPIRED: 'handoff_nonce_expired',
+  HANDOFF_NONCE_MISMATCH: 'handoff_nonce_mismatch',
 } as const
 
 export type HandoffEventType = (typeof HandoffEvent)[keyof typeof HandoffEvent]
