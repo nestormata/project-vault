@@ -1,7 +1,11 @@
 import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { listCertificates } from '$lib/api/certificates.js'
-import { getOrgDashboard } from '$lib/api/dashboard.js'
+import {
+  getDashboardAttention,
+  getOrgDashboard,
+  type DashboardAttentionState,
+} from '$lib/api/dashboard.js'
 import { listDomains } from '$lib/api/domains.js'
 import { getProjectDashboard, listAllProjects } from '$lib/api/projects.js'
 import type { PageServerLoad } from './$types.js'
@@ -47,6 +51,27 @@ function streamedAssetState<T>(
   )
 }
 
+/** A failed read: an API error response, or a network failure surfacing as a fetch TypeError. */
+function isReadFailure(error: unknown): boolean {
+  return error instanceof ApiClientError || error instanceof TypeError
+}
+
+/**
+ * Story 72-12: a failed attention read is converted to `{ status: 'error' }` where the promise is
+ * created (it renders as no card, never as a failed page), so no code path can leave it unhandled.
+ * Anything that is not a failed read, such as a SvelteKit redirect for a session that died
+ * mid-load, is rethrown so the page still redirects.
+ */
+function attentionState(fetch: typeof globalThis.fetch): Promise<DashboardAttentionState> {
+  return getDashboardAttention(fetch).then(
+    (attention) => ({ status: 'ready' as const, ...attention }),
+    (error) => {
+      if (isReadFailure(error)) return { status: 'error' as const }
+      throw error
+    }
+  )
+}
+
 function projectDashboardRequest(fetch: typeof globalThis.fetch, projectId: string | undefined) {
   return projectId ? nullOn404(getProjectDashboard(fetch, projectId)) : Promise.resolve(null)
 }
@@ -85,10 +110,11 @@ const ownLoad = (async ({ fetch, url }) => {
   const projectDashboardPromise = projectDashboardRequest(fetch, projectId)
   const certificatesPromise = assetRequest(fetch, projectId, listCertificates)
   const domainsPromise = assetRequest(fetch, projectId, listDomains)
+  const attentionPromise = attentionState(fetch)
 
-  const [orgResult, dashboardResult] = await Promise.allSettled([
-    orgDashboardPromise,
-    projectDashboardPromise,
+  const [[orgResult, dashboardResult], attention] = await Promise.all([
+    Promise.allSettled([orgDashboardPromise, projectDashboardPromise]),
+    attentionPromise,
   ])
 
   const orgDashboard = settledValue(orgResult, null)
@@ -101,6 +127,7 @@ const ownLoad = (async ({ fetch, url }) => {
     selectedProject: effectiveSelectedProject,
     dashboard,
     orgDashboard,
+    attention,
     orgDashboardError: orgResult.status === 'rejected',
     dashboardError: dashboardResult.status === 'rejected',
     alertStatus: dashboard === null ? ('error' as const) : ('ready' as const),

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
-  import type { getOrgDashboard } from '$lib/api/dashboard.js'
+  import type { DashboardAttentionState, getOrgDashboard } from '$lib/api/dashboard.js'
+  import DashboardAttentionList from '$lib/components/dashboard/DashboardAttentionList.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import StatTile from '$lib/components/StatTile.svelte'
   import { m } from '$lib/paraglide/messages.js'
@@ -10,9 +11,11 @@
   // region. It receives no point props: the figures are its own source, never handed to a contribution.
   let {
     orgDashboard,
+    attention,
     data,
   }: {
     orgDashboard: Awaited<ReturnType<typeof getOrgDashboard>>
+    attention?: DashboardAttentionState
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 </script>
@@ -34,6 +37,7 @@
       {orgDashboard.unresolvedAlertCount}
     </StatTile>
   </dl>
+  <DashboardAttentionList {attention} />
   {#if orgDashboard.expiringWithin30Days.items.length > 0}
     <div class="mt-5">
       <h3 class="font-semibold text-slate-950">{m.dashboard_expiring_soon_heading()}</h3>

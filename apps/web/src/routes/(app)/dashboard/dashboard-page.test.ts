@@ -46,6 +46,7 @@ function dashboardData(overrides: Partial<LoadedData> = {}): LoadedData {
     selectedProject,
     dashboard,
     orgDashboard: null,
+    attention: { status: 'error' },
     orgDashboardError: false,
     dashboardError: false,
     alertStatus: 'ready',
@@ -286,5 +287,49 @@ describe('Story 28.4 Task 3: dashboard-copy labels are reactive to a no-reload l
 
     expect(screen.getByText('Valor revelado')).toBeTruthy()
     expect(screen.queryByText('Revealed value')).toBeNull()
+  })
+  describe('attention card (story 72-12)', () => {
+    const orgDashboard = {
+      totalCredentials: 4,
+      expiringWithin30Days: { count: 0, items: [] },
+      projectsWithOverdueRotations: { count: 0, items: [] },
+      unresolvedAlertCount: 0,
+    }
+    const certificate = {
+      kind: 'expiring_certificate' as const,
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      projectId: 'p1',
+      projectName: 'Payments API',
+      dueAt: '2026-11-05T12:00:00.000Z',
+      domain: 'pay.example.com',
+      expired: false,
+    }
+    const counts = { expiringShares: 0, expiringCertificates: 1, pendingInvitations: 0 }
+
+    it('renders the list inside the org summary when there is something to show', () => {
+      render(DashboardPage, {
+        props: {
+          data: dashboardData({
+            orgDashboard,
+            attention: { status: 'ready', items: [certificate], counts },
+          }),
+        },
+      })
+      expect(screen.getByRole('heading', { name: 'Needs attention' })).toBeTruthy()
+      expect(screen.getByText(/pay\.example\.com/)).toBeTruthy()
+    })
+
+    it.each([
+      ['an errored read', { status: 'error' as const }],
+      [
+        'an empty list',
+        { status: 'ready' as const, items: [], counts: { ...counts, expiringCertificates: 0 } },
+      ],
+    ])('renders no card for %s', (_name, attention) => {
+      render(DashboardPage, { props: { data: dashboardData({ orgDashboard, attention }) } })
+      expect(screen.queryByRole('heading', { name: 'Needs attention' })).toBeNull()
+      expect(screen.queryByTestId('dashboard-attention')).toBeNull()
+      expect(screen.getByText('Secret overview')).toBeTruthy()
+    })
   })
 })

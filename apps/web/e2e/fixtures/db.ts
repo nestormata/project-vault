@@ -36,6 +36,16 @@ export function appDatabaseUrl(): string {
  * Story 66.4 AC-5: the vault_admin (BYPASSRLS admin pool) URL, mirroring docker-compose.yml's
  * `${VAULT_ADMIN_PASSWORD:-password}` so the isolated API uses the credential the stack set.
  */
+/** Runs `run` on a one-connection superuser pool (setup only, RLS bypassed) and always closes it. */
+export async function withSuperuserSql<T>(run: (sql: postgres.Sql) => Promise<T>): Promise<T> {
+  const sql = postgres(superuserDatabaseUrl(), { max: 1 })
+  try {
+    return await run(sql)
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+}
+
 export function adminDatabaseUrl(): string {
   const password = encodeURIComponent(process.env['VAULT_ADMIN_PASSWORD'] ?? 'password')
   return (

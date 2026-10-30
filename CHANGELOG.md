@@ -11,6 +11,10 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Dashboard attention list** (Story 72-12, Epic 72). `GET /api/v1/dashboard/attention` answers, per viewer, what needs
+  attention: active shares expiring within 7 days, certificates within 30 days (expired ones included) and pending
+  invitations (admin and owner only), at most 10 per kind with true `counts`. An org viewer gets an empty list. The
+  dashboard shows the list inside the existing org-summary region and renders nothing when it is empty.
 - **`app.layout.dialogs` injection point** (Epic 72 fix). The app-wide confirm and keyboard-shortcuts dialog hosts added by
   Stories 72.5 and 72.6 now sit in one `@region app.layout.dialogs` component, so the `monolithic-region` guard (R3)
   passes on a composed tree. One new additive point (`StandardPointProps`) on the `(app)` layout.

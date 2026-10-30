@@ -4,7 +4,12 @@ import { expect, test } from '@playwright/test'
 import { registerAndLoginViaApi } from '../fixtures/auth.js'
 import { createProjectViaApi } from '../fixtures/api.js'
 import { createLoginTemplateCredentialViaUi } from '../fixtures/credentials-ui.js'
-import { describeEachAppearance, type Appearance } from '../fixtures/appearance.js'
+import {
+  describeEachAppearance,
+  expectAppearanceApplied,
+  expectNoHorizontalOverflow,
+  type Appearance,
+} from '../fixtures/appearance.js'
 import {
   GUEST_TEST_CODE,
   GUEST_WRONG_CODE,
@@ -83,21 +88,6 @@ async function shareToGuestAndOpen(
   const guest = await guestContext.newPage()
   await openGuestShare(guest, token)
   return { recipientEmail, token, guest }
-}
-
-async function expectAppearanceApplied(page: Page, appearance: Appearance): Promise<void> {
-  // PV has no dark scheme of its own (epic 72 D2): what must hold is that the browser really runs
-  // in the requested scheme and size, and that the page still lays out.
-  const dark = await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)
-  expect(dark).toBe(appearance.colorScheme === 'dark')
-  expect(page.viewportSize()?.width).toBe(appearance.viewport.width)
-}
-
-async function expectNoHorizontalOverflow(page: Page): Promise<void> {
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-  )
-  expect(overflow).toBeLessThanOrEqual(0)
 }
 
 function indexRow(page: Page, credentialName: string) {

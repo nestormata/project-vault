@@ -1,4 +1,3 @@
-import postgres from 'postgres'
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { enrollMfaViaApi, registerAndLoginViaApi, registerViaInvitation } from '../fixtures/auth.js'
 import { confirmDialog } from '../fixtures/confirm-dialog.js'
@@ -11,7 +10,7 @@ import {
   extractTokenFromAcceptUrl,
   readLatestInvitationAcceptUrl,
   setOrganizationRoleViaDb,
-  superuserDatabaseUrl,
+  withSuperuserSql,
 } from '../fixtures/db.js'
 import {
   uniqueCredentialValue,
@@ -127,15 +126,6 @@ async function expectBlocked(page: Page, fixture: Fixture): Promise<void> {
   await expect(userRow(page, fixture.xDisplayName).getByText('Deactivated')).toHaveCount(0)
 }
 
-async function superuserSql<T>(run: (sql: postgres.Sql) => Promise<T>): Promise<T> {
-  const sql = postgres(superuserDatabaseUrl(), { max: 1 })
-  try {
-    return await run(sql)
-  } finally {
-    await sql.end({ timeout: 5 })
-  }
-}
-
 async function expectRotationResolved(fixture: Fixture): Promise<void> {
   const base = `/api/v1/projects/${fixture.projectId}/credentials/${fixture.credentialId}`
   const detail = await fixture.ownerContext.request.get(`${base}/rotations/${fixture.rotationId}`)
@@ -147,7 +137,7 @@ async function expectRotationResolved(fixture: Fixture): Promise<void> {
   )
   // ...and no longer rotation-locked. The API never exposes rotation_locked_at, so read it
   // directly (setup-style superuser access, like the invitation-token read above).
-  const [previous] = await superuserSql(
+  const [previous] = await withSuperuserSql(
     (sql) => sql<{ locked: boolean }[]>`
       select cv.rotation_locked_at is not null as locked
       from rotations r join credential_versions cv on cv.id = r.previous_version_id
@@ -211,7 +201,7 @@ test.describe('J30 — deactivation blocked by an active rotation (FR102)', () =
       await expect(userRow(page, fixture.xDisplayName).getByText('Deactivated')).toBeVisible()
 
       // Ownership moved, provenance did not: initiated_by is still X, the status is unchanged.
-      const [state] = await superuserSql(
+      const [state] = await withSuperuserSql(
         (sql) => sql<{ status: string; owner_is_other: boolean; initiator_is_x: boolean }[]>`
           select r.status,
                  r.owner_user_id is not null and r.owner_user_id <> r.initiated_by as owner_is_other,
@@ -228,7 +218,7 @@ test.describe('J30 — deactivation blocked by an active rotation (FR102)', () =
         expect(events.status()).toBe(200)
         expect(((await events.json()) as { total: number }).total).toBeGreaterThan(0)
       }
-      const [notice] = await superuserSql(
+      const [notice] = await withSuperuserSql(
         (sql) => sql<{ count: string }[]>`
           select count(*)::text as count from notification_queue
           where template_id = 'rotation.ownership_transferred'
