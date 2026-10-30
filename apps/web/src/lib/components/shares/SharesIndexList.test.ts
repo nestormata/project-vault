@@ -57,16 +57,15 @@ describe('SharesIndexList (Story 72.11 AC1/AC2)', () => {
     }
   })
 
-  it('marks the selected filter chip as the current page and links the others', () => {
+  it('marks the selected filter chip in text and links the others', () => {
     render(SharesIndexList, { props: { ...BASE, items: [item()], displayStatus: 'opened' } })
-    const nav = screen.getByRole('navigation', { name: 'Filter by status' })
-    const opened = within(nav).getByRole('link', { name: 'Opened' })
-    expect(opened.getAttribute('aria-current')).toBe('page')
-    expect(within(nav).getByRole('link', { name: 'All' }).getAttribute('aria-current')).toBeNull()
-    expect(within(nav).getByRole('link', { name: 'Locked' }).getAttribute('href')).toBe(
+    const group = screen.getByRole('group', { name: 'Filter by status' })
+    expect(within(group).getByRole('link', { name: /Opened, current filter/ })).toBeTruthy()
+    expect(within(group).getByRole('link', { name: 'All' }).getAttribute('href')).toBe('/shares')
+    expect(within(group).getByRole('link', { name: 'Locked' }).getAttribute('href')).toBe(
       '/shares?displayStatus=locked'
     )
-    expect(within(nav).getByRole('link', { name: 'All' }).getAttribute('href')).toBe('/shares')
+    expect(within(group).getAllByText(/current filter/)).toHaveLength(1)
   })
 
   it('shows the empty state and no pagination for an empty list', () => {

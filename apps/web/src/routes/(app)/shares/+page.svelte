@@ -26,6 +26,7 @@
     page={data.page}
     pageSize={data.pageSize}
     displayStatus={data.displayStatus}
+    data={data?.__inject}
   >
     <InjectionPoint name="shares.home.list" data={data?.__inject} />
   </SharesIndexList>

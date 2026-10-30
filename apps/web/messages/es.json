@@ -372,5 +372,6 @@
   "guest_verify_failed": "Ese código no funcionó. Revísalo e inténtalo de nuevo, o solicita un código nuevo.",
   "guest_verify_unavailable": "No se pudo comprobar el código en este momento. Inténtalo de nuevo en un momento.",
   "guest_verify_verified": "Correo verificado. Ahora puedes revelar el secreto.",
-  "guest_verify_lost_proof": "Se necesita verificar de nuevo. Solicita un código nuevo."
+  "guest_verify_lost_proof": "Se necesita verificar de nuevo. Solicita un código nuevo.",
+  "shares_index_filter_current": "filtro actual"
 }

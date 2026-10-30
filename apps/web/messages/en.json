@@ -373,5 +373,6 @@
   "guest_verify_failed": "That code did not work. Check it and try again, or request a new code.",
   "guest_verify_unavailable": "The code could not be checked right now. Please try again in a moment.",
   "guest_verify_verified": "Email address verified. You can now reveal the secret.",
-  "guest_verify_lost_proof": "Verification is needed again. Request a new code."
+  "guest_verify_lost_proof": "Verification is needed again. Request a new code.",
+  "shares_index_filter_current": "current filter"
 }

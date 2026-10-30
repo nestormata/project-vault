@@ -321,6 +321,12 @@
     },
     {
       "conditional": false,
+      "id": "primary.shares",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": false,
       "id": "project.certificates",
       "parent": null,
       "surface": "project"

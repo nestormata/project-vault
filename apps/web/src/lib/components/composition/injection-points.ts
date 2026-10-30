@@ -492,6 +492,10 @@ export interface InjectionPointProps {
   'credentials.home.projects': StandardPointProps
   'shares.home.header': StandardPointProps
   'shares.home.list': StandardPointProps
+  'shares.home.filter': StandardPointProps
+  'shares.home.items': StandardPointProps
+  'shares.home.pagination': StandardPointProps
+  'shares.home.empty': StandardPointProps
   'credentials.import.header': StandardPointProps
   'credentials.import.projects': StandardPointProps
   'extensions.panels-detail.content': StandardPointProps
@@ -1123,7 +1127,14 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/shares#page'],
-    ['shares.home.header', 'shares.home.list']
+    [
+      'shares.home.header',
+      'shares.home.list',
+      'shares.home.filter',
+      'shares.home.items',
+      'shares.home.pagination',
+      'shares.home.empty',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
