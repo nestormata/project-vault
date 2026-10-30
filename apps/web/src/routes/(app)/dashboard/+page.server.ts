@@ -51,16 +51,24 @@ function streamedAssetState<T>(
   )
 }
 
+/** A failed read: an API error response, or a network failure surfacing as a fetch TypeError. */
+function isReadFailure(error: unknown): boolean {
+  return error instanceof ApiClientError || error instanceof TypeError
+}
+
 /**
- * Story 72-12: the attention read never rejects. Its failure is converted to `{ status: 'error' }`
- * where the promise is created (a rejected read renders as no card, never as a failed page), so no
- * code path can leave it unhandled. A dead session was already redirected by the project list read
- * that runs before this one.
+ * Story 72-12: a failed attention read is converted to `{ status: 'error' }` where the promise is
+ * created (it renders as no card, never as a failed page), so no code path can leave it unhandled.
+ * Anything that is not a failed read, such as a SvelteKit redirect for a session that died
+ * mid-load, is rethrown so the page still redirects.
  */
 function attentionState(fetch: typeof globalThis.fetch): Promise<DashboardAttentionState> {
   return getDashboardAttention(fetch).then(
     (attention) => ({ status: 'ready' as const, ...attention }),
-    () => ({ status: 'error' as const })
+    (error) => {
+      if (isReadFailure(error)) return { status: 'error' as const }
+      throw error
+    }
   )
 }
 

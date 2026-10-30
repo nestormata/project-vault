@@ -26,6 +26,7 @@ vi.mock('$lib/api/domains.js', () => ({
   listDomains: listDomainsMock,
 }))
 
+import { isRedirect, redirect } from '@sveltejs/kit'
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
 import { expectLoaded } from '$lib/test/page-data.js'
@@ -364,11 +365,33 @@ describe('/dashboard +page.server.ts', () => {
       expect(result.dashboard).toEqual({ upcomingRotations: [] })
     })
 
+    it('answers a server error and a network failure with the error state', async () => {
+      listProjectsMock.mockResolvedValue(oneProject)
+      for (const failure of [
+        new ApiClientError(500, null, 'boom'),
+        new TypeError('fetch failed'),
+      ]) {
+        getAttentionMock.mockRejectedValue(failure)
+        expect(expectLoaded(await load(makeEvent())).attention).toEqual({ status: 'error' })
+      }
+    })
+
+    it('rethrows a redirect thrown by the client instead of hiding the card', async () => {
+      listProjectsMock.mockResolvedValue(oneProject)
+      getAttentionMock.mockImplementation(async () => {
+        redirect(303, '/login')
+      })
+
+      const caught = await Promise.resolve(load(makeEvent())).catch((error: unknown) => error)
+
+      expect(isRedirect(caught)).toBe(true)
+    })
+
     it('does not leave an unhandled rejection when another read fails first', async () => {
       const unhandled = vi.fn()
       process.on('unhandledRejection', unhandled)
       listProjectsMock.mockResolvedValue(oneProject)
-      getAttentionMock.mockRejectedValue(new Error('attention down'))
+      getAttentionMock.mockRejectedValue(new TypeError('attention down'))
       getProjectDashboardMock.mockRejectedValue(new Error('dashboard down'))
 
       const result = expectLoaded(await load(makeEvent()))
