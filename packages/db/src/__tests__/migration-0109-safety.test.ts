@@ -5,6 +5,7 @@ import {
   findDestructiveStatements,
   KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS,
 } from '../lib/migration-safety.js'
+import { scanPendingForDestructive } from '../scripts/guarded-migrate.js'
 import { EXCLUDED_TABLES } from '../check-rls-coverage.js'
 import * as schema from '../schema/index.js'
 
@@ -20,6 +21,7 @@ describe('migration 0109 safety', () => {
   it('is registered as a reviewed destructive migration', () => {
     expect(KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS).toHaveProperty(TAG)
     expect(findDestructiveStatements(sql)).not.toEqual([])
+    expect(scanPendingForDestructive([{ tag: TAG, sql, folderMillis: 0 }])).toEqual([])
   })
 
   it('drops exactly handoff_pending_states, without CASCADE, and nothing else', () => {

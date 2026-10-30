@@ -369,6 +369,13 @@ There is no required pre-step.
   `handoff_pending_states` table. Nothing reads or writes it after this upgrade, and its rows only
   lived 120 seconds, so nothing of value is lost. It is a reviewed destructive migration: the
   guarded migrator applies it in place without `--allow-destructive`. A prepare/confirm sign-in
-  still in flight while you upgrade fails and the user signs in again.
+  still in flight while you upgrade fails and the user signs in again. Until the new api replaces
+  the old one, the old image logs errors from its prepare route and its old prune job; they stop
+  once the new image boots and unschedules that job.
+- **Rolling back after `0109`:** the previous release still reads and writes
+  `handoff_pending_states`, so do not start an older image on the upgraded database as is. Restore
+  the backup taken before this upgrade, or re-create the table first by running
+  `0087_handoff_token_jti.sql`'s `handoff_pending_states` statements and
+  `0099_handoff_pending_states_claim_hash.sql` against it.
 - **Background job rename:** `prune-handoff-pending-states` is replaced by `prune-handoff-nonces`
   (every five minutes). The old schedule is removed at boot.
