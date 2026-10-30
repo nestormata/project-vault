@@ -52,10 +52,10 @@ export const handoffPendingStates = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => ({
-    expiresAtIdx: index('idx_handoff_pending_states_expires_at').on(t.expiresAt),
-    claimHashIdx: uniqueIndex('idx_handoff_pending_states_claim_hash').on(t.claimHash),
-  })
+  (t) => [
+    index('idx_handoff_pending_states_expires_at').on(t.expiresAt),
+    uniqueIndex('idx_handoff_pending_states_claim_hash').on(t.claimHash),
+  ]
 )
 
 export type HandoffPendingState = typeof handoffPendingStates.$inferSelect

@@ -208,9 +208,10 @@ describe('HandoffEvent (Story 30.2 AC6.21)', () => {
       'handoff_nonce_expired',
       'handoff_nonce_mismatch',
     ]
+    const byName = (a: string, b: string) => a.localeCompare(b)
     const actual = Object.values(HandoffEvent)
     expect(actual).toHaveLength(27)
-    expect(actual.sort()).toEqual(expected.sort())
+    expect([...actual].sort(byName)).toEqual([...expected].sort(byName))
   })
 
   it('every value is prefixed handoff_ (never a raw claim value embedded in the constant)', () => {

@@ -64,7 +64,7 @@ type App = Awaited<ReturnType<typeof createApp>>
 type StartBody = { data: { nonce: string; expiresAt: string; redirectUrl: string } }
 type ClaimPayload = { token: unknown; nonce: unknown }
 
-let openApp: App | undefined
+let openApp: App | null = null
 
 async function newApp(): Promise<App> {
   // A fresh app per test: the rate-limit store is in-memory per app instance.
@@ -73,18 +73,21 @@ async function newApp(): Promise<App> {
 }
 
 async function withHandoffEnv<T>(
-  overrides: Record<string, string | undefined>,
+  overrides: Record<string, string | null>,
   fn: (app: App) => Promise<T>
 ): Promise<T> {
   // env.ts parses process.env once at module load, so a different handoff env needs a fresh
   // module graph. prom-client's default registry survives vi.resetModules and must be cleared.
   const { register } = await import('prom-client')
   const originals = Object.fromEntries(
-    Object.keys(overrides).map((k) => [k, Reflect.get(process.env, k) as string | undefined])
+    Object.keys(overrides).map((k) => [
+      k,
+      (Reflect.get(process.env, k) as string | undefined) ?? null,
+    ])
   )
-  const apply = (values: Record<string, string | undefined>) => {
+  const apply = (values: Record<string, string | null>) => {
     for (const [key, value] of Object.entries(values)) {
-      if (value === undefined) Reflect.deleteProperty(process.env, key)
+      if (value === null) Reflect.deleteProperty(process.env, key)
       else Reflect.set(process.env, key, value)
     }
   }
@@ -104,6 +107,10 @@ async function withHandoffEnv<T>(
     vi.resetModules()
     register.clear()
   }
+}
+
+function sortedEvents(eventTypes: readonly string[]): string[] {
+  return [...eventTypes].sort((a, b) => a.localeCompare(b))
 }
 
 function uniqueAgent(): string {
@@ -131,7 +138,7 @@ async function eventsFor(userAgent: string): Promise<string[]> {
     .select({ eventType: platformSecurityEvents.eventType })
     .from(platformSecurityEvents)
     .where(eq(platformSecurityEvents.userAgent, userAgent))
-  return rows.map((r) => r.eventType).sort()
+  return sortedEvents(rows.map((r) => r.eventType))
 }
 
 async function nonceRow(nonce: string) {
@@ -180,7 +187,7 @@ describe('handoff routes (Story 73.1 nonce-bound handoff)', () => {
   afterEach(async () => {
     vi.mocked(nonceDb.consumeHandoffNonce).mockClear()
     await openApp?.close()
-    openApp = undefined
+    openApp = null
   })
 
   describe('POST /start (AC1)', () => {
@@ -218,7 +225,7 @@ describe('handoff routes (Story 73.1 nonce-bound handoff)', () => {
 
     it.each([
       ['handoff is disabled', { VAULT_HANDOFF_ENABLED: 'false' }],
-      ['VAULT_HANDOFF_START_URL is unset', { VAULT_HANDOFF_START_URL: undefined }],
+      ['VAULT_HANDOFF_START_URL is unset', { VAULT_HANDOFF_START_URL: null }],
     ])('rejects generically and stores nothing when %s', async (_label, overrides) => {
       const before = await nonceRowCount()
       await withHandoffEnv(overrides, async (app) => {
@@ -306,7 +313,7 @@ describe('handoff routes (Story 73.1 nonce-bound handoff)', () => {
       expect(result.res.statusCode).toBe(401)
       expect(result.res.json()).toEqual(GENERIC_REJECTION)
       expect(result.res.headers['set-cookie']).toBeUndefined()
-      expect(await eventsFor(result.userAgent)).toEqual([...eventTypes].sort())
+      expect(await eventsFor(result.userAgent)).toEqual(sortedEvents(eventTypes))
     }
 
     it('a missing nonce (no cookie) is handoff_nonce_missing and the token is never verified or burned', async () => {
@@ -420,7 +427,7 @@ describe('handoff routes (Story 73.1 nonce-bound handoff)', () => {
       const { res, userAgent } = await claim(app, payload)
       expect(res.statusCode).toBe(401)
       expect(res.json()).toEqual(GENERIC_REJECTION)
-      expect(await eventsFor(userAgent)).toEqual([...eventTypes].sort())
+      expect(await eventsFor(userAgent)).toEqual(sortedEvents(eventTypes))
     }
 
     it('a non-string token is handoff_malformed_claim, after the nonce is consumed', async () => {
@@ -551,10 +558,10 @@ describe('handoff routes (Story 73.1 nonce-bound handoff)', () => {
       })
       expect(res.statusCode).toBe(200)
       expect(await eventsFor(userAgent)).toEqual(
-        [
+        sortedEvents([
           HandoffEvent.HANDOFF_UNKNOWN_CLAIMS_VERSION,
           HandoffEvent.HANDOFF_UNKNOWN_CAPABILITY,
-        ].sort()
+        ])
       )
     })
 

@@ -19,9 +19,7 @@ export const handoffNonces = pgTable(
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => ({
-    expiresAtIdx: index('idx_handoff_nonces_expires_at').on(t.expiresAt),
-  })
+  (t) => [index('idx_handoff_nonces_expires_at').on(t.expiresAt)]
 )
 
 export type HandoffNonce = typeof handoffNonces.$inferSelect

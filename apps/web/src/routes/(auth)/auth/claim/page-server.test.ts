@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mutable per test: load reads env per request, never cached at module level.
-const envMock = vi.hoisted(() => ({ VAULT_HANDOFF_ISSUER: undefined as string | undefined }))
+const envMock = vi.hoisted((): { VAULT_HANDOFF_ISSUER?: string } => ({}))
 
 vi.mock('$env/dynamic/private', () => ({ env: envMock }))
 
@@ -13,7 +13,7 @@ function makeEvent() {
 
 describe('/auth/claim +page.server.ts load (Story 73.1)', () => {
   beforeEach(() => {
-    envMock.VAULT_HANDOFF_ISSUER = undefined
+    Reflect.deleteProperty(envMock, 'VAULT_HANDOFF_ISSUER')
   })
 
   it('returns no return origin when the web process has no issuer configured', async () => {
