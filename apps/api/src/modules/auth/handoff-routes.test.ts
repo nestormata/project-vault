@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
-  externalIdentities,
+  auditLogEntries,
+  handoffNonces,
   handoffTokenJti,
-  organizations,
-  orgMemberships,
-  userIdentityTokens,
-  users,
+  platformSecurityEvents,
+  sessions,
 } from '@project-vault/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { and, count, eq } from 'drizzle-orm'
+import { HandoffEvent } from '@project-vault/shared'
 import {
   bootstrapRouteIntegrationTest,
   initVaultForTest,
@@ -18,21 +18,30 @@ import {
 import {
   b64url,
   createLinkedHandoffOrg,
-  HANDOFF_COOKIE_NAME,
-  handoffCookieFrom,
-  HANDOFF_PROVIDER,
   HANDOFF_TEST_INSTANCE_ID,
   HANDOFF_TEST_KID,
+  HANDOFF_TEST_START_URL,
   handoffTestPublicKeyPem,
   signToken,
 } from '../../__tests__/helpers/handoff-test-helpers.js'
-import { serviceProvisionedEmail } from '@project-vault/shared'
+import * as nonceDb from './handoff-nonce-db.js'
+
+vi.mock('./handoff-nonce-db.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof nonceDb>()
+  return {
+    ...actual,
+    consumeHandoffNonce: vi.fn(actual.consumeHandoffNonce),
+    insertHandoffNonce: vi.fn(actual.insertHandoffNonce),
+    burnHandoffJti: vi.fn(actual.burnHandoffJti),
+  }
+})
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
 
 process.env['VAULT_HANDOFF_ENABLED'] = 'true'
 process.env['VAULT_HANDOFF_INSTANCE_ID'] = HANDOFF_TEST_INSTANCE_ID
+process.env['VAULT_HANDOFF_START_URL'] = HANDOFF_TEST_START_URL
 process.env['VAULT_HANDOFF_VERIFY_KEYS'] = JSON.stringify([
   { kid: HANDOFF_TEST_KID, publicKeyPem: handoffTestPublicKeyPem },
 ])
@@ -40,14 +49,127 @@ process.env['VAULT_HANDOFF_VERIFY_KEYS'] = JSON.stringify([
 let createApp: typeof import('../../app.js').createApp
 
 const { initVault } = await bootstrapRouteIntegrationTest()
+// Imported after the bootstrap: it reads env at module load.
+const { hashCookieValue } = await import('../../lib/opaque-cookie-token.js')
 
-const PREPARE_URL = '/api/v1/auth/handoff/prepare'
-const CONFIRM_URL = '/api/v1/auth/handoff/confirm'
-const EXCHANGE_CLAIM_URL = '/api/v1/auth/handoff/exchange-claim'
-const GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
-const SAME_ORIGIN = 'same-origin'
+const START_URL = '/api/v1/auth/handoff/start'
+const CLAIM_URL = '/api/v1/auth/handoff/claim'
+const GENERIC_REJECTION = {
+  code: 'handoff_rejected',
+  message: 'Sign-in could not be verified. Please start again.',
+}
+const NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/
 
-describe('handoff routes (Story 30.2 AC3/AC4)', () => {
+type App = Awaited<ReturnType<typeof createApp>>
+type StartBody = { data: { nonce: string; expiresAt: string; redirectUrl: string } }
+type ClaimPayload = { token: unknown; nonce: unknown }
+
+let openApp: App | undefined
+
+async function newApp(): Promise<App> {
+  // A fresh app per test: the rate-limit store is in-memory per app instance.
+  openApp = await createApp({ logger: false })
+  return openApp
+}
+
+async function withHandoffEnv<T>(
+  overrides: Record<string, string | undefined>,
+  fn: (app: App) => Promise<T>
+): Promise<T> {
+  // env.ts parses process.env once at module load, so a different handoff env needs a fresh
+  // module graph. prom-client's default registry survives vi.resetModules and must be cleared.
+  const { register } = await import('prom-client')
+  const originals = Object.fromEntries(
+    Object.keys(overrides).map((k) => [k, Reflect.get(process.env, k) as string | undefined])
+  )
+  const apply = (values: Record<string, string | undefined>) => {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) Reflect.deleteProperty(process.env, key)
+      else Reflect.set(process.env, key, value)
+    }
+  }
+  apply(overrides)
+  vi.resetModules()
+  register.clear()
+  try {
+    const { createApp: createOtherApp } = await import('../../app.js')
+    const app = await createOtherApp({ logger: false })
+    try {
+      return await fn(app)
+    } finally {
+      await app.close()
+    }
+  } finally {
+    apply(originals)
+    vi.resetModules()
+    register.clear()
+  }
+}
+
+function uniqueAgent(): string {
+  return `handoff-routes-test/${randomUUID()}`
+}
+
+async function start(app: App): Promise<string> {
+  const res = await app.inject({ method: 'POST', url: START_URL })
+  expect(res.statusCode).toBe(200)
+  return res.json<StartBody>().data.nonce
+}
+
+async function claim(app: App, payload: ClaimPayload, userAgent = uniqueAgent()) {
+  const res = await app.inject({
+    method: 'POST',
+    url: CLAIM_URL,
+    headers: { 'user-agent': userAgent },
+    payload,
+  })
+  return { res, userAgent }
+}
+
+async function eventsFor(userAgent: string): Promise<string[]> {
+  const rows = await getDb()
+    .select({ eventType: platformSecurityEvents.eventType })
+    .from(platformSecurityEvents)
+    .where(eq(platformSecurityEvents.userAgent, userAgent))
+  return rows.map((r) => r.eventType).sort()
+}
+
+async function nonceRow(nonce: string) {
+  const [row] = await getDb()
+    .select()
+    .from(handoffNonces)
+    .where(eq(handoffNonces.nonceHash, hashCookieValue(nonce)))
+  return row
+}
+
+async function nonceRowCount(): Promise<number> {
+  const [row] = await getDb().select({ n: count() }).from(handoffNonces)
+  return row?.n ?? 0
+}
+
+async function jtiBurned(jti: string): Promise<boolean> {
+  const rows = await getDb().select().from(handoffTokenJti).where(eq(handoffTokenJti.jti, jti))
+  return rows.length === 1
+}
+
+async function sessionCount(orgId: string, userId: string): Promise<number> {
+  const [row] = await withOrg(orgId, (tx) =>
+    (tx as Tx)
+      .select({ n: count() })
+      .from(sessions)
+      .where(and(eq(sessions.orgId, orgId), eq(sessions.userId, userId)))
+  )
+  return row?.n ?? 0
+}
+
+async function linkedUser(label: string, options = {}) {
+  const workosUserId = `user_${randomUUID()}`
+  const cmOrgId = `org_synthetic_${randomUUID()}`
+  const linked = await createLinkedHandoffOrg(label, workosUserId, cmOrgId, options)
+  return { ...linked, workosUserId, cmOrgId }
+}
+
+describe('handoff routes (Story 73.1 nonce-bound handoff)', () => {
   beforeAll(async () => {
     const { resetVaultForTest } = await import('../../__tests__/helpers/vault-test-cleanup.js')
     await resetVaultForTest()
@@ -55,661 +177,415 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
     createApp = (await import('../../app.js')).createApp
   })
 
-  describe('POST /prepare (AC3)', () => {
-    it('AC3.8: rejects a malformed body generically, writing no pending state', async () => {
-      const app = await createApp({ logger: false })
-      const res = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { notToken: 'nope' },
-      })
-      expect(res.statusCode).toBe(401)
-      expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
-      await app.close()
-    })
+  afterEach(async () => {
+    vi.mocked(nonceDb.consumeHandoffNonce).mockClear()
+    await openApp?.close()
+    openApp = undefined
+  })
 
-    it('AC3.8: rejects an oversized token body generically (parser-level 413 normalized to the route contract)', async () => {
-      const app = await createApp({ logger: false })
-      const res = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token: 'a'.repeat(20 * 1024) },
-      })
-      expect(res.statusCode).toBe(401)
-      expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
-      expect(res.headers['set-cookie']).toBeUndefined()
-      await app.close()
-    })
+  describe('POST /start (AC1)', () => {
+    it('mints a 32-byte base64url nonce, stores only its HMAC with a 120 s expiry, and appends it to the start URL', async () => {
+      const app = await newApp()
+      const before = Date.now()
+      const res = await app.inject({ method: 'POST', url: START_URL })
 
-    it('AC3.9: rejects a token with an unexpected alg, generic message, no pending cookie', async () => {
-      const app = await createApp({ logger: false })
-      const token = signToken()
-      const [h, p, s] = token.split('.')
-      const badHeader = b64url(JSON.stringify({ alg: 'none', kid: 'kid-1', typ: 'JWT' }))
-      const res = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token: `${badHeader}.${p}.${s}` },
-      })
-      expect(res.statusCode).toBe(401)
-      expect(res.headers['set-cookie']).toBeUndefined()
-      void h
-      await app.close()
-    })
-
-    it('AC3.7 happy path: a valid token gets a pending-state cookie and 200', async () => {
-      const app = await createApp({ logger: false })
-      const token = signToken()
-      const res = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
-      })
       expect(res.statusCode).toBe(200)
-      const handoffCookie = handoffCookieFrom(res.headers['set-cookie'])
-      expect(handoffCookie).toBeTruthy()
-      const body = res.json<{ data: { pendingId: string } }>()
-      expect(body.data.pendingId).toBeTruthy()
-      await app.close()
+      expect(res.headers['set-cookie']).toBeUndefined()
+      const { nonce, expiresAt, redirectUrl } = res.json<StartBody>().data
+      expect(nonce).toMatch(NONCE_PATTERN)
+      const redirect = new URL(redirectUrl)
+      expect(`${redirect.origin}${redirect.pathname}`).toBe('https://router.example/handoff/start')
+      expect(redirect.searchParams.get('v')).toBe('1')
+      expect(redirect.searchParams.getAll('nonce')).toEqual([nonce])
+
+      const row = await nonceRow(nonce)
+      expect(row?.consumedAt).toBeNull()
+      const ttl = (row?.expiresAt.getTime() ?? 0) - before
+      expect(ttl).toBeGreaterThan(115_000)
+      expect(ttl).toBeLessThanOrEqual(121_000)
+      expect(new Date(expiresAt).getTime()).toBe(row?.expiresAt.getTime())
+      const raw = await getDb()
+        .select()
+        .from(handoffNonces)
+        .where(eq(handoffNonces.nonceHash, nonce))
+      expect(raw).toHaveLength(0)
     })
 
-    it('AC7: registers a rate limit (429 shape reachable) — not asserting the full 60-req budget here', async () => {
-      const app = await createApp({ logger: false })
-      const res = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token: 'x' },
-      })
-      // Just confirm the route responds normally under rate-limit registration (not exhausted).
-      expect(res.statusCode).toBe(401)
-      await app.close()
+    it('mints a different nonce on every call', async () => {
+      const app = await newApp()
+      expect(await start(app)).not.toBe(await start(app))
     })
 
-    it('AC1: response includes a distinct claim field, never derived from rawCookie/pendingId', async () => {
-      const app = await createApp({ logger: false })
-      const token = signToken()
-      const res = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
-      })
-      expect(res.statusCode).toBe(200)
-      const handoffCookie = handoffCookieFrom(res.headers['set-cookie'])
-      const rawCookie = handoffCookie
-      const body = res.json<{ data: { pendingId: string; claim: string } }>()
-      expect(body.data.claim).toBeTruthy()
-      expect(body.data.claim).not.toBe(rawCookie)
-      expect(body.data.claim).not.toBe(body.data.pendingId)
-      await app.close()
-    })
-
-    describe('display labels (Story 60.4 AC1, F10)', () => {
-      type PrepareBody = {
-        data: {
-          pendingId: string
-          claim: string
-          organizationName: string | null
-          accountLabel: string | null
-        }
-      }
-
-      async function prepareFor(workosUserId: string, cmOrgId: string): Promise<PrepareBody> {
-        const app = await createApp({ logger: false })
-        try {
-          const res = await app.inject({
-            method: 'POST',
-            url: PREPARE_URL,
-            payload: { token: signToken({ workosUserId, organizationId: cmOrgId }) },
-          })
-          expect(res.statusCode).toBe(200)
-          expect(parseSetCookies(res.headers['set-cookie'])).toHaveProperty(HANDOFF_COOKIE_NAME)
-          return res.json<PrepareBody>()
-        } finally {
-          await app.close()
-        }
-      }
-
-      it('1.1/1.2: a linked user with a synthetic service-provisioned email gets accountLabel null (key present), organizationName unaffected', async () => {
-        const workosUserId = `user_${randomUUID()}`
-        const cmOrgId = randomUUID()
-        const { organizationName } = await createLinkedHandoffOrg(
-          'synthetic',
-          workosUserId,
-          cmOrgId,
-          { email: serviceProvisionedEmail(randomUUID()) }
-        )
-        const body = await prepareFor(workosUserId, cmOrgId)
-        expect(body.data).toHaveProperty('accountLabel', null)
-        expect(body.data.organizationName).toBe(organizationName)
-        expect(body.data.pendingId).toBeTruthy()
-        expect(body.data.claim).toBeTruthy()
-      })
-
-      it('1.3: a linked user with a real email gets it back verbatim, organizationName unaffected', async () => {
-        const workosUserId = `user_${randomUUID()}`
-        const cmOrgId = randomUUID()
-        const realEmail = `alex-${randomUUID()}@acme.com`
-        const { organizationName } = await createLinkedHandoffOrg('real', workosUserId, cmOrgId, {
-          email: realEmail,
-        })
-        const body = await prepareFor(workosUserId, cmOrgId)
-        expect(body.data.accountLabel).toBe(realEmail)
-        expect(body.data.organizationName).toBe(organizationName)
-      })
-
-      it('1.12: an unlinked subject still gets null for both labels', async () => {
-        const body = await prepareFor(`user_${randomUUID()}`, randomUUID())
-        expect(body.data).toHaveProperty('accountLabel', null)
-        expect(body.data).toHaveProperty('organizationName', null)
-      })
-    })
-
-    it('AC2.5: VAULT_HANDOFF_ENABLED=false rejects an otherwise-valid token, no pending cookie', async () => {
-      // env.ts parses process.env once at module load, so flipping the toggle for a single test
-      // requires a fresh module graph (vi.resetModules) rather than just mutating process.env.
-      // prom-client's default registry is a real external-package singleton that vi.resetModules
-      // does not tear down, so it must be cleared explicitly or the re-imported status.ts module
-      // throws on its Counter re-registration.
-      const { register } = await import('prom-client')
-      const original = process.env['VAULT_HANDOFF_ENABLED']
-      process.env['VAULT_HANDOFF_ENABLED'] = 'false'
-      vi.resetModules()
-      register.clear()
-      try {
-        const { createApp: createDisabledApp } = await import('../../app.js')
-        const app = await createDisabledApp({ logger: false })
-        const token = signToken()
-        const res = await app.inject({
-          method: 'POST',
-          url: PREPARE_URL,
-          payload: { token },
-        })
+    it.each([
+      ['handoff is disabled', { VAULT_HANDOFF_ENABLED: 'false' }],
+      ['VAULT_HANDOFF_START_URL is unset', { VAULT_HANDOFF_START_URL: undefined }],
+    ])('rejects generically and stores nothing when %s', async (_label, overrides) => {
+      const before = await nonceRowCount()
+      await withHandoffEnv(overrides, async (app) => {
+        const res = await app.inject({ method: 'POST', url: START_URL })
         expect(res.statusCode).toBe(401)
-        expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
-        expect(res.headers['set-cookie']).toBeUndefined()
-        await app.close()
-      } finally {
-        process.env['VAULT_HANDOFF_ENABLED'] = original
-        vi.resetModules()
-        register.clear()
-      }
+        expect(res.json()).toEqual(GENERIC_REJECTION)
+      })
+      expect(await nonceRowCount()).toBe(before)
+    })
+
+    it('fails closed with the generic rejection when the nonce store is down', async () => {
+      const app = await newApp()
+      vi.mocked(nonceDb.insertHandoffNonce).mockRejectedValueOnce(new Error('db down'))
+      const userAgent = uniqueAgent()
+      const res = await app.inject({
+        method: 'POST',
+        url: START_URL,
+        headers: { 'user-agent': userAgent },
+      })
+      expect(res.statusCode).toBe(401)
+      expect(res.json()).toEqual(GENERIC_REJECTION)
+      expect(await eventsFor(userAgent)).toEqual([HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE])
     })
   })
 
-  describe('POST /exchange-claim (AC3, Story 60.3)', () => {
-    async function prepareAndGetClaim(
-      app: Awaited<ReturnType<typeof createApp>>,
-      claimOverrides: Record<string, unknown> = {}
-    ) {
-      const token = signToken(claimOverrides)
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
+  describe('POST /claim golden path (AC2)', () => {
+    it('signs the linked user in with a new session, consumes the nonce, burns the jti and audits success', async () => {
+      const app = await newApp()
+      const { orgId, userId, workosUserId, cmOrgId } = await linkedUser('golden')
+      const nonce = await start(app)
+      const jti = `jti-${randomUUID()}`
+      const token = signToken({ workosUserId, organizationId: cmOrgId, nonce, jti })
+
+      const { res, userAgent } = await claim(app, { token, nonce })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json<{ data: { userId: string; orgId: string } }>().data).toMatchObject({
+        userId,
+        orgId,
       })
-      return prepareRes.json<{ data: { pendingId: string; claim: string } }>().data
+      expect(Object.keys(parseSetCookies(res.headers['set-cookie'])).length).toBeGreaterThan(0)
+      expect((await nonceRow(nonce))?.consumedAt).toBeInstanceOf(Date)
+      expect(await jtiBurned(jti)).toBe(true)
+      expect(await sessionCount(orgId, userId)).toBe(1)
+      expect(await eventsFor(userAgent)).toEqual([])
+      const audited = await withOrg(orgId, (tx) =>
+        (tx as Tx)
+          .select({ eventType: auditLogEntries.eventType })
+          .from(auditLogEntries)
+          .where(
+            and(
+              eq(auditLogEntries.orgId, orgId),
+              eq(auditLogEntries.eventType, HandoffEvent.HANDOFF_LOGIN_SUCCEEDED)
+            )
+          )
+      )
+      expect(audited).toHaveLength(1)
+    })
+
+    it('returns the MFA challenge instead of a session for an MFA-enrolled user, after the nonce check', async () => {
+      const app = await newApp()
+      const { orgId, userId, workosUserId, cmOrgId } = await linkedUser('mfa', {
+        mfaEnrolled: true,
+      })
+      const nonce = await start(app)
+      const token = signToken({ workosUserId, organizationId: cmOrgId, nonce })
+
+      const { res } = await claim(app, { token, nonce })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json<{ data: { mfaRequired: boolean; mfaToken: string } }>()
+      expect(body.data.mfaRequired).toBe(true)
+      expect(body.data.mfaToken).toBeTruthy()
+      expect(res.headers['set-cookie']).toBeUndefined()
+      expect(await sessionCount(orgId, userId)).toBe(0)
+      expect((await nonceRow(nonce))?.consumedAt).toBeInstanceOf(Date)
+    })
+  })
+
+  describe('POST /claim nonce failures (AC2 edge, AC3, AC4)', () => {
+    async function expectRejected(
+      result: Awaited<ReturnType<typeof claim>>,
+      eventTypes: string[]
+    ): Promise<void> {
+      expect(result.res.statusCode).toBe(401)
+      expect(result.res.json()).toEqual(GENERIC_REJECTION)
+      expect(result.res.headers['set-cookie']).toBeUndefined()
+      expect(await eventsFor(result.userAgent)).toEqual([...eventTypes].sort())
     }
 
-    it('happy path: a valid pendingId/claim pair sets a fresh handoff-confirm cookie that the (unmodified) confirm POST path accepts and completes to a real login', async () => {
-      const app = await createApp({ logger: false })
-      const workosUserId = `user_${randomUUID()}`
-      const cmOrgId = `org_synthetic_${randomUUID()}`
-      const { orgId, userId } = await createLinkedHandoffOrg('claim-happy', workosUserId, cmOrgId)
-      const { pendingId, claim } = await prepareAndGetClaim(app, {
+    it('a missing nonce (no cookie) is handoff_nonce_missing and the token is never verified or burned', async () => {
+      const app = await newApp()
+      const { workosUserId, cmOrgId } = await linkedUser('missing')
+      const jti = `jti-${randomUUID()}`
+      const token = signToken({ workosUserId, organizationId: cmOrgId, nonce: 'A'.repeat(43), jti })
+
+      await expectRejected(await claim(app, { token, nonce: null }), [
+        HandoffEvent.HANDOFF_NONCE_MISSING,
+      ])
+      await expectRejected(await claim(app, { token, nonce: '' }), [
+        HandoffEvent.HANDOFF_NONCE_MISSING,
+      ])
+      expect(await jtiBurned(jti)).toBe(false)
+      expect(nonceDb.consumeHandoffNonce).not.toHaveBeenCalled()
+    })
+
+    it('a nonce with no record is handoff_nonce_unknown', async () => {
+      const app = await newApp()
+      const nonce = 'B'.repeat(43)
+      await expectRejected(await claim(app, { token: signToken({ nonce }), nonce }), [
+        HandoffEvent.HANDOFF_NONCE_UNKNOWN,
+      ])
+    })
+
+    it('the same nonce presented again, even with a valid fresh token, is handoff_nonce_reused and mints no session', async () => {
+      const app = await newApp()
+      const { orgId, userId, workosUserId, cmOrgId } = await linkedUser('reused')
+      const nonce = await start(app)
+      const first = await claim(app, {
+        token: signToken({ workosUserId, organizationId: cmOrgId, nonce }),
+        nonce,
+      })
+      expect(first.res.statusCode).toBe(200)
+
+      await expectRejected(
+        await claim(app, {
+          token: signToken({ workosUserId, organizationId: cmOrgId, nonce }),
+          nonce,
+        }),
+        [HandoffEvent.HANDOFF_NONCE_REUSED]
+      )
+      expect(await sessionCount(orgId, userId)).toBe(1)
+    })
+
+    it('a nonce past its expiry is handoff_nonce_expired', async () => {
+      const app = await newApp()
+      const nonce = await start(app)
+      await getDb()
+        .update(handoffNonces)
+        .set({ expiresAt: new Date(Date.now() - 1000) })
+        .where(eq(handoffNonces.nonceHash, hashCookieValue(nonce)))
+
+      await expectRejected(await claim(app, { token: signToken({ nonce }), nonce }), [
+        HandoffEvent.HANDOFF_NONCE_EXPIRED,
+      ])
+    })
+
+    it('a token signed for another nonce is handoff_nonce_mismatch, and the cookie nonce is spent anyway (D5)', async () => {
+      const app = await newApp()
+      const { orgId, userId, workosUserId, cmOrgId } = await linkedUser('mismatch')
+      const victimNonce = await start(app)
+      const attackerNonce = await start(app)
+      const attackerToken = signToken({
         workosUserId,
         organizationId: cmOrgId,
+        nonce: attackerNonce,
       })
 
-      const res = await app.inject({
-        method: 'POST',
-        url: EXCHANGE_CLAIM_URL,
-        payload: { pendingId, claim },
-      })
+      await expectRejected(await claim(app, { token: attackerToken, nonce: victimNonce }), [
+        HandoffEvent.HANDOFF_NONCE_MISMATCH,
+      ])
+      expect((await nonceRow(victimNonce))?.consumedAt).toBeInstanceOf(Date)
+      expect(await sessionCount(orgId, userId)).toBe(0)
 
-      expect(res.statusCode).toBe(200)
-      const body = res.json<{ data: { rawCookieValue: string; expiresAt: string } }>()
-      expect(body.data.rawCookieValue).toBeTruthy()
-      expect(body.data.expiresAt).toBeTruthy()
-
-      // AC3: the confirm POST path itself is unchanged — the newly exchanged cookie must be
-      // accepted exactly like the original prepare-set cookie would have been, all the way
-      // through to a real session.
-      const confirmRes = await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${body.data.rawCookieValue}`,
-          'sec-fetch-site': SAME_ORIGIN,
-        },
-      })
-      expect(confirmRes.statusCode).toBe(200)
-      const confirmBody = confirmRes.json<{ data: { userId: string; orgId: string } }>()
-      expect(confirmBody.data.orgId).toBe(orgId)
-      expect(confirmBody.data.userId).toBe(userId)
-      await app.close()
-    })
-
-    it('replay: the same pendingId/claim pair succeeds once, then rejects generically on a second exchange', async () => {
-      const app = await createApp({ logger: false })
-      const { pendingId, claim } = await prepareAndGetClaim(app)
-
-      const first = await app.inject({
-        method: 'POST',
-        url: EXCHANGE_CLAIM_URL,
-        payload: { pendingId, claim },
-      })
-      expect(first.statusCode).toBe(200)
-
-      const second = await app.inject({
-        method: 'POST',
-        url: EXCHANGE_CLAIM_URL,
-        payload: { pendingId, claim },
-      })
-      expect(second.statusCode).toBe(401)
-      expect(second.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
-      await app.close()
-    })
-
-    it('expired pending state: a valid claim past expiresAt is rejected the same generic way as replay', async () => {
-      const app = await createApp({ logger: false })
-      const { pendingId, claim } = await prepareAndGetClaim(app)
-      const { handoffPendingStates } = await import('@project-vault/db/schema')
-      await getDb()
-        .update(handoffPendingStates)
-        .set({ expiresAt: new Date(Date.now() - 1000) })
-        .where(eq(handoffPendingStates.id, pendingId))
-
-      const res = await app.inject({
-        method: 'POST',
-        url: EXCHANGE_CLAIM_URL,
-        payload: { pendingId, claim },
-      })
-      expect(res.statusCode).toBe(401)
-      expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
-      await app.close()
-    })
-
-    it('malformed/missing claim: an empty-string claim is rejected identically to a wholly missing one', async () => {
-      const app = await createApp({ logger: false })
-      const { pendingId } = await prepareAndGetClaim(app)
-
-      const missing = await app.inject({
-        method: 'POST',
-        url: EXCHANGE_CLAIM_URL,
-        payload: { pendingId },
-      })
-      const empty = await app.inject({
-        method: 'POST',
-        url: EXCHANGE_CLAIM_URL,
-        payload: { pendingId, claim: '' },
-      })
-      expect(missing.statusCode).toBe(401)
-      expect(empty.statusCode).toBe(401)
-      expect(missing.json<{ message: string }>().message).toBe(
-        empty.json<{ message: string }>().message
+      await expectRejected(
+        await claim(app, {
+          token: signToken({ workosUserId, organizationId: cmOrgId, nonce: victimNonce }),
+          nonce: victimNonce,
+        }),
+        [HandoffEvent.HANDOFF_NONCE_REUSED]
       )
-      await app.close()
     })
 
-    it('a claim that does not hash-match any row is rejected generically', async () => {
-      const app = await createApp({ logger: false })
-      const { pendingId } = await prepareAndGetClaim(app)
-
-      const res = await app.inject({
-        method: 'POST',
-        url: EXCHANGE_CLAIM_URL,
-        payload: { pendingId, claim: 'not-a-real-claim' },
-      })
-      expect(res.statusCode).toBe(401)
-      await app.close()
+    it('a token with no nonce claim is handoff_nonce_mismatch', async () => {
+      const app = await newApp()
+      const nonce = await start(app)
+      await expectRejected(await claim(app, { token: signToken(), nonce }), [
+        HandoffEvent.HANDOFF_NONCE_MISMATCH,
+      ])
     })
 
-    it('mismatched pair: a valid claim paired with an unrelated pendingId is rejected (scoped lookup requires both to match the same row)', async () => {
-      const app = await createApp({ logger: false })
-      const first = await prepareAndGetClaim(app)
-      const second = await prepareAndGetClaim(app)
+    it('a consume-time store outage fails closed with handoff_replay_store_unavailable', async () => {
+      const app = await newApp()
+      const nonce = await start(app)
+      vi.mocked(nonceDb.consumeHandoffNonce).mockRejectedValueOnce(new Error('db down'))
 
-      const res = await app.inject({
-        method: 'POST',
-        url: EXCHANGE_CLAIM_URL,
-        payload: { pendingId: second.pendingId, claim: first.claim },
-      })
-      expect(res.statusCode).toBe(401)
-      await app.close()
-    })
-
-    it('rolling-deploy skew: a pre-60.3 row with no claim_hash falls into the generic-rejection path, never a crash', async () => {
-      const app = await createApp({ logger: false })
-      const { pendingId } = await prepareAndGetClaim(app)
-      const { handoffPendingStates } = await import('@project-vault/db/schema')
-      await getDb().execute(
-        sql`update ${handoffPendingStates} set claim_hash = NULL where ${handoffPendingStates.id} = ${pendingId}`
-      )
-
-      const res = await app.inject({
-        method: 'POST',
-        url: EXCHANGE_CLAIM_URL,
-        payload: { pendingId, claim: 'anything' },
-      })
-      expect(res.statusCode).toBe(401)
-      await app.close()
-    })
-
-    it('VAULT_HANDOFF_ENABLED=false rejects an otherwise-valid exchange, generically', async () => {
-      const { register } = await import('prom-client')
-      const app = await createApp({ logger: false })
-      const { pendingId, claim } = await prepareAndGetClaim(app)
-      await app.close()
-
-      const original = process.env['VAULT_HANDOFF_ENABLED']
-      process.env['VAULT_HANDOFF_ENABLED'] = 'false'
-      vi.resetModules()
-      register.clear()
-      try {
-        const { createApp: createDisabledApp } = await import('../../app.js')
-        const disabledApp = await createDisabledApp({ logger: false })
-        const res = await disabledApp.inject({
-          method: 'POST',
-          url: EXCHANGE_CLAIM_URL,
-          payload: { pendingId, claim },
-        })
-        expect(res.statusCode).toBe(401)
-        await disabledApp.close()
-      } finally {
-        process.env['VAULT_HANDOFF_ENABLED'] = original
-        vi.resetModules()
-        register.clear()
-      }
+      await expectRejected(await claim(app, { token: signToken({ nonce }), nonce }), [
+        HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE,
+      ])
     })
   })
 
-  describe('POST /confirm (AC4)', () => {
-    it('AC4.15: rejects generically when the confirm cookie is missing entirely', async () => {
-      const app = await createApp({ logger: false })
-      const res = await app.inject({ method: 'POST', url: CONFIRM_URL })
+  describe('POST /claim token, jti and org failures (60-3/60-6 guarantees)', () => {
+    async function expectRejectedWith(
+      payload: ClaimPayload,
+      app: App,
+      eventTypes: string[]
+    ): Promise<void> {
+      const { res, userAgent } = await claim(app, payload)
       expect(res.statusCode).toBe(401)
-      expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
-      await app.close()
+      expect(res.json()).toEqual(GENERIC_REJECTION)
+      expect(await eventsFor(userAgent)).toEqual([...eventTypes].sort())
+    }
+
+    it('a non-string token is handoff_malformed_claim, after the nonce is consumed', async () => {
+      const app = await newApp()
+      const nonce = await start(app)
+      await expectRejectedWith({ token: 42, nonce }, app, [HandoffEvent.HANDOFF_MALFORMED_CLAIM])
+      expect((await nonceRow(nonce))?.consumedAt).toBeInstanceOf(Date)
     })
 
-    it('AC4.15: rejects generically when the pending state has expired', async () => {
-      const app = await createApp({ logger: false })
-      const token = signToken()
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
-      })
-      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
-      const pendingId = prepareRes.json<{ data: { pendingId: string } }>().data.pendingId
-      const { handoffPendingStates } = await import('@project-vault/db/schema')
-      await getDb()
-        .update(handoffPendingStates)
-        .set({ expiresAt: new Date(Date.now() - 1000) })
-        .where(eq(handoffPendingStates.id, pendingId))
-
+    it('an oversized body is rejected generically (parser-level 413 normalized to the route contract)', async () => {
+      const app = await newApp()
       const res = await app.inject({
         method: 'POST',
-        url: CONFIRM_URL,
-        headers: { cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}` },
+        url: CLAIM_URL,
+        payload: { token: 'a'.repeat(20 * 1024), nonce: 'C'.repeat(43) },
       })
       expect(res.statusCode).toBe(401)
-      await app.close()
+      expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION.message)
+      expect(res.headers['set-cookie']).toBeUndefined()
     })
 
-    it('AC4.13/AC4.16: a second confirm for an already-burned jti rejects handoff_replay (defense-in-depth Sec-Fetch-Site header accepted as same-origin)', async () => {
-      const app = await createApp({ logger: false })
-      const token = signToken()
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
-      })
-      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
-      const cookieHeader = `${HANDOFF_COOKIE_NAME}=${handoffCookie}`
-
-      // First confirm burns the jti (regardless of what happens further down the pipeline).
-      await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: { cookie: cookieHeader, 'sec-fetch-site': SAME_ORIGIN },
-      })
-
-      const second = await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: { cookie: cookieHeader, 'sec-fetch-site': SAME_ORIGIN },
-      })
-      expect(second.statusCode).toBe(401)
-      expect(second.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
-      await app.close()
+    it('a token with an unexpected alg is handoff_unexpected_alg', async () => {
+      const app = await newApp()
+      const nonce = await start(app)
+      const [, p, s] = signToken({ nonce }).split('.')
+      const badHeader = b64url(JSON.stringify({ alg: 'none', kid: HANDOFF_TEST_KID, typ: 'JWT' }))
+      await expectRejectedWith({ token: `${badHeader}.${p}.${s}`, nonce }, app, [
+        HandoffEvent.HANDOFF_UNEXPECTED_ALG,
+      ])
     })
 
-    it('AC4.16: rejects a confirm with a cross-site Sec-Fetch-Site header', async () => {
-      const app = await createApp({ logger: false })
-      const token = signToken()
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
+    it('a replayed jti is handoff_replay even with a fresh matching nonce', async () => {
+      const app = await newApp()
+      const { orgId, userId, workosUserId, cmOrgId } = await linkedUser('replay')
+      const jti = `jti-${randomUUID()}`
+      const firstNonce = await start(app)
+      const first = await claim(app, {
+        token: signToken({ workosUserId, organizationId: cmOrgId, nonce: firstNonce, jti }),
+        nonce: firstNonce,
       })
-      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
-      const res = await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
-          'sec-fetch-site': 'cross-site',
+      expect(first.res.statusCode).toBe(200)
+
+      const secondNonce = await start(app)
+      await expectRejectedWith(
+        {
+          token: signToken({ workosUserId, organizationId: cmOrgId, nonce: secondNonce, jti }),
+          nonce: secondNonce,
         },
-      })
-      expect(res.statusCode).toBe(401)
-      await app.close()
-    })
-
-    it('AC4.12/AC4.13: JTI is burned even on a cross-site-rejected confirm attempt (row exists in handoff_token_jti)', async () => {
-      const app = await createApp({ logger: false })
-      const token = signToken()
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
-      })
-      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
-
-      // AC4.16's origin check runs BEFORE the cookie/pending lookup in this implementation, so a
-      // cross-site-rejected attempt never reaches the burn step; use a same-origin attempt
-      // instead to prove the burn itself lands independent of what happens afterward.
-      await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
-          'sec-fetch-site': SAME_ORIGIN,
-        },
-      })
-
-      const decoded = JSON.parse(
-        Buffer.from(token.split('.')[1] as string, 'base64url').toString()
-      ) as { jti: string }
-      const rows = await getDb()
-        .select()
-        .from(handoffTokenJti)
-        .where(eq(handoffTokenJti.jti, decoded.jti))
-      expect(rows).toHaveLength(1)
-      await app.close()
-    })
-
-    it("Story 30.2: a claim matching the org's stored centralizemeOrganizationId logs in successfully", async () => {
-      const app = await createApp({ logger: false })
-      const workosUserId = `user_${randomUUID()}`
-      const cmOrgId = `org_synthetic_${randomUUID()}`
-      const { orgId, userId } = await createLinkedHandoffOrg('match', workosUserId, cmOrgId)
-      const token = signToken({ workosUserId, organizationId: cmOrgId })
-
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
-      })
-      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
-      const res = await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
-          'sec-fetch-site': SAME_ORIGIN,
-        },
-      })
-
-      expect(res.statusCode).toBe(200)
-      const body = res.json<{ data: { userId: string; orgId: string } }>()
-      expect(body.data.orgId).toBe(orgId)
-      expect(body.data.userId).toBe(userId)
-      await app.close()
-    })
-
-    it("Story 30.2: a claim NOT matching the org's stored centralizemeOrganizationId is rejected (never compared to PV's raw org UUID)", async () => {
-      const app = await createApp({ logger: false })
-      const workosUserId = `user_${randomUUID()}`
-      const storedCmOrgId = `org_synthetic_${randomUUID()}`
-      await createLinkedHandoffOrg('mismatch', workosUserId, storedCmOrgId)
-      // The claim does not match the stored value — and, critically, is also NOT equal to the PV
-      // org UUID (proving the fix no longer compares against `organizations.id` directly).
-      const token = signToken({
-        workosUserId,
-        organizationId: `org_synthetic_wrong_${randomUUID()}`,
-      })
-
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
-      })
-      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
-      const res = await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
-          'sec-fetch-site': SAME_ORIGIN,
-        },
-      })
-
-      expect(res.statusCode).toBe(401)
-      expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
-      await app.close()
-    })
-
-    it('Story 30.2: an org with no stored centralizemeOrganizationId (null) never matches any claim — fails closed', async () => {
-      const app = await createApp({ logger: false })
-      const workosUserId = `user_${randomUUID()}`
-      // Org provisioned before this field existed / via a non-CM path: no centralizemeOrganizationId.
-      const orgId = randomUUID()
-      const suffix = orgId.slice(0, 8)
-      await getDb()
-        .insert(organizations)
-        .values({ id: orgId, name: `handoff-null-${suffix}`, slug: `handoff-null-${suffix}` })
-      const email = `handoff-null-${randomUUID()}@example.com`
-      const [user] = await getDb()
-        .insert(users)
-        .values({ email, passwordHash: 'x' })
-        .returning({ id: users.id })
-      if (!user) throw new Error('expected user row')
-      await getDb().insert(userIdentityTokens).values({ userId: user.id, displayName: email })
-      await withOrg(orgId, (tx) =>
-        (tx as Tx)
-          .insert(orgMemberships)
-          .values({ orgId, userId: user.id, role: 'member', status: 'active' })
+        app,
+        [HandoffEvent.HANDOFF_REPLAY]
       )
-      await withOrg(orgId, (tx) =>
-        (tx as Tx).insert(externalIdentities).values({
-          orgId,
-          userId: user.id,
-          providerName: HANDOFF_PROVIDER,
-          externalSubject: workosUserId,
-        })
-      )
-      const token = signToken({ workosUserId, organizationId: `org_synthetic_${randomUUID()}` })
-
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
-      })
-      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
-      const res = await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
-          'sec-fetch-site': SAME_ORIGIN,
-        },
-      })
-
-      expect(res.statusCode).toBe(401)
-      await app.close()
+      expect(await sessionCount(orgId, userId)).toBe(1)
     })
 
-    it('Story 30.2: ambiguous (same workosUserId linked in 2 orgs) narrowed to exactly one CM-org-id match succeeds', async () => {
-      const app = await createApp({ logger: false })
+    it('a jti burn store outage fails closed with handoff_replay_store_unavailable', async () => {
+      const app = await newApp()
+      const { workosUserId, cmOrgId } = await linkedUser('burn-outage')
+      const nonce = await start(app)
+      vi.mocked(nonceDb.burnHandoffJti).mockRejectedValueOnce(new Error('db down'))
+      await expectRejectedWith(
+        { token: signToken({ workosUserId, organizationId: cmOrgId, nonce }), nonce },
+        app,
+        [HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE]
+      )
+    })
+
+    it('an unlinked subject is handoff_org_mismatch and the jti is still burned', async () => {
+      const app = await newApp()
+      const nonce = await start(app)
+      const jti = `jti-${randomUUID()}`
+      await expectRejectedWith({ token: signToken({ nonce, jti }), nonce }, app, [
+        HandoffEvent.HANDOFF_ORG_MISMATCH,
+      ])
+      expect(await jtiBurned(jti)).toBe(true)
+    })
+
+    it("a claim whose organizationId is not the org's stored centralizeme id is handoff_org_mismatch", async () => {
+      const app = await newApp()
+      const { workosUserId } = await linkedUser('org-mismatch')
+      const nonce = await start(app)
+      await expectRejectedWith(
+        {
+          token: signToken({ workosUserId, organizationId: `org_wrong_${randomUUID()}`, nonce }),
+          nonce,
+        },
+        app,
+        [HandoffEvent.HANDOFF_ORG_MISMATCH]
+      )
+    })
+
+    it('a subject linked in two orgs narrows to the one whose centralizeme id matches', async () => {
+      const app = await newApp()
       const workosUserId = `user_${randomUUID()}`
       const matchingCmOrgId = `org_synthetic_${randomUUID()}`
-      const otherCmOrgId = `org_synthetic_${randomUUID()}`
-      const { orgId: matchOrgId, userId: matchUserId } = await createLinkedHandoffOrg(
-        'ambig-match',
-        workosUserId,
-        matchingCmOrgId
-      )
-      await createLinkedHandoffOrg('ambig-other', workosUserId, otherCmOrgId)
-      const token = signToken({ workosUserId, organizationId: matchingCmOrgId })
-
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
+      const match = await createLinkedHandoffOrg('ambig-match', workosUserId, matchingCmOrgId)
+      await createLinkedHandoffOrg('ambig-other', workosUserId, `org_synthetic_${randomUUID()}`)
+      const nonce = await start(app)
+      const { res } = await claim(app, {
+        token: signToken({ workosUserId, organizationId: matchingCmOrgId, nonce }),
+        nonce,
       })
-      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
-      const res = await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
-          'sec-fetch-site': SAME_ORIGIN,
-        },
-      })
-
       expect(res.statusCode).toBe(200)
-      const body = res.json<{ data: { userId: string; orgId: string } }>()
-      expect(body.data.orgId).toBe(matchOrgId)
-      expect(body.data.userId).toBe(matchUserId)
-      await app.close()
+      expect(res.json<{ data: { orgId: string } }>().data.orgId).toBe(match.orgId)
     })
 
-    it('Story 30.2: ambiguous with zero CM-org-id matches is rejected generically', async () => {
-      const app = await createApp({ logger: false })
-      const workosUserId = `user_${randomUUID()}`
-      await createLinkedHandoffOrg('ambig-none-a', workosUserId, `org_synthetic_${randomUUID()}`)
-      await createLinkedHandoffOrg('ambig-none-b', workosUserId, `org_synthetic_${randomUUID()}`)
-      const token = signToken({ workosUserId, organizationId: `org_synthetic_${randomUUID()}` })
-
-      const prepareRes = await app.inject({
-        method: 'POST',
-        url: PREPARE_URL,
-        payload: { token },
+    it('an inactive membership is rejected generically with no session', async () => {
+      const app = await newApp()
+      const { orgId, userId, workosUserId, cmOrgId } = await linkedUser('inactive', {
+        membershipStatus: 'deactivated',
       })
-      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
-      const res = await app.inject({
-        method: 'POST',
-        url: CONFIRM_URL,
-        headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
-          'sec-fetch-site': SAME_ORIGIN,
-        },
+      const nonce = await start(app)
+      const { res } = await claim(app, {
+        token: signToken({ workosUserId, organizationId: cmOrgId, nonce }),
+        nonce,
       })
-
       expect(res.statusCode).toBe(401)
-      expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
-      await app.close()
+      expect(res.json()).toEqual(GENERIC_REJECTION)
+      expect(await sessionCount(orgId, userId)).toBe(0)
     })
+
+    it('an unknown claimsVersion still signs in and records the unknown-version events', async () => {
+      const app = await newApp()
+      const { workosUserId, cmOrgId } = await linkedUser('claims-v2')
+      const nonce = await start(app)
+      const { res, userAgent } = await claim(app, {
+        token: signToken({ workosUserId, organizationId: cmOrgId, nonce, claimsVersion: 2 }),
+        nonce,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(await eventsFor(userAgent)).toEqual(
+        [
+          HandoffEvent.HANDOFF_UNKNOWN_CLAIMS_VERSION,
+          HandoffEvent.HANDOFF_UNKNOWN_CAPABILITY,
+        ].sort()
+      )
+    })
+
+    it('rejects generically and consumes nothing when handoff is disabled', async () => {
+      const app = await newApp()
+      const nonce = await start(app)
+      await withHandoffEnv({ VAULT_HANDOFF_ENABLED: 'false' }, async (disabledApp) => {
+        const res = await disabledApp.inject({
+          method: 'POST',
+          url: CLAIM_URL,
+          payload: { token: signToken({ nonce }), nonce },
+        })
+        expect(res.statusCode).toBe(401)
+        expect(res.json()).toEqual(GENERIC_REJECTION)
+      })
+      expect((await nonceRow(nonce))?.consumedAt).toBeNull()
+    })
+  })
+
+  describe('retired routes (AC7)', () => {
+    it.each(['/prepare', '/exchange-claim', '/confirm'])(
+      'POST %s no longer exists',
+      async (path) => {
+        const app = await newApp()
+        const res = await app.inject({
+          method: 'POST',
+          url: `/api/v1/auth/handoff${path}`,
+          payload: {},
+        })
+        expect(res.statusCode).toBe(404)
+      }
+    )
   })
 })

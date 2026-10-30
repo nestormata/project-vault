@@ -323,27 +323,23 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
-    route: 'POST /api/v1/auth/handoff/prepare',
+    route: 'POST /api/v1/auth/handoff/start',
     reason:
-      "Story 30.2 AC3 — pre-auth CM->PV handoff-token landing. The caller has no session yet; SecureRoute's requireAuth:false public path is used (mirroring /sso/start's own unauthenticated pattern), with its own independent rate limit and a 16 KiB request-body cap. The handler verifies the EdDSA-signed token fully (signature, structural claims, time, audience) before ever writing a pending-state row or minting anything.",
+      "Story 73.1 AC1 — pre-auth nonce mint for the browser-bound handoff, called server to server by PV web's GET /auth/start before any user or org is known. SecureRoute's requireAuth:false public path with its own rate limit; it stores only HMAC(nonce) with a 120 s expiry and mints no credential: the nonce alone signs nobody in.",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, 'hashed-single-use-nonce', 'no-credential-minted'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/handoff/claim',
+    reason:
+      "Story 73.1 AC2-AC5 — pre-auth handoff claim; the caller has no session yet (that is exactly what this endpoint issues on success). PV web's claim route forwards the token plus the nonce from its host-only cookie after rejecting cross-site requests. The handler consumes the nonce first (single use), verifies the EdDSA token and its nonce claim, then performs an insert-first JTI burn before any org/membership check. 16 KiB body cap.",
     securityOwner: SECURITY_OWNER,
     compensatingControls: [
       IP_RATE_LIMIT,
       'eddsa-signature-verification',
-      'hashed-single-use-pending-state-cookie',
-    ],
-    expiresAfterStory: null,
-  },
-  {
-    route: 'POST /api/v1/auth/handoff/confirm',
-    reason:
-      'Story 30.2 AC4 — pre-auth handoff confirmation. The caller has no session yet (that is exactly what this endpoint issues on success); the handler performs an insert-first JTI burn before any org/membership check, and validates Origin/Sec-Fetch-Site as defense-in-depth on top of the same-site httpOnly pending-state cookie.',
-    securityOwner: SECURITY_OWNER,
-    compensatingControls: [
-      IP_RATE_LIMIT,
+      'single-use-browser-bound-nonce',
       'insert-first-jti-replay-burn',
-      'same-site-httponly-pending-state-cookie',
-      'origin-and-sec-fetch-site-check',
     ],
     expiresAfterStory: null,
   },
@@ -987,22 +983,22 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   // pending-state row + issues an httpOnly cookie. No `secureCtx.tx` write happens through the
   // audited transaction path (writeAuditEvent: false, mirroring the moduleAction route above) —
   // the pending-state insert uses `getDb()` directly (mirrors handoff-routes.ts's own
-  // prepare/confirm convention, an instance-level, no-FK/no-RLS table with no org context to
+  // start/claim convention, an instance-level, no-FK/no-RLS table with no org context to
   // audit through).
   'POST /api/v1/extensions/oauth-handoff/start': {
     action: 'mutation',
     auditOmissionReason:
-      "Dispatches to the loaded extension's own oauthHandoff.onOAuthStart hook and mints an instance-level (no-FK/no-RLS) pending-state row, mirroring handoff-routes.ts's prepare route's own no-org-context-to-audit-through convention.",
+      "Dispatches to the loaded extension's own oauthHandoff.onOAuthStart hook and mints an instance-level (no-FK/no-RLS) pending-state row, mirroring handoff-routes.ts's start route's own no-org-context-to-audit-through convention.",
     reviewer: SECURITY_OWNER,
   },
   // Story 39.1 AC2/AC3: pre-auth callback landing, hit directly by an external OAuth provider —
-  // no PV session exists at this point (mirrors POST /api/v1/auth/handoff/confirm's identical
+  // no PV session exists at this point (mirrors POST /api/v1/auth/handoff/claim's identical
   // pre-auth convention one section above). Burns the pending-state row before ever invoking the
   // extension's own `oauthHandoff.onOAuthCallback` hook.
   'GET /api/v1/extensions/oauth-handoff/callback': {
     action: 'mutation',
     auditOmissionReason:
-      'Pre-auth callback route (requireAuth: false) — the caller has no PV session; the single-use pending-state row is burned via a direct getDb() atomic UPDATE before the extension hook is ever invoked, mirroring POST /api/v1/auth/handoff/confirm’s identical no-secureCtx.tx convention.',
+      'Pre-auth callback route (requireAuth: false) — the caller has no PV session; the single-use pending-state row is burned via a direct getDb() atomic UPDATE before the extension hook is ever invoked, mirroring POST /api/v1/auth/handoff/claim’s identical no-secureCtx.tx convention.',
     reviewer: SECURITY_OWNER,
   },
   // Story 25.1 AC5: informational-only capability-declaration read, driving whether
@@ -1515,22 +1511,16 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       "Story 14.3 AC-4/AC-5/AC-7/AC-8/AC-9 — pre-auth SSO callback route; org context is not resolvable until state validation + identity/invitation lookup runs inside the handler's own transactions, so it does not use SecureRoute's declarative writeAuditEvent path. SSO_LOGIN_SUCCEEDED/SSO_LOGIN_REJECTED (platform-level or org-scoped, depending on whether an org was resolved) and EXTERNAL_IDENTITY_LINKED (AC-8) are all still written fail-closed-adjacent inside those transactions via writeHumanAuditEntry()/the platform_security_events writer.",
     reviewer: SECURITY_OWNER,
   },
-  'POST /api/v1/auth/handoff/prepare': {
+  'POST /api/v1/auth/handoff/start': {
     action: 'mutation',
     auditOmissionReason:
-      "Story 30.2 AC3 — pre-auth handoff-token verification/pending-state-mint route; no org/user context is resolvable yet (org resolution happens at /confirm, inside the JTI-burn transaction). Every rejection along the rejection-matrix rows 1-6 is still written fail-closed-adjacent to platform_security_events via writeHandoffSecurityEvent() (AC6.23), just not through SecureRoute's declarative writeAuditEvent path.",
+      "Story 73.1 AC1 — pre-auth nonce mint; no org/user context exists yet and the route decides no login outcome, so it does not use SecureRoute's declarative writeAuditEvent path. A nonce-store failure is still written to platform_security_events via writeHandoffSecurityEvent().",
     reviewer: SECURITY_OWNER,
   },
-  'POST /api/v1/auth/handoff/confirm': {
+  'POST /api/v1/auth/handoff/claim': {
     action: SECURITY_ACTION,
     auditOmissionReason:
-      "Story 30.2 AC4 — pre-auth handoff confirm route; org context is not resolvable until the insert-first JTI burn + external_identities lookup runs inside the handler's own transactions, so it does not use SecureRoute's declarative writeAuditEvent path. handoff_login_succeeded/handoff_mfa_required (org-scoped, once org+membership are known) and every pre-org rejection (platform_security_events, via writeHandoffSecurityEvent()) are all still written fail-closed-adjacent inside those transactions.",
-    reviewer: SECURITY_OWNER,
-  },
-  'POST /api/v1/auth/handoff/exchange-claim': {
-    action: 'mutation',
-    auditOmissionReason:
-      "Story 60.3 AC3 — pre-auth claim-exchange route completing the cross-site handoff fix (F2); no org/user context is resolvable yet (org resolution still happens at /confirm). The claim is consumed via an insert-first burn identical in shape to /confirm's own JTI burn; since Story 60.5 the burn and the cookieHash re-key commit in a single database transaction, so a failed exchange never consumes the claim. This route only re-keys the pending state's cookieHash and sets the handoff-confirm cookie — it does not itself decide login success/failure, so it does not use SecureRoute's declarative writeAuditEvent path. Any consumption failure (replay, expired, malformed, mismatched pendingId/claim pair) is still redacted of the raw claim value per this story's own hardening requirement.",
+      "Story 73.1 AC2/AC3 — pre-auth handoff claim; org context is not resolvable until the nonce consume, token verification, insert-first JTI burn and external_identities lookup have run inside the handler, so it does not use SecureRoute's declarative writeAuditEvent path. handoff_login_succeeded/handoff_mfa_required (org-scoped, once org+membership are known) and every pre-org rejection, the handoff_nonce_* outcomes included (platform_security_events, via writeHandoffSecurityEvent()), are still written fail-closed-adjacent.",
     reviewer: SECURITY_OWNER,
   },
   'POST /api/v1/auth/sso/domain-lookup': {
@@ -1608,7 +1598,7 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     path: 'workers/prune-handoff-token-jti.ts',
     classification: PLATFORM_JOB,
     reason:
-      'Story 30.2 AC5 — prunes the instance-level handoff_token_jti replay-burn ledger and handoff_pending_states by expires_at; both tables are deliberately no-FK/no-RLS (no tenant known at ingestion time), so no org-scoped data is touched.',
+      'Story 30.2 AC5 / Story 73.1 — prunes the instance-level handoff_token_jti replay-burn ledger and handoff_nonces by expires_at; both tables are deliberately no-FK/no-RLS (no tenant known at ingestion time), so no org-scoped data is touched.',
     reviewer: SECURITY_OWNER,
   },
   {

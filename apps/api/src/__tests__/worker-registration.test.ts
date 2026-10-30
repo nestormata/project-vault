@@ -227,3 +227,19 @@ describe('notification catch-up ownership (Story 70.1 AC3)', () => {
     )
   })
 })
+
+describe('handoff nonce prune registration (Story 73.1)', () => {
+  it('schedules and registers prune-handoff-nonces and unschedules the retired pending-state prune', () => {
+    const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
+    const schedulesBlock = extractBalancedBlock(mainSource, REGISTER_SCHEDULES)
+    const workersBlock = extractBalancedBlock(mainSource, REGISTER_WORKERS)
+
+    for (const block of [schedulesBlock, workersBlock]) {
+      expect(block).toContain("'prune-handoff-nonces':")
+      expect(block).not.toContain("'prune-handoff-pending-states':")
+    }
+    expect(mainSource).toMatch(
+      /await Promise\.all\(\s*RETIRED_HANDOFF_PRUNE_SCHEDULES\.map\(\(name\) => boss\.unschedule\(name\)\)\s*\)/
+    )
+  })
+})

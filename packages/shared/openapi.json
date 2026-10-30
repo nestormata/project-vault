@@ -26920,7 +26920,7 @@
         }
       }
     },
-    "/api/v1/auth/handoff/prepare": {
+    "/api/v1/auth/handoff/start": {
       "post": {
         "responses": {
           "200": {
@@ -26929,16 +26929,7 @@
         }
       }
     },
-    "/api/v1/auth/handoff/confirm": {
-      "post": {
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/api/v1/auth/handoff/exchange-claim": {
+    "/api/v1/auth/handoff/claim": {
       "post": {
         "responses": {
           "200": {

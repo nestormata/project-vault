@@ -12,7 +12,7 @@ import { isNativeLoginEnabled } from './native-login-policy.js'
  *
  * `centralizeme-handoff` is registered as a pure marker in `strategies.ts`'s append-only
  * registry — no route in this repo ever calls `findAuthStrategy('centralizeme-handoff')`
- * (AC2.6): `/auth/handoff/prepare`/`/auth/handoff/confirm` (handoff-routes.ts) implement the full
+ * (AC2.6): `/auth/handoff/start`/`/auth/handoff/claim` (handoff-routes.ts) implement the full
  * verify/burn/session flow directly and never dispatch through the generic SSO
  * start/callback machinery. The registered strategy's `onAuthenticate()` is therefore dead code
  * by construction — it exists only to satisfy the `AuthStrategy` type shape the registry
@@ -49,8 +49,8 @@ function applyHandoffAuthStrategy(
           Promise.reject(
             new Error(
               'centralizeme-handoff AuthStrategy.onAuthenticate must never be invoked — ' +
-                'Story 30.2 dispatches through dedicated /auth/handoff/prepare and ' +
-                '/auth/handoff/confirm routes, never through findAuthStrategy() generic dispatch.'
+                'Story 30.2 dispatches through dedicated /auth/handoff/start and ' +
+                '/auth/handoff/claim routes, never through findAuthStrategy() generic dispatch.'
             )
           ),
       })
