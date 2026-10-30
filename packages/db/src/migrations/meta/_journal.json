@@ -750,6 +750,13 @@
       "when": 1793258729884,
       "tag": "0106_project_urls_and_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1793334766345,
+      "tag": "0107_external_share_verification",
+      "breakpoints": true
     }
   ]
 }
