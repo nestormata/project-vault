@@ -475,8 +475,10 @@
         </label>
       {/each}
     </div>
-    <FormHelpText id="share-attribute-keys-help" kind="checkbox" />
-    <CredentialShareFieldHelp {pointProps} {data} />
+    <FormHelpText id="share-attribute-keys-help" kind="checkbox" /><CredentialShareFieldHelp
+      {pointProps}
+      {data}
+    />
   </fieldset>
 
   {#if shareRecipientType === 'external'}
