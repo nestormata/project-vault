@@ -112,7 +112,7 @@ export const PV_RESPONSE_CASES: readonly string[] = [
   'login-anonymous GET /login - ready',
   'register-anonymous GET /register - ready',
   'status-public GET /status/abc - ready',
-  'handoff-anonymous GET /handoff - ready',
+  'handoff-anonymous GET /auth/claim - ready',
   'dashboard-anonymous GET /dashboard - ready',
   'dashboard-session-expired GET /dashboard refresh-token=dead ready',
   'dashboard-authenticated-data GET /dashboard/__data.json session=ok ready',

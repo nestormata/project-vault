@@ -7,8 +7,7 @@ export const BASE_INTERNAL_API_CONSUMERS: string[] = [
   'src/routes/api/v1/[...path]/+server.ts',
   'src/routes/ready/+server.ts',
   'src/routes/api/health/+server.ts',
-  'src/routes/api/v1/auth/handoff/prepare/+server.ts',
-  'src/routes/(auth)/handoff/+page.server.ts',
+  'src/lib/server/handoff-api.ts',
 ]
 
 // The one module allowed to wrap the global fetch (Story 43.16): matched by path identity.

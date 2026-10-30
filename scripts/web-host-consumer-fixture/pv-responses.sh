@@ -6,8 +6,8 @@
 # `handleError`, so SvelteKit's default must still log). The JSON goes to
 # WEB_HOST_FIXTURE_RESPONSES_OUT (default: the temp dir); with WEB_HOST_FIXTURE_RESPONSES_EXPECTED it
 # is diffed against that file. pv-responses.main.json was recorded from `main`'s packed web-host
-# (c4482a44) with this same script: scripts/check-composition-kit-integration.test.ts diffs the
-# current packed web-host against it.
+# (c4482a44) with this same script; 73.1 moved its handoff row to /auth/claim (no-referrer).
+# scripts/check-composition-kit-integration.test.ts diffs the current packed web-host against it.
 # Uses run.sh's WORK, API_PORT, NODE_BIN, log.
 
 # <name> <method> <path> <cookie> <vault-state>
@@ -15,7 +15,7 @@ PV_RESPONSE_CASES=(
   'login-anonymous GET /login - ready'
   'register-anonymous GET /register - ready'
   'status-public GET /status/abc - ready'
-  'handoff-anonymous GET /handoff - ready'
+  'handoff-anonymous GET /auth/claim - ready'
   'dashboard-anonymous GET /dashboard - ready'
   'dashboard-session-expired GET /dashboard refresh-token=dead ready'
   'dashboard-authenticated-data GET /dashboard/__data.json session=ok ready'

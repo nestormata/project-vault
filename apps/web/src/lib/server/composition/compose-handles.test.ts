@@ -276,7 +276,7 @@ describe('composeHandles — no request store (AC-4)', () => {
 
 describe('composeHandles — header policy option (AC-4, AC-5)', () => {
   it('sets the resolved policy headers exactly once, before the first handle runs', async () => {
-    const req = fakeKitRequest('/handoff')
+    const req = fakeKitRequest('/auth/claim')
     const order: string[] = []
     const handle = composeHandles(
       [
@@ -293,7 +293,7 @@ describe('composeHandles — header policy option (AC-4, AC-5)', () => {
       {
         'content-security-policy': "frame-ancestors 'none'",
         'x-frame-options': 'DENY',
-        'referrer-policy': 'strict-origin',
+        'referrer-policy': 'no-referrer',
       },
     ])
   })
