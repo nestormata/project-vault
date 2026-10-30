@@ -17,6 +17,10 @@ async function listMembers(context: BrowserContext, projectId: string): Promise<
   return ((await response.json()) as { data: Member[] }).data
 }
 
+const OWNER_PASSWORD = 'e2e-Owner-Password-123'
+const INVITEE_PASSWORD = 'e2e-Invitee-Password-123'
+const STRANGER_PASSWORD = 'e2e-Stranger-Password-123'
+
 test.describe('J44 — add an existing organization user to a project', () => {
   test('an owner adds an existing org user; repeats and unknown users are refused', async ({
     browser,
@@ -24,7 +28,7 @@ test.describe('J44 — add an existing organization user to a project', () => {
     const ownerContext = await browser.newContext()
     await registerAndLoginViaApi(ownerContext, {
       email: uniqueEmail('j44-owner'),
-      password: 'e2e-Owner-Password-123',
+      password: OWNER_PASSWORD,
       orgName: uniqueOrgName('J44 Org'),
     })
     const firstProject = await createProjectViaApi(ownerContext, {
@@ -41,7 +45,7 @@ test.describe('J44 — add an existing organization user to a project', () => {
       projectId: firstProject.id,
       role: 'member',
       label: 'j44-invitee',
-      password: 'e2e-Invitee-Password-123',
+      password: INVITEE_PASSWORD,
     })
     const inviteeId = (await listMembers(ownerContext, firstProject.id)).find(
       (member) => member.email === invitee.email
@@ -91,7 +95,7 @@ test.describe('J44 — add an existing organization user to a project', () => {
     const strangerContext = await browser.newContext()
     const stranger = await registerAndLoginViaApi(strangerContext, {
       email: uniqueEmail('j44-stranger'),
-      password: 'e2e-Stranger-Password-123',
+      password: STRANGER_PASSWORD,
       orgName: uniqueOrgName('J44 Other Org'),
     })
     const cross = await ownerContext.request.post(`/api/v1/projects/${secondProject.id}/members`, {

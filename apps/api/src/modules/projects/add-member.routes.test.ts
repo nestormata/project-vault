@@ -44,6 +44,8 @@ async function addedAuditCount(orgId: string, userId: string): Promise<number> {
 
 const ORIGINAL_BYPASS = process.env['RATE_LIMIT_TEST_BYPASS']
 
+const loginPassphrase = 'correct-horse-battery-staple'
+
 describe('POST /api/v1/projects/:projectId/members (Story 72-14)', () => {
   let app: TestApp
 
@@ -306,7 +308,7 @@ describe('POST /api/v1/projects/:projectId/members (Story 72-14)', () => {
   it('refuses a caller without MFA enrollment (strict gate, grace period ignored)', async () => {
     const unenrolled = await registerAndLoginViaApi(app, {
       email: `addmember-nomfa-${randomUUID()}@example.com`,
-      password: 'correct-horse-battery-staple',
+      password: loginPassphrase,
       orgName: `AddMember NoMfa ${randomUUID()}`,
     })
     const project = await createProject(app, unenrolled.cookies, 'nomfa-proj')
