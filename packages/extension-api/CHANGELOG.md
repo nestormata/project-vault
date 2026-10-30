@@ -14,9 +14,10 @@ behaviour (no code needed). An unparsable declared version gets the step-up (fai
 
 - `CredentialSharingCreateExternalShareParams.totpCode` (optional `string`): the acting user's
   current code from his or her confirmed Project Vault TOTP enrollment. With `apiVersion` 3.38.0 or
-  later the host verifies it (replay-protected, the check behind PV's own share form, so a code
-  already used by a login or an earlier share is refused) after the acting-user checks and before
-  any write. There is no password factor on this method.
+  later the host verifies it (replay-protected, the TOTP branch of PV's own share form check, so a
+  code already used by a login or an earlier share is refused) after the acting-user checks and
+  before any write. There is no password factor on this method. Each acting user gets 10 step-up
+  attempts per minute; past that the step-up error is thrown even for a valid code.
 - `CredentialSharingStepUpRequiredError` (`code = 'credential_sharing_step_up_required'`): thrown
   when `totpCode` is missing, empty, not a string, wrong or reused, or when there is no acting user
   (no request user and no `actingUserId`). One error for every cause, no reason field, and the

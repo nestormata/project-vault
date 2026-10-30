@@ -128,8 +128,9 @@ behaviour. `checkProjectWriteRoles(manifest)` shows what the host will enforce; 
 ### External shares and `totpCode` (since 3.38.0)
 
 With `apiVersion` 3.38.0 or later, `credentialSharing.createExternalShare` needs the acting user's
-current Project Vault TOTP code in `totpCode`, verified by the host (replay-protected, the same check
-as the native share form) before any write. A missing, empty, wrong or reused code, or no acting user,
+current Project Vault TOTP code in `totpCode`, verified by the host (replay-protected, the TOTP
+check of the native share form; no password factor here, 10 attempts per acting user per minute)
+before any write. A missing, empty, wrong or reused code, or no acting user,
 throws `CredentialSharingStepUpRequiredError`. A user with no confirmed TOTP enrollment gets
 `CredentialSharingTotpEnrollmentRequiredError`. An older declared `apiVersion` keeps the old
 behaviour. See [docs/extensions/authoring.md](../../docs/extensions/authoring.md) "External shares

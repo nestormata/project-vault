@@ -604,11 +604,15 @@ and before your handler; no audit row is written. Reads are never gated by defau
 - `checkProjectWriteRoles(manifest)` lists your project writes with the gate the host will apply;
   fail your CI on an `ungated` entry you did not mean.
 
-**External shares need a step-up (since 3.38.0).** Project Vault's own share form asks the sharer for
-a current authenticator code (Story 72.21). When the manifest declares `apiVersion` 3.38.0 or later,
-`HostServices.credentialSharing.createExternalShare` asks for the same thing before it writes
-anything: pass the acting user's current code as `totpCode` (a string from his or her confirmed
-Project Vault TOTP enrollment).
+**External shares need a step-up (since 3.38.0).** Project Vault's own share form re-checks the
+sharer with a password or a current authenticator code (Story 72.21). When the manifest declares
+`apiVersion` 3.38.0 or later, `HostServices.credentialSharing.createExternalShare` re-checks the
+acting user before it writes anything, with the authenticator code only (no password factor): pass
+his or her current code as `totpCode` (a string from the confirmed Project Vault TOTP enrollment).
+Each acting user gets 10 step-up attempts per minute (every attempt counts, enrollment probes
+included); past that the step-up error is thrown even for a valid code. The enrollment error tells
+the caller whether the acting user has a confirmed TOTP enrollment, which host code with
+admin-equivalent access can learn anyway.
 
 - `CredentialSharingStepUpRequiredError` (`code = 'credential_sharing_step_up_required'`): `totpCode`
   missing, empty, not a string, wrong, or already used (by a login or an earlier share), or there is

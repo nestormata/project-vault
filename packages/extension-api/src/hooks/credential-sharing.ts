@@ -147,7 +147,8 @@ export class CredentialSharingActingUserMismatchError extends Error {
 /**
  * Story 72.21 — thrown by `createExternalShare` (manifest `apiVersion` 3.38.0 or later) before any
  * mutation when the acting user did not re-authenticate: `totpCode` missing, wrong, already used,
- * or no acting user to verify. One error for every cause; the message never echoes the code.
+ * no acting user to verify, or more than 10 step-up attempts for that user in the last minute.
+ * One error for every cause; the message never echoes the code.
  */
 export class CredentialSharingStepUpRequiredError extends Error {
   readonly code = 'credential_sharing_step_up_required'

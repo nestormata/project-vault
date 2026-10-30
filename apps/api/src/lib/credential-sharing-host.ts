@@ -471,18 +471,52 @@ async function requireActingUser(
 export const EXTERNAL_SHARE_STEP_UP_SINCE = '3.38.0'
 
 /**
+ * Step-up attempts per acting user per window, every attempt charged (enrollment probes too).
+ * Without it an extension could loop wrong codes against one member: `createExternalShare` has no
+ * per-org bucket, and the native route's own 30/min limit does not cover the facade.
+ */
+export const EXTERNAL_SHARE_STEP_UP_ATTEMPT_LIMIT = 10
+
+/**
  * Story 72.21 — the acting user re-authenticates with a current code from his or her confirmed PV
  * TOTP enrollment (`verifyStepUp`'s TOTP branch: replay-protected, the native share form's check)
  * before anything is written. The password factor is never offered here (D2). Throws, so the
  * caller's transaction rolls back.
  */
+function chargeStepUpAttempt(
+  organizationId: string,
+  actingUserId: string,
+  hostContext: CredentialSharingHostContext
+): boolean {
+  const now = (hostContext.now ?? Date.now)()
+  const windowMs =
+    hostContext.orgRateLimits?.windowMs ?? CREDENTIAL_SHARING_ORG_RATE_LIMIT_WINDOW_MS
+  const key = `createExternalShare:step-up:${organizationId}:${actingUserId}`
+  if (tryAcquireOrgRateLimitSlot(key, EXTERNAL_SHARE_STEP_UP_ATTEMPT_LIMIT, windowMs, now)) {
+    return true
+  }
+  operationalLog(
+    hostContext.logger ?? {},
+    'warn',
+    OperationalEvent.CREDENTIAL_SHARING_HOST_RATE_LIMITED,
+    'credentialSharing.createExternalShare() step-up refused — too many attempts for the acting user',
+    { extensionName: hostContext.extensionName, organizationId }
+  )
+  return false
+}
+
 async function requireExternalShareStepUp(
   tx: Tx,
+  organizationId: string,
   actingUserId: string | undefined,
-  totpCode: unknown
+  totpCode: unknown,
+  hostContext: CredentialSharingHostContext
 ): Promise<void> {
   const methodName = 'createExternalShare'
   if (actingUserId === undefined) throw new CredentialSharingStepUpRequiredError(methodName)
+  if (!chargeStepUpAttempt(organizationId, actingUserId, hostContext)) {
+    throw new CredentialSharingStepUpRequiredError(methodName)
+  }
   if (!(await hasConfirmedTotpEnrollment(tx, actingUserId))) {
     throw new CredentialSharingTotpEnrollmentRequiredError(methodName)
   }
@@ -644,7 +678,13 @@ export function buildCredentialSharingHost(
             false
           )
           if (stepUpRequired) {
-            await requireExternalShareStepUp(tx, acting?.userId, params.totpCode)
+            await requireExternalShareStepUp(
+              tx,
+              params.organizationId,
+              acting?.userId,
+              params.totpCode,
+              hostContext
+            )
           }
 
           const result = await createExternalCredentialShare(tx, {

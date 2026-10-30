@@ -40,6 +40,7 @@ import {
 } from '../modules/credentials/credential-route-test-helpers.js'
 import {
   buildCredentialSharingHost,
+  EXTERNAL_SHARE_STEP_UP_ATTEMPT_LIMIT,
   __resetCredentialSharingHostRateLimitForTests,
   __resetCredentialSharingOrgRateLimitForTests,
 } from './credential-sharing-host.js'
@@ -224,6 +225,22 @@ describe('createExternalShare step-up — real Postgres (Story 72.21)', () => {
     const wrong = wrongCodeFor(user.totp?.secret ?? '')
     await expectRefused(() => create(CURRENT, { totpCode: wrong }, user.userId), STEP_UP)
     expectNoLogContains(wrong)
+  })
+
+  it('refuses even a valid code once the acting user spent the attempt budget', async () => {
+    const user = await member({ enroll: true })
+    const wrong = wrongCodeFor(user.totp?.secret ?? '')
+    const attempts = Array.from({ length: EXTERNAL_SHARE_STEP_UP_ATTEMPT_LIMIT }, () => wrong)
+    await forEachSequential(attempts, (code) =>
+      expectRefused(() => create(CURRENT, { totpCode: code }, user.userId), STEP_UP)
+    )
+    await expectRefused(
+      () => create(CURRENT, { totpCode: user.totp?.freshCode }, user.userId),
+      STEP_UP
+    )
+    const other = await member({ enroll: true })
+    const ok = await create(CURRENT, { totpCode: other.totp?.freshCode }, other.userId)
+    expect(ok.status).toBe('ok')
   })
 
   it('refuses a code already used by a share, and the enrollment code', async () => {

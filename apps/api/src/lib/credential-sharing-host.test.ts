@@ -1272,11 +1272,11 @@ describe('Story 72.21: createExternalShare step-up orchestration', () => {
     async (status) => {
       verifyStepUp.mockResolvedValue({ status })
       const host = buildCredentialSharingHost(CURRENT)
-      await expect(
-        runWithRequestContext(AS_USER, () =>
-          host.createExternalShare({ ...CREATE_PARAMS, totpCode: '654321' })
-        )
-      ).rejects.toThrow(/^(?!.*654321)/)
+      const refusal: unknown = await runWithRequestContext(AS_USER, () =>
+        host.createExternalShare({ ...CREATE_PARAMS, totpCode: '654321' })
+      ).catch((error: unknown) => error)
+      expect(refusal).toBeInstanceOf(CredentialSharingStepUpRequiredError)
+      expect((refusal as Error).message).not.toContain('654321')
       expect(createExternalCredentialShare).not.toHaveBeenCalled()
       expect(writeMachineAuditEntry).not.toHaveBeenCalled()
     }
