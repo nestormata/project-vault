@@ -11,6 +11,7 @@ import {
 } from './security-mfa-recovery.js'
 import { renderProjectInvitationCreated } from './project-invitation-created.js'
 import { renderCredentialShareCreated } from './credential-share-created.js'
+import { renderCredentialShareVerificationCode } from './credential-share-verification-code.js'
 import { renderRotationOwnershipTransferred } from './rotation-ownership-transferred.js'
 import {
   renderAccountRecoveryLinkCreated,
@@ -95,6 +96,18 @@ const EMAIL_RENDERERS: Record<string, (payload: Record<string, unknown>) => Emai
       html,
       inboxTitle: subject.replace(/^\[Project Vault\]\s*/, ''),
       inboxBody: text.slice(0, 500),
+    }
+  },
+  // Story 72-11 V11: the inbox fields never carry the code (email channel only, but a derived
+  // inbox body must not become a second place the code lives).
+  'credential_share.verification_code': (payload) => {
+    const { subject, text, html } = renderCredentialShareVerificationCode(payload)
+    return {
+      subject,
+      text,
+      html,
+      inboxTitle: subject.replace(/^\[Project Vault\]\s*/, ''),
+      inboxBody: 'A verification code was emailed for a shared credential.',
     }
   },
   'rotation.ownership_transferred': (payload) => {

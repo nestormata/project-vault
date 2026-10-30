@@ -142,3 +142,61 @@ describe('applyDeliveryStatusUpdate — AC10 RLS/tenant isolation (real Postgres
     })
   })
 })
+
+// Story 72-11 V11: a verification-code email keeps its code in the queue row only until delivery
+// leaves `pending`; every later transition finds it already gone. Other templates are untouched.
+describe('applyDeliveryStatusUpdate — verification code scrub (Story 72-11)', () => {
+  async function insertWithPayload(
+    orgId: string,
+    templateId: string,
+    payload: Record<string, unknown>
+  ): Promise<string> {
+    const [row] = await withOrg(orgId, (tx) =>
+      tx
+        .insert(notificationQueue)
+        .values({ orgId, channel: 'email', templateId, payload, status: 'pending' })
+        .returning({ id: notificationQueue.id })
+    )
+    if (!row) throw new Error('expected queue row')
+    return row.id
+  }
+
+  async function readPayload(orgId: string, id: string): Promise<unknown> {
+    const [row] = await withOrg(orgId, (tx) =>
+      tx.select().from(notificationQueue).where(eq(notificationQueue.id, id))
+    )
+    return row?.payload
+  }
+
+  it.each(['sent', 'delivered', 'failed', 'suppressed', 'bounced'] as const)(
+    'drops payload.code when the row moves from pending to %s',
+    async (newStatus) => {
+      await withTestOrg(async ({ orgId }) => {
+        const id = await insertWithPayload(orgId, 'credential_share.verification_code', {
+          code: '123456',
+          sharedByDisplayName: 'nestor',
+        })
+        await applyDeliveryStatusUpdate({ notificationQueueId: id, orgId, newStatus })
+        expect(await readPayload(orgId, id)).toEqual({ sharedByDisplayName: 'nestor' })
+      })
+    }
+  )
+
+  it('leaves the code in place while the row is still pending', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const id = await insertWithPayload(orgId, 'credential_share.verification_code', {
+        code: '123456',
+      })
+      await applyDeliveryStatusUpdate({ notificationQueueId: id, orgId, newStatus: 'pending' })
+      expect(await readPayload(orgId, id)).toEqual({ code: '123456' })
+    })
+  })
+
+  it('never touches the payload of another template', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const id = await insertWithPayload(orgId, 'credential.share_created', { code: 'kept' })
+      await applyDeliveryStatusUpdate({ notificationQueueId: id, orgId, newStatus: 'delivered' })
+      expect(await readPayload(orgId, id)).toEqual({ code: 'kept' })
+    })
+  })
+})

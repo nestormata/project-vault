@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql, type SQL } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
@@ -52,6 +52,31 @@ export type ApplyDeliveryStatusUpdateResult =
   | { outcome: 'not_found' }
 
 type Logger = Partial<Pick<FastifyBaseLogger, 'warn'>>
+
+/**
+ * Story 72-11 V11 — payload keys that hold a short-lived secret the recipient needs only in the
+ * delivered message. They are dropped from the queue row as soon as the row leaves `pending` (the
+ * send was handed off, or the row reached a terminal status without one), so the code does not
+ * outlive its delivery attempt in the database. Every transition past the initial send already
+ * goes through this function, which makes it the single place that sees the row leave `pending`.
+ */
+const PAYLOAD_KEYS_SCRUBBED_AFTER_SEND: ReadonlyMap<string, readonly string[]> = new Map([
+  ['credential_share.verification_code', ['code']],
+])
+
+function payloadScrubFor(
+  templateId: string,
+  currentStatus: NotificationQueueStatus
+): { payload: SQL } | Record<string, never> {
+  if (currentStatus !== 'pending') return {}
+  const keys = PAYLOAD_KEYS_SCRUBBED_AFTER_SEND.get(templateId)
+  if (!keys || keys.length === 0) return {}
+  const keyArray = sql.join(
+    keys.map((key) => sql`${key}`),
+    sql`, `
+  )
+  return { payload: sql`${notificationQueue.payload} - ARRAY[${keyArray}]::text[]` }
+}
 
 /**
  * Story 20.11 AC2/AC4 — the single, generalized forward-progress guard every call site that
@@ -140,6 +165,7 @@ export function applyDeliveryStatusUpdate(
       .set({
         status: input.newStatus,
         lastEventAt: now,
+        ...payloadScrubFor(row.templateId, currentStatus),
         ...(input.newStatus === 'delivered' ? { deliveredAt: now } : {}),
         ...(input.providerId !== undefined ? { providerId: input.providerId } : {}),
         ...(input.providerMessageId !== undefined
