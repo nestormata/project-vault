@@ -12,12 +12,29 @@ Configuring, changing, or diagnosing the CentralizeMe-to-Project-Vault authentic
 on this instance. Rotating the signing keys has its own runbook:
 [`handoff-key-rotation.md`](handoff-key-rotation.md).
 
-This is the configuration reference for three environment variables and one diagnostic signal. The
-routes that consume them — `POST /api/v1/auth/handoff/prepare` and
-`POST /api/v1/auth/handoff/confirm`, with an EdDSA compact-JWS verifier and a durable single-use
-`jti` burn — are live.
+This is the configuration reference for the handoff settings and one diagnostic signal. They are
+consumed by the nonce-bound handoff (Story 73.1), which needs no click:
 
-All three variables are parsed once, at boot. **Every change requires a restart.**
+1. The browser opens PV web's `GET /auth/start`. Web asks the api (`POST /api/v1/auth/handoff/start`)
+   for a fresh 32-byte nonce; the api stores only its HMAC in `handoff_nonces` with a 120 s expiry.
+2. Web puts the nonce in the host-only cookie `__Host-pv-handoff-nonce` (HttpOnly, Secure,
+   SameSite=Lax, Path=/, Max-Age=120) and answers 303 to `VAULT_HANDOFF_START_URL` with
+   `nonce=<nonce>` added to its query.
+3. The issuer signs a token whose `nonce` claim is that nonce and redirects to
+   `/auth/claim#<token>`. The token travels only in the URL fragment, which never reaches a server.
+4. The `/auth/claim` page drops the fragment from history and posts the token to PV web's
+   `POST /api/v1/auth/handoff/claim`. That route refuses cross-site requests with 403, reads and
+   always deletes the cookie, and forwards `{token, nonce}` to the api.
+5. The api consumes the nonce first (single use, whatever happens next), verifies the EdDSA token,
+   requires its `nonce` claim to equal the cookie nonce, burns the `jti`, resolves the linked identity
+   and org, and issues a new session or an MFA challenge. The page then goes to `/dashboard`.
+
+Every rejection is the same generic 401 `handoff_rejected` plus one `platform_security_events` row.
+The nonce outcomes are `handoff_nonce_missing` (no cookie), `handoff_nonce_unknown` (no record),
+`handoff_nonce_reused` (already consumed), `handoff_nonce_expired` and `handoff_nonce_mismatch` (the
+token has no nonce or a different one). Token, `jti` and org failures keep their existing events.
+
+All of these settings are parsed once, at boot. **Every change requires a restart.**
 
 ---
 
@@ -38,6 +55,17 @@ the other two variables happen to be configured — their presence alone never i
 The last row is the one that bites during a migration or a restore: if this instance excludes native
 login ([`native-login-exclusion.md`](native-login-exclusion.md)) and you enable handoff without
 provisioning both values in the same change, the API will not start.
+
+---
+
+## `VAULT_HANDOFF_START_URL`
+
+Where `/auth/start` sends the browser so the issuer can sign a token bound to the nonce. Required for
+the flow to work: unset makes `/auth/start` fail closed to the `/auth/claim` error state (no cookie is
+set). When present it must be an absolute `http(s)` URL with no userinfo, or the API refuses to boot
+with a `FATAL:` message. PV adds `nonce=<nonce>` to its query with the URL API, replacing any existing
+`nonce` parameter: `https://router.example/handoff/start?v=1` becomes
+`https://router.example/handoff/start?v=1&nonce=Xy...`.
 
 ---
 

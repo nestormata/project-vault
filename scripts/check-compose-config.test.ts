@@ -282,11 +282,12 @@ describeOrSkip(
   }
 )
 
-// Story 60.4 AC6 — the /handoff consent page's "Return to CentralizeMe" link reads the web
-// process's own VAULT_HANDOFF_ISSUER. Web defaults to EMPTY (link only when an operator explicitly
-// configures a CM issuer — a baked default would put a CentralizeMe link on every self-hosted
-// instance's reachable /handoff page); api defaults to its own zod default (an empty string would
-// fail api boot validation, z.string().min(1)). One operator value must reach both services.
+// Story 60.4 AC6 — the handoff error state's "Return to CentralizeMe" link (on /auth/claim since
+// 73.1) reads the web process's own VAULT_HANDOFF_ISSUER. Web defaults to EMPTY (link only when an
+// operator explicitly configures a CM issuer — a baked default would put a CentralizeMe link on
+// every self-hosted instance's reachable handoff page); api defaults to its own zod default (an
+// empty string would fail api boot validation, z.string().min(1)). One operator value must reach
+// both services.
 describeOrSkip(
   'docker compose config — VAULT_HANDOFF_ISSUER on web and api (Story 60.4 AC6)',
   () => {
@@ -401,12 +402,12 @@ describeOrSkip('docker compose config — CORS_EXTRA_ORIGINS passthrough (Story 
     expect(corsOf(services)).toEqual({ api: DEFAULT_ORIGIN, web: DEFAULT_ORIGIN })
   })
 
-  it('keeps the e2e override web allowlist stub-inclusive (AC7)', () => {
+  it('leaves the base web allowlist unchanged under the e2e override (Story 73.1: no stub origin)', () => {
     const services = renderedServices({
       files: [composeFile, join(repoRoot, 'docker-compose.e2e.yml')],
     })
 
-    expect(corsOf(services).web).toBe(`${DEFAULT_ORIGIN},http://127.0.0.1:48999`)
+    expect(corsOf(services).web).toBe(DEFAULT_ORIGIN)
   })
 
   it('(a) detects the passthrough being removed: example 2 loses the CM origin', () => {

@@ -233,18 +233,17 @@ services:
       # Set PUBLIC_WEB_ORIGIN in .env for any non-localhost deployment (same value the api
       # service's CORS_ALLOWED_ORIGINS uses).
       ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}}
-      # Story 60.4: the /handoff consent page's "Return to CentralizeMe" link uses this value's
+      # Story 60.4: the /auth/claim error state's "Return to CentralizeMe" link uses this value's
       # origin (http(s) only). Deliberately EMPTY by default — the link appears only when an
       # operator explicitly configures a CentralizeMe issuer; otherwise the guidance is plain text.
       VAULT_HANDOFF_ISSUER: ${VAULT_HANDOFF_ISSUER:-}
       # Story 72.7: `rail` selects the left-rail / bottom-bar shell; empty or unknown = the header shell.
       WEB_SHELL_VARIANT: ${WEB_SHELL_VARIANT:-}
       # Story 60.1 (Finding F1 fix): same expression/default as the api service's
-      # CORS_ALLOWED_ORIGINS above. apps/web/src/lib/server/handoff-cors.ts reads this in the
-      # web process itself to CORS-guard the handoff prepare route — without it here, that check's
-      # allowlist was always empty and rejected every origin, including PV's own. Story 60.7: the
-      # same appended CORS_EXTRA_ORIGINS as api (see the api comment for why it is not a full
-      # passthrough); the two lines must stay identical (scripts/check-compose-config.test.ts).
+      # CORS_ALLOWED_ORIGINS above. Story 73.1 removed the cross-site handoff prepare route this
+      # copy guarded, so no web code reads it any more; it stays until its compose guards are
+      # retired with it. Story 60.7: the same appended CORS_EXTRA_ORIGINS as api; the two lines
+      # must stay identical (scripts/check-compose-config.test.ts).
       CORS_ALLOWED_ORIGINS: ${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}}${CORS_EXTRA_ORIGINS:+,${CORS_EXTRA_ORIGINS}}
     ports:
       - '${WEB_HOST_PORT:-5173}:3000'

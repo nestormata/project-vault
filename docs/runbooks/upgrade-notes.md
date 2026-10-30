@@ -194,7 +194,10 @@ The handoff feature is opt-in via `VAULT_HANDOFF_ENABLED`. If you enable it, you
 validates them at boot and will not start into a half-configured state where native login is also
 excluded. Full matrix and formats: [`handoff-instance-identity.md`](handoff-instance-identity.md).
 
-All three are parsed once at boot; every change requires a restart of every instance
+Since Story 73.1 the flow also needs `VAULT_HANDOFF_START_URL`, the issuer URL `/auth/start` sends
+the browser to (see the next-release entry below).
+
+All of them are parsed once at boot; every change requires a restart of every instance
 ([`handoff-key-rotation.md`](handoff-key-rotation.md)).
 
 A restore or redeploy to a **new** host must be provisioned with a **new**
@@ -349,3 +352,20 @@ There is no required pre-step.
   table stays small. Each run deletes at most 5000 rows, oldest first; a `job.backlog` log line means
   a run hit that limit and the rest drains on the following runs. The job needs
   `ADMIN_DATABASE_URL`, which the API already requires.
+- **Breaking for handoff integrators (Story 73.1).** The Confirm sign-in page and its three-call chain
+  are removed: `POST /api/v1/auth/handoff/prepare` (with web's CORS route for it),
+  `POST /api/v1/auth/handoff/exchange-claim`, `POST /api/v1/auth/handoff/confirm`, the
+  `handoff-confirm` cookie and the `/handoff` page. The issuer must now send users to PV web's
+  `GET /auth/start`, read the `nonce` query parameter PV adds to its start URL, sign it into the
+  token as a `nonce` claim (base64url, 16 to 128 characters) and redirect to `/auth/claim#<token>`
+  (fragment, never a query string). Set `VAULT_HANDOFF_START_URL` on the api to that issuer start
+  URL; it must be an absolute `http(s)` URL without userinfo or the API refuses to boot, and unset
+  makes `/auth/start` fail closed. Coordinate the rollout with the issuer: an issuer still calling
+  `prepare` or linking to `/handoff` gets 404s after this upgrade.
+- **Migration `0108`** (`0108_handoff_nonces.sql`) adds one table, `handoff_nonces` (the HMAC of
+  each browser nonce, its expiry and when it was consumed). No row-level security (no tenant is known
+  when it is written, like `handoff_token_jti`). It alters no existing table and backfills nothing.
+  The retired `handoff_pending_states` table is no longer read or written; it is dropped by a later
+  reviewed migration.
+- **Background job rename:** `prune-handoff-pending-states` is replaced by `prune-handoff-nonces`
+  (every five minutes). The old schedule is removed at boot.

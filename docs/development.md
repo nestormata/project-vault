@@ -61,7 +61,7 @@ the wiring tests and the control group (which builds `apps/web` once).
 
 ```bash
 make e2e                                                    # the whole suite
-make e2e SPEC=e2e/journeys/j28-handoff-confirmation.spec.ts # one spec
+make e2e SPEC=e2e/journeys/j31-handoff-cross-site-real-token.spec.ts # one spec
 ```
 
 That target runs `fix-ports`, starts the stack with the E2E overlay through
@@ -95,7 +95,7 @@ before failing, so the cause is in the output.
 ### Running one spec
 
 - `make e2e SPEC=<path>` appends the path to `test:e2e`. Pass a **path**, ideally the full one
-  (`e2e/journeys/j28-handoff-confirmation.spec.ts`); spaces and shell metacharacters are not
+  (`e2e/journeys/j31-handoff-cross-site-real-token.spec.ts`); spaces and shell metacharacters are not
   supported.
 - The filter is a regex over the file path: `SPEC=j1` also runs `j10-…` through `j19-…`. Use the
   full path, or at least the prefix with its dash (`SPEC=j1-`).
@@ -110,7 +110,7 @@ before failing, so the cause is in the output.
 - Stack already up and you only want to re-run a spec, without a rebuild: from the repo root, with
   the worktree's `DB_HOST_PORT` / `API_HOST_PORT` / `WEB_HOST_PORT` set in your shell and
   `E2E_CONFIRM_DB_RESET=true`:
-  `pnpm --filter @project-vault/web-host test:e2e e2e/journeys/j28-handoff-confirmation.spec.ts`.
+  `pnpm --filter @project-vault/web-host test:e2e e2e/journeys/j31-handoff-cross-site-real-token.spec.ts`.
 - **Do not put `--` before the spec.** pnpm forwards extra arguments as-is, so
   `test:e2e -- <spec>` hands Playwright a literal `--`, after which it ignores the filter and runs
   **every** journey. Also go through `test:e2e`, not `pnpm exec playwright test`: j26's isolated
@@ -144,8 +144,8 @@ database on the e2e Postgres (Story 66.4):
 ### Handoff on the E2E stack
 
 Since Story 60.6 the E2E stack runs the CentralizeMe -> PV handoff for real, so
-`j31-handoff-cross-site-real-token.spec.ts` can drive a signed token through a cross-site
-`prepare`, the claim exchange, Confirm and a session:
+`j31-handoff-cross-site-real-token.spec.ts` can drive the nonce-bound flow (Story 73.1):
+`/auth/start`, a fake issuer, `/auth/claim#<token>` and a session, plus the login-CSRF cases:
 
 - The api gets `VAULT_HANDOFF_ENABLED=true`, `VAULT_HANDOFF_INSTANCE_ID=pv-e2e`, a literal
   `VAULT_HANDOFF_ISSUER`, and `VAULT_HANDOFF_VERIFY_KEYS` with one **test-only** Ed25519 public key
@@ -155,12 +155,13 @@ Since Story 60.6 the E2E stack runs the CentralizeMe -> PV handoff for real, so
   override, this kid or this instance id outside the E2E stack.** `scripts/e2e-stack.test.ts` (run in
   PR CI) fails if any of them appears in `docker-compose.yml`, a `fly*.toml` or the example
   configuration file, and pins the override to the fixture's constants.
-- The web gets `VAULT_HANDOFF_ENABLED=true`, an empty `VAULT_HANDOFF_ISSUER` (so j28 sees the
-  plain-text guidance whatever your local config says) and a `CORS_ALLOWED_ORIGINS` that also admits j31's
-  fake CentralizeMe page on `http://127.0.0.1:${E2E_HANDOFF_STUB_PORT:-48999}`. j31 starts that
-  listener itself (127.0.0.1 only). The allowlist is fixed when the stack starts, so if you
-  override `E2E_HANDOFF_STUB_PORT`, set it in your shell for the whole `make e2e` run, not just for
-  Playwright. j31 also uses the next port up (`48999 + 1`) as a deliberately non-allowlisted site.
+- The api also gets `VAULT_HANDOFF_START_URL=http://127.0.0.1:${E2E_HANDOFF_STUB_PORT:-48999}/start`,
+  j31's fake issuer. j31 starts that listener itself (127.0.0.1 only, a different site from PV's
+  `http://localhost:<port>`). The URL is fixed when the stack starts, so if you override
+  `E2E_HANDOFF_STUB_PORT`, set it in your shell for the whole `make e2e` run, not just for
+  Playwright.
+- The web gets an empty `VAULT_HANDOFF_ISSUER`, so j31 sees the plain-text return guidance whatever
+  your local config says.
 
 ### Re-runs and concurrency
 
