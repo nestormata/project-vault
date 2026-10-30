@@ -7,6 +7,9 @@ import {
   CredentialSharingNotAuthorizedError,
   CredentialSharingOrgRateLimitedError,
   CredentialSharingRateLimitedError,
+  CredentialSharingStepUpRequiredError,
+  CredentialSharingTotpEnrollmentRequiredError,
+  EXTENSION_API_VERSION,
 } from '@project-vault/extension-api'
 import { OperationalEvent } from '@project-vault/shared'
 import { firstRejection, redeemInBatches } from '../__tests__/helpers/redeem-in-batches.js'
@@ -77,6 +80,15 @@ vi.mock('../modules/credential-shares/external-service.js', async (importOrigina
     revealExternalShare,
   }
 })
+
+const { hasConfirmedTotpEnrollment } = vi.hoisted(() => ({ hasConfirmedTotpEnrollment: vi.fn() }))
+vi.mock('../modules/auth/mfa.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../modules/auth/mfa.js')>()
+  return { ...actual, hasConfirmedTotpEnrollment }
+})
+
+const { verifyStepUp } = vi.hoisted(() => ({ verifyStepUp: vi.fn() }))
+vi.mock('../modules/credential-shares/step-up.js', () => ({ verifyStepUp }))
 
 const { writeMachineAuditEntry } = vi.hoisted(() => ({ writeMachineAuditEntry: vi.fn() }))
 vi.mock('../modules/audit/machine-entry.js', () => ({ writeMachineAuditEntry }))
@@ -1213,6 +1225,91 @@ describe('Story 65.6 AC1/D1: createExternalShare resolves the acting user', () =
       host.createExternalShare({ ...CREATE_PARAMS, actingUserId: USER_V })
     ).rejects.toBeInstanceOf(CredentialSharingNoMachineUserError)
     expect(resolveActiveOrgRoleInTx).not.toHaveBeenCalled()
+  })
+})
+
+describe('Story 72.21: createExternalShare step-up orchestration', () => {
+  const CURRENT: ExtensionManifest = { ...MANIFEST, apiVersion: EXTENSION_API_VERSION }
+  const AS_USER = { orgId: ORG_ID, userId: USER_U }
+
+  beforeEach(() => {
+    hasConfirmedTotpEnrollment.mockResolvedValue(true)
+    verifyStepUp.mockResolvedValue({ status: 'ok' })
+    createExternalCredentialShare.mockResolvedValue({
+      status: 'ok',
+      share: hostRow(USER_U),
+      token: RAW_TOKEN,
+    })
+  })
+
+  it('verifies the acting user code alone (no password) and then creates', async () => {
+    const host = buildCredentialSharingHost(CURRENT)
+    const result = await runWithRequestContext(AS_USER, () =>
+      host.createExternalShare({ ...CREATE_PARAMS, totpCode: '123456' })
+    )
+    expect(result).toMatchObject({ status: 'ok' })
+    expect(verifyStepUp).toHaveBeenCalledWith(FAKE_TX, { userId: USER_U, totpCode: '123456' })
+    expect(createExternalCredentialShare).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([undefined, '', 123456, null, { code: '123456' }])(
+    'a code of %o is refused before verification and before any write',
+    async (totpCode) => {
+      const host = buildCredentialSharingHost(CURRENT)
+      await expect(
+        runWithRequestContext(AS_USER, () =>
+          host.createExternalShare({ ...CREATE_PARAMS, totpCode } as never)
+        )
+      ).rejects.toBeInstanceOf(CredentialSharingStepUpRequiredError)
+      expect(verifyStepUp).not.toHaveBeenCalled()
+      expect(createExternalCredentialShare).not.toHaveBeenCalled()
+      expect(writeMachineAuditEntry).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each(['missing_factor', 'invalid_password', 'invalid_totp'])(
+    'a %s answer from the verifier is the one step-up error, with nothing written',
+    async (status) => {
+      verifyStepUp.mockResolvedValue({ status })
+      const host = buildCredentialSharingHost(CURRENT)
+      const refusal: unknown = await runWithRequestContext(AS_USER, () =>
+        host.createExternalShare({ ...CREATE_PARAMS, totpCode: '654321' })
+      ).catch((error: unknown) => error)
+      expect(refusal).toBeInstanceOf(CredentialSharingStepUpRequiredError)
+      expect((refusal as Error).message).not.toContain('654321')
+      expect(createExternalCredentialShare).not.toHaveBeenCalled()
+      expect(writeMachineAuditEntry).not.toHaveBeenCalled()
+    }
+  )
+
+  it('no enrollment is its own error, before the code is looked at', async () => {
+    hasConfirmedTotpEnrollment.mockResolvedValue(false)
+    const host = buildCredentialSharingHost(CURRENT)
+    await expect(
+      runWithRequestContext(AS_USER, () =>
+        host.createExternalShare({ ...CREATE_PARAMS, totpCode: '123456' })
+      )
+    ).rejects.toBeInstanceOf(CredentialSharingTotpEnrollmentRequiredError)
+    expect(verifyStepUp).not.toHaveBeenCalled()
+    expect(createExternalCredentialShare).not.toHaveBeenCalled()
+  })
+
+  it('no acting user is refused without touching the verifier', async () => {
+    const host = buildCredentialSharingHost(CURRENT)
+    await expect(
+      host.createExternalShare({ ...CREATE_PARAMS, totpCode: '123456' })
+    ).rejects.toBeInstanceOf(CredentialSharingStepUpRequiredError)
+    expect(hasConfirmedTotpEnrollment).not.toHaveBeenCalled()
+    expect(verifyStepUp).not.toHaveBeenCalled()
+    expect(createExternalCredentialShare).not.toHaveBeenCalled()
+  })
+
+  it('a manifest below 3.38.0 skips the step-up entirely', async () => {
+    const host = buildCredentialSharingHost({ ...MANIFEST, apiVersion: '3.37.0' })
+    const result = await host.createExternalShare(CREATE_PARAMS)
+    expect(result).toMatchObject({ status: 'ok' })
+    expect(hasConfirmedTotpEnrollment).not.toHaveBeenCalled()
+    expect(verifyStepUp).not.toHaveBeenCalled()
   })
 })
 

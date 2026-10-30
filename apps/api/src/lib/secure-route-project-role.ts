@@ -41,16 +41,20 @@ function versionRank(version: string): number | null {
   return major * 1_000_000 + minor * 1_000 + patch
 }
 
-const DEFAULT_SINCE_RANK = versionRank(PROJECT_ROLE_DEFAULT_SINCE) ?? 0
-
 /**
  * `registerExtension()` already accepted `apiVersion` as a canonical `MAJOR.MINOR.PATCH` in the
  * host's supported range (no prerelease), so comparing the three numbers is exact. Anything else
- * gets the default gate (fail closed).
+ * counts as the current contract (fail closed).
  */
-export function projectRolePolicyFor(apiVersion: string): ExtensionProjectRolePolicy {
+export function declaresApiVersionAtLeast(apiVersion: string, since: string): boolean {
   const rank = versionRank(apiVersion)
-  return rank === null || rank >= DEFAULT_SINCE_RANK ? 'extension' : 'extension-legacy'
+  return rank === null || rank >= (versionRank(since) ?? 0)
+}
+
+export function projectRolePolicyFor(apiVersion: string): ExtensionProjectRolePolicy {
+  return declaresApiVersionAtLeast(apiVersion, PROJECT_ROLE_DEFAULT_SINCE)
+    ? 'extension'
+    : 'extension-legacy'
 }
 
 const NO_GATE: ProjectRoleGate = { minimumProjectRole: null, ungated: null }

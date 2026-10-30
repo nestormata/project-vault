@@ -877,6 +877,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `recipientEmail`
   - since: 3.22.0
   - type: `string`
+- member: `totpCode?`
+  - since: 3.38.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 
 ## export `CredentialSharingCreateExternalShareResult`
 
@@ -1193,6 +1197,28 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `CredentialSharingShareStatus`
 - union-members: `"active"`, `"viewed"`, `"revoked"`, `"expired"`, `"superseded"`
 
+## export `CredentialSharingStepUpRequiredError`
+
+- since: 3.38.0
+- kind: type
+- type: `CredentialSharingStepUpRequiredError`
+- member: `cause?`
+  - since: 3.38.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.38.0
+  - type: `"credential_sharing_step_up_required"`
+- member: `message`
+  - since: 3.38.0
+  - type: `string`
+- member: `name`
+  - since: 3.38.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.38.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
 ## export `CredentialSharingSupersedeSharesForRotationParams`
 
 - since: 3.22.0
@@ -1220,6 +1246,28 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `supersededShares`
   - since: 3.22.0
   - type: `CredentialSharingShareRecord[]`
+
+## export `CredentialSharingTotpEnrollmentRequiredError`
+
+- since: 3.38.0
+- kind: type
+- type: `CredentialSharingTotpEnrollmentRequiredError`
+- member: `cause?`
+  - since: 3.38.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.38.0
+  - type: `"credential_sharing_totp_enrollment_required"`
+- member: `message`
+  - since: 3.38.0
+  - type: `string`
+- member: `name`
+  - since: 3.38.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.38.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 
 ## export `CredentialSharingViewer`
 
@@ -1382,7 +1430,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.37.0"`
+- type: `"3.38.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

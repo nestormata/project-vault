@@ -56,6 +56,8 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'CredentialSharingNotAuthorizedError',
         'CredentialSharingOrgRateLimitedError',
         'CredentialSharingRateLimitedError',
+        'CredentialSharingStepUpRequiredError',
+        'CredentialSharingTotpEnrollmentRequiredError',
         // Story 36.1 — new HostServices.notificationOriginator hook-specific error classes
         // (AC1/AC3/AC4/AC5).
         'NotificationOriginatorNoAmbientContextError',

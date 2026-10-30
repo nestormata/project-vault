@@ -657,7 +657,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // `ApiRouteSecurity.minimumProjectRole` (policy row 1) and the project-role gate default for routes
 // whose manifest declares 3.37.0 or later. The default is keyed on the declared version, so a
 // manifest declaring 3.36.0 or older behaves exactly as before.
-export const EXTENSION_API_VERSION = '3.37.0'
+// Story 72.21 — bumped as a minor (3.37.0 -> 3.38.0): the optional
+// `CredentialSharingCreateExternalShareParams.totpCode` and two new error classes (policy row 1).
+// The step-up on `createExternalShare` applies only to a manifest declaring 3.38.0 or later, so a
+// manifest declaring 3.37.0 or older behaves exactly as before.
+export const EXTENSION_API_VERSION = '3.38.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

@@ -3,16 +3,20 @@ import {
   CredentialSharingActingUserInvalidError,
   CredentialSharingActingUserMismatchError,
   CredentialSharingNotAuthorizedError,
+  CredentialSharingStepUpRequiredError,
+  CredentialSharingTotpEnrollmentRequiredError,
   type CredentialSharingShareRecord,
 } from './credential-sharing.js'
 
-// Story 65.6: three new error classes (stable `code`s, messages that name only the method) and the
+// Story 65.6 and 72.21: the acting-user and step-up error classes (stable `code`s, messages that name only the method) and the
 // `sharedBy` key on every share record.
-describe('credential-sharing acting-user contract (Story 65.6)', () => {
+describe('credential-sharing acting-user and step-up contract (Stories 65.6, 72.21)', () => {
   it.each([
     [CredentialSharingNotAuthorizedError, 'credential_sharing_not_authorized'],
     [CredentialSharingActingUserInvalidError, 'credential_sharing_acting_user_invalid'],
     [CredentialSharingActingUserMismatchError, 'credential_sharing_acting_user_mismatch'],
+    [CredentialSharingStepUpRequiredError, 'credential_sharing_step_up_required'],
+    [CredentialSharingTotpEnrollmentRequiredError, 'credential_sharing_totp_enrollment_required'],
   ])('%o has its stable code, an Error subclass name and a generic message', (ErrorClass, code) => {
     const error = new ErrorClass('revokeShare')
     expect(error).toBeInstanceOf(Error)

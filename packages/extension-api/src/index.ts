@@ -193,6 +193,8 @@ export {
   CredentialSharingNotAuthorizedError,
   CredentialSharingOrgRateLimitedError,
   CredentialSharingRateLimitedError,
+  CredentialSharingStepUpRequiredError,
+  CredentialSharingTotpEnrollmentRequiredError,
 } from './hooks/credential-sharing.js'
 export type { ScheduledTaskContext, ScheduledTaskHooks } from './hooks/scheduled-task.js'
 export type {

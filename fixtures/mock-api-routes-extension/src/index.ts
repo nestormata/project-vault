@@ -520,7 +520,13 @@ const sharingDeclaration: ApiRoutesDeclaration = {
   ],
 }
 
-type ShareBody = { projectId: string; credentialId: string; shareId?: string; fieldKey?: string }
+type ShareBody = {
+  projectId: string
+  credentialId: string
+  shareId?: string
+  fieldKey?: string
+  totpCode?: string
+}
 type ShareQuery = { credentialId?: string }
 
 function sharingRoutes(host: HostServices | undefined): ApiRoutesHooks['routes'] {
@@ -530,15 +536,20 @@ function sharingRoutes(host: HostServices | undefined): ApiRoutesHooks['routes']
     [`POST ${SHARE_URL}`]: {
       handler: async (ctx: ApiRouteContext, req: { body?: unknown }) => {
         const body = req.body as ShareBody
-        return {
-          data: await sharing.createExternalShare({
-            organizationId: ctx.auth.orgId,
-            projectId: body.projectId,
-            credentialId: body.credentialId,
-            recipientEmail: 'recipient@invalid',
-            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-            ...(body.fieldKey ? { fieldKey: body.fieldKey } : {}),
-          }),
+        try {
+          return {
+            data: await sharing.createExternalShare({
+              organizationId: ctx.auth.orgId,
+              projectId: body.projectId,
+              credentialId: body.credentialId,
+              recipientEmail: 'recipient@invalid',
+              expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+              ...(body.fieldKey ? { fieldKey: body.fieldKey } : {}),
+              ...(body.totpCode === undefined ? {} : { totpCode: body.totpCode }),
+            }),
+          }
+        } catch (error) {
+          return { data: { status: 'error', code: (error as { code?: string }).code ?? null } }
         }
       },
     },

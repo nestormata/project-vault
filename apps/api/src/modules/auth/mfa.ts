@@ -263,6 +263,15 @@ async function loadConfirmedEnrollmentForUpdate(tx: Tx, userId: string) {
   return rows[0]
 }
 
+export async function hasConfirmedTotpEnrollment(tx: Tx, userId: string): Promise<boolean> {
+  const rows = await tx
+    .select({ id: mfaEnrollments.id })
+    .from(mfaEnrollments)
+    .where(and(eq(mfaEnrollments.userId, userId), eq(mfaEnrollments.status, 'confirmed')))
+    .limit(1)
+  return rows.length > 0
+}
+
 // Exported for reuse by account recovery's tokenless MFA completion (Story 4.3 D1) — identical
 // TOTP verification/replay-guard logic verifyEnrollment uses, without the session-bound
 // AuthContext that function requires (a recovering user by definition has no active session).

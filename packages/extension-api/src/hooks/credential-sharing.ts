@@ -144,6 +144,39 @@ export class CredentialSharingActingUserMismatchError extends Error {
   }
 }
 
+/**
+ * Story 72.21 — thrown by `createExternalShare` (manifest `apiVersion` 3.38.0 or later) before any
+ * mutation when the acting user did not re-authenticate: `totpCode` missing, wrong, already used,
+ * no acting user to verify, or more than 10 step-up attempts for that user in the last minute.
+ * One error for every cause; the message never echoes the code.
+ */
+export class CredentialSharingStepUpRequiredError extends Error {
+  readonly code = 'credential_sharing_step_up_required'
+
+  constructor(methodName: string) {
+    super(
+      `HostServices.credentialSharing.${methodName}() rejected: a current TOTP code from the acting user is required`
+    )
+    this.name = 'CredentialSharingStepUpRequiredError'
+  }
+}
+
+/**
+ * Story 72.21 — thrown by `createExternalShare` (manifest `apiVersion` 3.38.0 or later) before any
+ * mutation when the acting user has no confirmed TOTP enrollment, whether or not a code was sent.
+ * Tell the user to enroll a TOTP authenticator in Project Vault, then retry with a code.
+ */
+export class CredentialSharingTotpEnrollmentRequiredError extends Error {
+  readonly code = 'credential_sharing_totp_enrollment_required'
+
+  constructor(methodName: string) {
+    super(
+      `HostServices.credentialSharing.${methodName}() rejected: the acting user must enroll a TOTP authenticator in Project Vault first`
+    )
+    this.name = 'CredentialSharingTotpEnrollmentRequiredError'
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Shared data shapes — plain, serializable mirrors of `credential_shares` rows. Deliberately
 // independent of `@project-vault/db`'s schema types (extension-api stays zero-DB-access).
@@ -203,6 +236,15 @@ export type CredentialSharingCreateExternalShareParams = {
    * Omitted and no ambient user: the share is created with an unknown acting user (`sharedBy: null`).
    */
   actingUserId?: string
+  /**
+   * Story 72.21 (since 3.38.0) — the acting user's current TOTP code from his or her confirmed
+   * Project Vault enrollment, verified by the host (replay-protected, the same check as PV's own
+   * share form) before anything is written. Required at runtime when the manifest declares
+   * `apiVersion` 3.38.0 or later: missing or wrong throws `CredentialSharingStepUpRequiredError`,
+   * no enrollment throws `CredentialSharingTotpEnrollmentRequiredError`. Never log or store it.
+   * Ignored for manifests declaring an older `apiVersion`.
+   */
+  totpCode?: string
 }
 
 /** The non-`'ok'` failure-status vocabulary for creating an external share — single source of
