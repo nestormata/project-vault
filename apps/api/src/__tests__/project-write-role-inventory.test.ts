@@ -62,6 +62,7 @@ const PROJECT_WRITE_ROLE_MATRIX: Record<string, 'member' | 'admin' | 'owner' | n
   'POST /api/v1/projects/:projectId/machine-users': 'member',
   'POST /api/v1/projects/:projectId/invitations': 'member',
   'DELETE /api/v1/projects/:projectId/invitations/:id': 'member',
+  'POST /api/v1/projects/:projectId/members': 'admin',
   'DELETE /api/v1/projects/:projectId/members/:userId': 'member',
   // Story 72-9: edit, delete and restore apply archiveAuthority() in the handler (project owner row
   // or the org owner) on top of this floor.

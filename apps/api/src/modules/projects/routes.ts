@@ -34,6 +34,8 @@ import {
 import { buildPaginationMeta, parsePagination, paginationOffset } from '../../lib/pagination.js'
 import {
   ActiveRotationsErrorSchema,
+  AddProjectMemberBodySchema,
+  AddProjectMemberResponseSchema,
   ArchiveResponseSchema,
   CreateProjectBodySchema,
   DeleteProjectResponseSchema,
@@ -62,11 +64,13 @@ import {
   lookupProjectStats,
 } from './dashboard-stats.js'
 import {
+  addExistingOrgUserToProject,
   getProjectMemberCount,
   getProjectMembershipRole,
   removeProjectMembership,
 } from './member-management.js'
-import { requireProjectVisible } from './project-access.js'
+import { effectiveProjectRoleForCaller, requireProjectVisible } from './project-access.js'
+import { requireMfaEnrollmentStrict } from '../auth/mfa-enforcement.js'
 import {
   findDeleteBlockers,
   listDeletedProjects,
@@ -90,6 +94,26 @@ import { EXTENSION_CALLOUT_TIMEOUT_MS } from '../../lib/extension-callout-timeou
 import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 const PROJECT_URL = '/:projectId'
+// Story 72-14: refusals of the add-member route; the target-not-found body is the same for a
+// nonexistent, cross-org and deactivated user (no existence oracle).
+const ADD_MEMBER_REFUSALS = {
+  role_above_caller: {
+    status: 403,
+    body: {
+      code: 'insufficient_role',
+      message: 'Cannot add a member with a role higher than your own',
+    },
+  },
+  user_not_found: {
+    status: 404,
+    body: { code: 'user_not_found', message: 'User not found in this organization' },
+  },
+  already_member: {
+    status: 409,
+    body: { code: 'already_member', message: 'User is already a project member' },
+  },
+} as const
+
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 const CREATION_REQUEST_CONFLICT = {
   code: 'creation_request_conflict',
@@ -1086,6 +1110,95 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
           role: row.role,
         })),
       }
+    },
+  })
+
+  // Story 72-14: add an EXISTING active org user to a project (no invitation round trip).
+  // Project-admin/owner OR org-admin/owner. A second POST for the same user is a 409
+  // `already_member`, never a silent 200.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/members',
+    schema: {
+      body: AddProjectMemberBodySchema,
+      response: {
+        201: AddProjectMemberResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      // Broad floor — real authorization is the in-handler project-axis check below (an org
+      // viewer can be a project admin, project-axis wins, D1).
+      minimumRole: 'viewer',
+      minimumProjectRole: 'admin',
+      requireMfa: true,
+      writeAuditEvent: false,
+      rateLimit: { max: 30, timeWindowMs: 60_000, key: 'POST /api/v1/projects/:projectId/members' },
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      // Same strict MFA gate as invitations: ignores the grace period.
+      await requireMfaEnrollmentStrict()(req, reply)
+      if (reply.sent) return reply
+
+      // M5: project exists (404) and is writable (410), then authorization, then body, then target.
+      const [project] = await secureCtx.tx
+        .select({ id: projects.id, archivedAt: projects.archivedAt, deletedAt: projects.deletedAt })
+        .from(projects)
+        .where(eq(projects.id, params.projectId))
+        .limit(1)
+      if (!project || project.deletedAt !== null) return reply.status(404).send(PROJECT_NOT_FOUND)
+      if (project.archivedAt !== null) return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
+
+      if (
+        !(await requireCallerCanManageProject(secureCtx, reply, params.projectId, {
+          code: 'insufficient_role',
+          message: 'Only project admins/owners or org admins/owners can add project members',
+        }))
+      ) {
+        return reply
+      }
+
+      const parsed = parseBody(AddProjectMemberBodySchema, req, reply)
+      if (!parsed.success) return reply
+
+      const result = await addExistingOrgUserToProject(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        projectId: params.projectId,
+        userId: parsed.data.userId,
+        role: parsed.data.role,
+        callerEffectiveRole: await effectiveProjectRoleForCaller(
+          secureCtx.tx,
+          secureCtx.auth,
+          params.projectId
+        ),
+      })
+      if (result.status !== 'added') {
+        return reply
+          .status(ADD_MEMBER_REFUSALS[result.status].status)
+          .send(ADD_MEMBER_REFUSALS[result.status].body)
+      }
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project_membership',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.PROJECT_MEMBER_ADDED,
+        resourceId: parsed.data.userId,
+        payload: { projectId: params.projectId, role: parsed.data.role },
+        request: req,
+      })
+
+      reply.status(201)
+      return { data: result.member }
     },
   })
 
