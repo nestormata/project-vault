@@ -9,8 +9,80 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+## [1.7.0] - YYYY-MM-DD
+
+Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.7.0`
+(aliases `1.7`, `1`, `latest`). Extension API contract: the source is at
+`@project-vault/extension-api@3.38.0`, and this host loads extensions whose manifest `apiVersion`
+is in `>=3.0.0 <=3.38.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). The package is already published from the
+`extension-api-v3.38.0` tag; it includes `3.37.0`, which was never published on its own. CLI:
+`pvault-1.7.0.mjs` on this release's assets. Build-time composition packages publish from this tag to
+npm's `next` dist-tag: `@project-vault/web-host@1.7.0` and `@project-vault/composition-kit@0.10.0`
+(`0.9.0` was the last published kit).
+
+### Upgrade notes (read before `docker compose pull`)
+
+- **Migrations 0106 and 0107 run automatically** via the `migrate` service. Both are additive and
+  idempotent. `0106` adds five nullable-or-defaulted columns to `projects` (`urls`, `deleted_at`,
+  `deleted_by`, `purge_after`, `purged_at`), one foreign key to `users` and a partial index for the
+  purge job. `0107` adds nine columns to `credential_shares` for guest recipient verification
+  (no new table). Existing rows keep their behaviour: shares stay link-only and projects stay live.
+- **New optional environment variable `WEB_SHELL_VARIANT`** (`header` by default, `rail` for the
+  left-rail and bottom-bar shell). Unset keeps today's header shell.
+- `.env.example` now single-quotes `AUTH_DUMMY_PASSWORD_HASH`. If you copied the old unquoted line,
+  `docker compose` prints "variable is not set" warnings; quote it the same way.
+- **Project viewers are read-only on every project write** (Story 69-17). A user invited to a project
+  as `viewer` can no longer create secrets, service endpoints and so on; the API answers
+  `403 insufficient_project_role`.
+- **Extensions on `apiVersion` 3.37.0 or later change behaviour; older ones do not.** Project writes of
+  such an extension get the project-role gate (3.37.0, `security.minimumProjectRole`), and
+  `createExternalShare` requires the acting user's TOTP code (3.38.0, Story 72-21). A scheduled task
+  on 3.38.0 or later can no longer create external shares unattended: it needs a human's
+  `actingUserId` and a live code. Details and the migration for CentralizeMe:
+  [packages/extension-api/CHANGELOG.md](packages/extension-api/CHANGELOG.md).
+
 ### Added
 
+- **Host-verified TOTP step-up on extension external share creation** (Story 72-21,
+  `@project-vault/extension-api` 3.38.0). `createExternalShare` takes an optional `totpCode` and, for
+  an extension whose manifest declares `apiVersion` 3.38.0 or later, verifies it against the acting
+  user's confirmed Project Vault TOTP enrollment (replay-protected, 10 attempts per minute per acting
+  user) before any write. New `CredentialSharingStepUpRequiredError` and
+  `CredentialSharingTotpEnrollmentRequiredError`. Extensions on an older `apiVersion` are unchanged.
+- **Guest recipient verification for external shares, a shares index and typed reasons** (Story 72-11,
+  Epic 72). A recipient can ask for a 6-digit code (plain-text email, never with the link) and confirm
+  it to get a one-time proof the reveal requires: single use, 10 minutes, 5 failed attempts revoke and
+  lock the share. New `GET /api/v1/shares` (the sharer's index; admin and owner see the whole org), a
+  derived `displayStatus` (`active`, `opened`, `locked`, `revoked`, `expired`, `superseded`), a closed
+  `reason` enum on sharer-side share errors, `POST /api/v1/external-shares/access/{token}/verification`
+  and `.../verification/confirm`, and the `credential.detail.shares.field-help` injection point.
+  Migration 0107. A host that pins PV must refresh its composed OpenAPI snapshot.
+- **Project edit, URLs, soft delete with a 30-day grace period, restore and purge** (Story 72-9, Epic 72).
+  `PATCH /api/v1/projects/{id}` accepts `urls` (up to 10 absolute http or https URLs);
+  `DELETE /api/v1/projects/{id}` (project owner or org owner, MFA) revokes the project's active shares
+  and pending invitations and hides the project; `POST .../restore` brings it back archived;
+  `GET /api/v1/projects/deleted` lists what the caller may restore; an hourly job purges projects past
+  the grace period and keeps a tombstone row. Web: `/projects/{id}/settings` and `/projects/deleted`.
+  Migration 0106.
+- **Credential field kinds and a TOTP kind** (Story 72-10, Epic 72). Credential fields take an optional
+  `kind` (`text`, `multiline`, `totp`); custom fields can be added when a credential is created. A TOTP
+  seed is write-only and never comes back from a reveal, share, export or rotation read; codes come from
+  `POST /api/v1/projects/{projectId}/credentials/{credentialId}/totp`, audited as `credential.value_revealed`
+  with `purpose: "totp"` and limited to 60 per minute per user. No migration.
+- **Reveal contract and audit detail** (Story 72-8, Epic 72). A revealed value hides after 30 seconds,
+  when the tab is hidden, before navigation and on unmount; Extend is a new server reveal. The credential
+  detail, rotate, new, import and share pages send `cache-control: no-store`.
+  `credential.version_created` carries `changedFields` (names only) and
+  `GET .../credentials/{id}/value` accepts `?purpose=view|copy`, recorded on `credential.value_revealed`.
+  Event types and the export format are unchanged.
+- **Shared form controls and the stronger control border** (Stories 72-2 to 72-4, Epic 72, web-host MINOR).
+  Fourteen new theme-token keys (semantic colours, text on accent, focus ring, strong border, density,
+  motion, font family), a base `:root` block and a contrast guard that checks the focus ring and strong
+  border at 3:1. New `Button`, `Field`, `TextField`, `Textarea`, `Select` and `ChoiceGroup` components under
+  `apps/web/src/lib/components/ui/`, and every form control and outlined button across the route families
+  moves from `border-slate-300` to the strong border token (`#64748b` fallback). Class changes only: no
+  element or ARIA change, but a composed host's recorded render snapshots of the touched pages change. See
+  `docs/composition-kit.md` (Theme tokens (M6), Shared controls (M4)).
 - **Add an existing organization user to a project** (Story 72-14, Epic 72). `POST /api/v1/projects/{projectId}/members`
   with `{ userId, role }` (`viewer`, `member` or `admin`) adds an active user of the organization to a project in one call,
   without an invitation e-mail: `201` with the member row, `409 already_member` on a repeat, `404 user_not_found` for a
@@ -37,9 +109,6 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   dialog), Help and Sign out. New native nav ids `account.account`, `account.language`, `account.shortcuts` and
   `account.help` are inherited by composed apps (CM's own Language item now duplicates the native one). A pack that used
   a top-level `group` as a disclosure gives it an `href`. See `docs/composition-kit.md`.
-- **`app.layout.dialogs` injection point** (Epic 72 fix). The app-wide confirm and keyboard-shortcuts dialog hosts added
-  by Stories 72.5 and 72.6 sit in an `@region app.layout.dialogs` component, so the `monolithic-region` guard (R3)
-  passes on a composed tree. One new additive point (`StandardPointProps`) on the `(app)` layout.
 - **Extension project writes get the project-role gate** (Story 69-18, `@project-vault/extension-api`
   3.37.0). An extension route under a `:projectId` segment that writes (`POST`, `PUT`, `PATCH`,
   `DELETE`), added through `apiRoutes` or re-secured with `replaceSecurity`, now refuses a project
@@ -76,6 +145,25 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Fixed
 
+- **Project viewers are read-only on every project write** (Story 69-17, DW-606). Before, only secret
+  reveal, version create, share create and staged-value reveal read the project role, so a project
+  `viewer` could create secrets and service endpoints. `secureRoute` gains `security.minimumProjectRole`
+  and every PV `POST`, `PUT`, `PATCH` and `DELETE` route with a `:projectId` segment defaults to `member`.
+  A refused write answers `403 insufficient_project_role`, logs `project.write_denied`, runs no handler and
+  writes no audit row; a project in another organization still answers 404. The web app hides the controls
+  a viewer cannot use.
+- **A project owner who is an organization member can archive the project** (Story 69-20, DW-618). The
+  Archive control was offered to them and answered `403`. Project and secret archive and unarchive now
+  take the project owner row at any org role from `member` up; org `admin` without the owner row, project
+  `admin` and `member` rows and project `viewer` rows are still refused.
+- **An expired session on an API helper no longer shows "Access token is missing"** (Story 62-6). Project
+  export, credentials, audit and inbox helpers called `fetch` directly and skipped the session refresh; a
+  stale access cookie now refreshes silently and a dead session redirects to
+  `/login?reason=session-expired`. A guard fails the unit tests if a helper under `src/lib/api/` calls
+  `fetch` directly.
+- **The notice after self-signup stays true for both outcomes** (Story 63.1). It now reads "If that email
+  was available, your account has been created" in English and Spanish; the registration API answer is
+  unchanged (anti-enumeration).
 - **An organization viewer no longer ends the web process on `/dashboard`** (Story 72-20, Epic 72, patch-level). The
   dashboard load attached its rejection handlers to the certificate and domain reads only in its return, so the 403 a
   `viewer` gets was an unhandled rejection while other reads were in flight, and Node 24 exits on that (the browser saw
@@ -881,7 +969,9 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.2.0`
 - The `fast-uri` transitive dependency is patched (CVE-2026-75899, CVE-2026-75931,
   CVE-2026-75975, CVE-2026-76172).
 
-[Unreleased]: https://github.com/nestormata/project-vault/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/nestormata/project-vault/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/nestormata/project-vault/compare/v1.6.0...v1.7.0
+[1.6.0]: https://github.com/nestormata/project-vault/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/nestormata/project-vault/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/nestormata/project-vault/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/nestormata/project-vault/compare/v1.2.0...v1.3.0
