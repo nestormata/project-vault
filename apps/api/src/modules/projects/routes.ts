@@ -1173,7 +1173,7 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
         .where(eq(projects.id, params.projectId))
         .limit(1)
         .for('share')
-      if (!project || project.deletedAt !== null) return reply.status(404).send(PROJECT_NOT_FOUND)
+      if (project?.deletedAt !== null) return reply.status(404).send(PROJECT_NOT_FOUND)
       if (project.archivedAt !== null) return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
 
       if (
