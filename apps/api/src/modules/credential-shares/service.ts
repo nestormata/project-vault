@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { credentials, credentialShares, orgMemberships, users } from '@project-vault/db/schema'
-import { AuditEvent, normalizeFieldKey } from '@project-vault/shared'
+import { AuditEvent, normalizeFieldKey, type ShareDisplayStatus } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
@@ -14,6 +14,7 @@ import {
   serializeBounded,
   type SerializeBoundedResult,
 } from '../credentials/bounded-share-adapter.js'
+import { displayStatusPredicate } from './display-status-sql.js'
 import { DEFAULT_SHARE_LIST_LIMIT, MAX_ATTRIBUTE_KEYS, SHARE_MAX_TTL_MS } from './schema.js'
 
 export type CredentialShareRow = typeof credentialShares.$inferSelect
@@ -426,6 +427,8 @@ export type ListSharesForCredentialParams = {
   // Story 17.3 AC-1/AC-2: additive filtering/pagination on top of 17.1's existing scoping — the
   // admin-sees-everyone behavior (sharedByUserId omitted) is unchanged.
   status?: CredentialShareRow['status']
+  /** Story 72-11: the derived display status (see `displayStatusPredicate`). */
+  displayStatus?: ShareDisplayStatus
   limit?: number
   offset?: number
 }
@@ -441,7 +444,8 @@ function sharesForCredentialWhereClause(params: ListSharesForCredentialParams) {
     params.extensionViewerUserId
       ? sharerPredicate(params.extensionViewerUserId, 'extension')
       : undefined,
-    params.status ? eq(credentialShares.status, params.status) : undefined
+    params.status ? eq(credentialShares.status, params.status) : undefined,
+    params.displayStatus ? displayStatusPredicate(params.displayStatus) : undefined
   )
 }
 

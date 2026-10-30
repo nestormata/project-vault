@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { SHARE_DISPLAY_STATUSES } from '@project-vault/shared'
 
 // Story 17.1 AC-4: default 24h, cap 7 days — a deliberate judgment call,
 // informed by the sensitivity of secret material (no other product guidance existed at dev time).
@@ -122,6 +123,8 @@ export const CredentialShareStatusSchema = z.enum([
   'superseded',
 ])
 
+export const ShareDisplayStatusSchema = z.enum(SHARE_DISPLAY_STATUSES)
+
 export const CredentialShareSummarySchema = z.object({
   id: z.uuid(),
   credentialId: z.uuid(),
@@ -140,6 +143,11 @@ export const CredentialShareSummarySchema = z.object({
   firstViewedAt: z.iso.datetime().nullable(),
   viewCount: z.number().int(),
   status: CredentialShareStatusSchema,
+  // Story 72-11 AC2: additive. `displayStatus` is derived (locked > opened > status); the persisted
+  // `status` above and every extension-facing status are unchanged.
+  displayStatus: ShareDisplayStatusSchema,
+  lockedAt: z.iso.datetime().nullable(),
+  verificationRequired: z.boolean(),
 })
 
 // Story 17.2 AC-1/AC-3/AC-5: the external-recipient sibling of CreateCredentialShareBodySchema.
@@ -250,6 +258,7 @@ export const CreateCredentialShareResponseSchema = z.object({
 // would 422 instead of clamp, the wrong behavior per AC-2's edge case.
 export const ListCredentialSharesQuerySchema = z.object({
   status: CredentialShareStatusSchema.optional(),
+  displayStatus: ShareDisplayStatusSchema.optional(),
   limit: z.coerce.number().int().min(1).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 })
@@ -257,6 +266,19 @@ export type ListCredentialSharesQuery = z.infer<typeof ListCredentialSharesQuery
 
 export const ListCredentialSharesResponseSchema = z.object({
   data: z.object({ items: z.array(CredentialShareSummarySchema), total: z.number().int() }),
+})
+
+// Story 72-11 V13: the cross-credential shares index (`GET /api/v1/shares`). Same filters and
+// limit/offset clamp as the per-credential list; each item adds the credential and project names
+// the viewer may already see.
+export const ListSharesIndexQuerySchema = ListCredentialSharesQuerySchema
+export const SharesIndexItemSchema = CredentialShareSummarySchema.extend({
+  credentialName: z.string(),
+  projectId: z.uuid(),
+  projectName: z.string(),
+})
+export const ListSharesIndexResponseSchema = z.object({
+  data: z.object({ items: z.array(SharesIndexItemSchema), total: z.number().int() }),
 })
 
 export const RevokeCredentialShareResponseSchema = z.object({

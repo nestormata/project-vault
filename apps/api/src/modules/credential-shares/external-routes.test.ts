@@ -212,7 +212,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(401)
-    expect(response.json<{ code: string }>().code).toBe('step_up_required')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'step_up_required',
+      reason: 'step_up_required',
+    })
 
     const shares = await withOrg(sharer.orgId, (tx) =>
       tx.select().from(credentialShares).where(eq(credentialShares.credentialId, credentialId))
@@ -228,7 +231,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(401)
-    expect(response.json<{ code: string }>().code).toBe('step_up_required')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'step_up_required',
+      reason: 'step_up_required',
+    })
 
     const shares = await withOrg(sharer.orgId, (tx) =>
       tx.select().from(credentialShares).where(eq(credentialShares.credentialId, credentialId))
@@ -244,7 +250,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('expires_at_invalid')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'expires_at_invalid',
+      reason: 'expiry_too_late',
+    })
   })
 
   it('AC-5: rejects singleUse: false with a dedicated 400 external_share_must_be_single_use', async () => {
@@ -263,7 +272,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('external_share_must_be_single_use')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'external_share_must_be_single_use',
+      reason: 'must_be_single_use',
+    })
   })
 
   it('AC-5: accepts an explicit singleUse: true (still hard-coded true server-side)', async () => {
@@ -300,7 +312,10 @@ describe('external credential-shares routes', () => {
     })
 
     expect(sixth.statusCode).toBe(429)
-    expect(sixth.json<{ code: string }>().code).toBe('external_share_cap_exceeded')
+    expect(sixth.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'external_share_cap_exceeded',
+      reason: 'external_cap_reached',
+    })
   })
 
   it('AC-16/Story 20.5 (dev-auto review): the per-field cap buckets by attributeKeys, not just the legacy fieldKey — disjoint attribute sets get their own buckets, but re-naming the same set (any order) reuses the same one', async () => {
@@ -373,7 +388,10 @@ describe('external credential-shares routes', () => {
     )
 
     expect(sixthOtherShape.statusCode).toBe(429)
-    expect(sixthOtherShape.json<{ code: string }>().code).toBe('external_share_cap_exceeded')
+    expect(sixthOtherShape.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'external_share_cap_exceeded',
+      reason: 'external_cap_reached',
+    })
   })
 
   it("AC-16: a share past its expiresAt but not yet lazily swept doesn't count toward the cap", async () => {

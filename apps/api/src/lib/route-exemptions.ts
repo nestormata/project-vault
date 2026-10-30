@@ -720,6 +720,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'credential.share_nudge_dismissed',
     sameTransactionAuditService: 'writeShareAuditEntry',
   },
+  // Story 72-11 V13: the shares index lists share metadata (never a value or a token).
+  'GET /api/v1/shares': {
+    action: 'read',
+    auditOmissionReason:
+      'Shares index metadata (credential name, recipient, status) never exposes a credential value or a share token.',
+    reviewer: SECURITY_OWNER,
+  },
   'GET /api/v1/shares/access/:token': {
     action: SENSITIVE_READ,
     auditOmissionReason:

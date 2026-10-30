@@ -141,7 +141,10 @@ describe('credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('self_share')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'self_share',
+      reason: 'self_share',
+    })
   })
 
   it('AC-2: rejects a recipient who is not an org member', async () => {
@@ -153,7 +156,10 @@ describe('credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('recipient_not_found')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'recipient_not_found',
+      reason: 'recipient_unknown',
+    })
   })
 
   it('AC-2: rejects a deactivated recipient at creation time', async () => {
@@ -171,7 +177,10 @@ describe('credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('recipient_inactive')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'recipient_inactive',
+      reason: 'recipient_inactive',
+    })
   })
 
   it('AC-3: rejects an unknown field key', async () => {
@@ -184,7 +193,10 @@ describe('credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('unknown_field_key')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'unknown_field_key',
+      reason: 'field_unknown',
+    })
   })
 
   it('AC-4: rejects an expiresAt in the past', async () => {
@@ -196,7 +208,10 @@ describe('credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('expires_at_invalid')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'expires_at_invalid',
+      reason: 'expiry_in_past',
+    })
   })
 
   it('AC-4: rejects an expiresAt beyond the 7-day cap', async () => {
@@ -208,7 +223,10 @@ describe('credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.json<{ code: string }>().code).toBe('expires_at_invalid')
+    expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'expires_at_invalid',
+      reason: 'expiry_too_late',
+    })
   })
 
   it('AC-7/AC-8: metadata GET returns share details without the value, and sets Referrer-Policy', async () => {
@@ -938,7 +956,10 @@ describe('credential-shares routes', () => {
         singleUse: true,
       })
       expect(response.statusCode).toBe(400)
-      expect(response.json<{ code: string }>().code).toBe('unknown_field_key')
+      expect(response.json<{ code: string; reason?: string }>()).toMatchObject({
+        code: 'unknown_field_key',
+        reason: 'field_unknown',
+      })
     })
 
     it('AC-1: specifying both fieldKey and attributeKeys is rejected rather than silently preferring one', async () => {
