@@ -780,6 +780,16 @@ function secretEnvDefault(defaultValue: string | undefined) {
   )
 }
 
+function isHandoffStartUrl(value: string): boolean {
+  if (!URL.canParse(value)) return false
+  const url = new URL(value)
+  return (
+    (url.protocol === 'https:' || url.protocol === 'http:') &&
+    url.username === '' &&
+    url.password === ''
+  )
+}
+
 function connectionTuple(value: string): [string, string, string, string] | null {
   try {
     const parsed = new URL(value)
@@ -1475,6 +1485,19 @@ const envSchema = z
     VAULT_HANDOFF_ISSUER: z.preprocess(
       (value) => (value === '' ? undefined : value),
       z.string().min(1).default('https://app.centralizeme.com')
+    ),
+    // Story 73.1 AC1: where PV web's /auth/start sends the browser (with `nonce=<nonce>` added to
+    // the query) so the issuer can sign a token bound to it. Unset means /auth/start fails closed.
+    // Absolute http(s) only and no userinfo: the value becomes a redirect Location.
+    VAULT_HANDOFF_START_URL: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z
+        .string()
+        .refine(
+          isHandoffStartUrl,
+          'FATAL: VAULT_HANDOFF_START_URL must be an absolute http(s) URL without userinfo'
+        )
+        .optional()
     ),
     // Story 71.6: public verification key(s) for service-delegated actor assertions, a JSON array
     // of {kid, publicKeyPem}. Its own set, never the handoff set; validated at boot by

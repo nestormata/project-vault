@@ -1,4 +1,4 @@
-import { createServer } from 'node:http'
+import { createServer, type ServerResponse } from 'node:http'
 import { randomUUID, sign, type KeyObject } from 'node:crypto'
 import type postgres from 'postgres'
 import {
@@ -11,10 +11,11 @@ import {
 } from './handoff-test-key.js'
 
 /**
- * Story 60.6: fixtures for j31, the real-token cross-site handoff journey. Every DB helper takes
- * the spec's own superuser connection (`superuserDatabaseUrl()`, RLS bypassed), which the spec
- * closes in `afterAll`. Every evidence query is keyed by a seeded id, a pendingId or a minted
- * `jti`, never by "the latest row" (E5d).
+ * Story 60.6 / 73.1: fixtures for j31, the real-token cross-site handoff journey. Every DB helper
+ * takes the spec's own superuser connection (`superuserDatabaseUrl()`, RLS bypassed), which the
+ * spec closes in `afterAll`. Every evidence query is keyed by a seeded id or a minted `jti`, never
+ * by "the latest row" (E5d). Nonce rows are stored as an HMAC under the stack's per-run secret, so
+ * they are scoped by creation time instead (`workers: 1`).
  */
 
 type Sql = postgres.Sql
@@ -34,8 +35,13 @@ export type SeededHandoffUser = {
  * Inserts exactly what apps/api's `createLinkedHandoffOrg()` test helper inserts: an org carrying
  * a unique `centralizeme_organization_id`, a user, its identity token, an ACTIVE membership and a
  * `centralizeme-handoff` external identity. Call it inside the spec, after global-setup's DB reset.
+ * `mfaEnrolled` sets `users.mfa_enrolled_at`, which sends the claim to the MFA challenge.
  */
-export function seedLinkedHandoffUser(sql: Sql, label: string): Promise<SeededHandoffUser> {
+export function seedLinkedHandoffUser(
+  sql: Sql,
+  label: string,
+  options: { mfaEnrolled?: boolean } = {}
+): Promise<SeededHandoffUser> {
   const run = randomUUID()
   const organizationName = `j31-${label}-${run.slice(0, 8)}`
   const email = `j31-${label}-${run}@example.com`
@@ -49,7 +55,9 @@ export function seedLinkedHandoffUser(sql: Sql, label: string): Promise<SeededHa
       returning id
     `
     const [user] = await tx<{ id: string }[]>`
-      insert into users (email, password_hash) values (${email}, 'x') returning id
+      insert into users (email, password_hash, mfa_enrolled_at)
+      values (${email}, 'x', ${options.mfaEnrolled ? new Date() : null})
+      returning id
     `
     if (!org || !user) throw new Error(`seedLinkedHandoffUser(${label}): insert returned no row`)
     await tx`insert into user_identity_tokens (user_id, display_name) values (${user.id}, ${email})`
@@ -78,14 +86,22 @@ function encodeSegment(value: unknown): string {
 
 export type MintedHandoffToken = { token: string; jti: string }
 
+export type MintOptions = {
+  signingKey?: KeyObject
+  organizationId?: string
+  instanceId?: string
+  /** Story 73.1: the browser-bound nonce claim; omitted when undefined. */
+  nonce?: string
+}
+
 /**
  * Mints the compact EdDSA JWS CentralizeMe would issue for `subject` (30 s lifetime). Mint it
- * immediately before `prepare`, never in `beforeAll`. `signingKey` lets a negative case sign with
+ * immediately before the claim, never in `beforeAll`. `signingKey` lets a negative case sign with
  * a different key under the same kid.
  */
 export function mintHandoffToken(
   subject: Pick<SeededHandoffUser, 'workosUserId' | 'centralizemeOrganizationId'>,
-  options: { signingKey?: KeyObject; organizationId?: string; instanceId?: string } = {}
+  options: MintOptions = {}
 ): MintedHandoffToken {
   const issuedAt = Math.floor(Date.now() / 1000)
   const jti = `jti-${randomUUID()}`
@@ -104,6 +120,7 @@ export function mintHandoffToken(
     jti,
     iat: issuedAt,
     exp: issuedAt + 30,
+    ...(options.nonce === undefined ? {} : { nonce: options.nonce }),
   }
   const signingInput = `${encodeSegment(header)}.${encodeSegment(claims)}`
   const signature = sign(
@@ -114,95 +131,145 @@ export function mintHandoffToken(
   return { token: `${signingInput}.${signature.toString('base64url')}`, jti }
 }
 
-/** The stub port, shared with docker-compose.e2e.yml's web allowlist (E1a). */
+/** The stub port, shared with docker-compose.e2e.yml's `VAULT_HANDOFF_START_URL` (E1a). */
 export function handoffStubPort(): number {
   const raw = process.env['E2E_HANDOFF_STUB_PORT']
   if (!raw) return HANDOFF_E2E_STUB_DEFAULT_PORT
   const port = Number(raw)
-  // j31 also listens on port + 1 (the non-allowlisted site), so the last usable port is 65534.
-  if (!Number.isInteger(port) || port < 1 || port > 65534) {
-    throw new Error(`E2E_HANDOFF_STUB_PORT must be an integer port in 1..65534, got "${raw}"`)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`E2E_HANDOFF_STUB_PORT must be an integer port in 1..65535, got "${raw}"`)
   }
   return port
 }
 
-// The fake interstitial. It reads the token from the URL FRAGMENT (never sent to this server, so
-// never logged), calls PV's prepare cross-site exactly as CentralizeMe does, and then renders a
-// link instead of auto-redirecting, so the test can assert the cookie drop between the two steps
-// (D3). Any failure is written into #status so the test fails with a message, not a timeout.
-function stubPage(pvOrigin: string): string {
+/**
+ * What the fake issuer does on `GET /start?nonce=`: `redirect` signs a token bound to the nonce
+ * and answers 302 to PV's `/auth/claim#<token>` (the real flow); `return` answers 200 with the
+ * token as text, so an attacker context can capture its own token; `hold` answers 200 and signs
+ * nothing, so a victim context keeps a fresh nonce cookie and no token.
+ */
+export type IssuerMode = 'redirect' | 'return' | 'hold'
+
+export type IssuerPlan = {
+  subject: Pick<SeededHandoffUser, 'workosUserId' | 'centralizemeOrganizationId'>
+  mode: IssuerMode
+  organizationId?: string
+}
+
+/** One `/start` hit: the nonce the browser brought, and the token signed for it (null on hold). */
+export type IssuerHit = { nonce: string; minted: MintedHandoffToken | null }
+
+export type FakeIssuer = {
+  origin: string
+  plan: (next: IssuerPlan) => void
+  /** Every `/start` hit, oldest first. */
+  hits: IssuerHit[]
+  close: () => Promise<void>
+}
+
+// A page on the issuer's origin that POSTs a token from its fragment to PV's claim route
+// cross-site, with credentials, and reports the outcome in #status (case: cross-site POST).
+function crossSitePage(pvOrigin: string): string {
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>Fake CentralizeMe interstitial (e2e)</title></head>
+<html><head><meta charset="utf-8"><title>Cross-site claim attempt (e2e)</title></head>
 <body>
-<p id="status">preparing</p>
+<p id="status">posting</p>
 <script type="module">
-const pvOrigin = ${JSON.stringify(pvOrigin)}
 const status = document.getElementById('status')
-const token = new URLSearchParams(location.hash.slice(1)).get('token')
 try {
-  const response = await fetch(pvOrigin + '/api/v1/auth/handoff/prepare', {
+  const response = await fetch(${JSON.stringify(pvOrigin)} + '/api/v1/auth/handoff/claim', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ token: location.hash.slice(1) }),
   })
-  const body = await response.json().catch(() => null)
   status.dataset.status = String(response.status)
-  if (response.ok && body && body.data) {
-    const target = new URL('/handoff', pvOrigin)
-    target.searchParams.set('pendingId', body.data.pendingId)
-    target.searchParams.set('claim', body.data.claim)
-    if (body.data.organizationName) target.searchParams.set('organizationName', body.data.organizationName)
-    if (body.data.accountLabel) target.searchParams.set('accountLabel', body.data.accountLabel)
-    const link = document.createElement('a')
-    link.id = 'continue'
-    link.href = target.href
-    link.textContent = 'Continue to Project Vault'
-    document.body.append(link)
-    status.textContent = 'prepared'
-  } else {
-    status.textContent = 'prepare rejected: HTTP ' + response.status
-  }
 } catch (error) {
   status.dataset.status = 'fetch-error'
-  status.textContent = 'prepare fetch failed (blocked by CORS?): ' + String(error)
+  status.textContent = String(error)
 }
 </script>
 </body></html>`
 }
 
-export type CmStub = { origin: string; close: () => Promise<void> }
+// A page on the issuer's origin that sends a top-level, no-preflight form POST (text/plain) to
+// PV's claim route: the realistic cross-site attack, which CORS does not stop before PV.
+function crossSiteFormPage(pvOrigin: string): string {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Cross-site form claim attempt (e2e)</title></head>
+<body>
+<form id="attack" method="post" enctype="text/plain"
+  action="${pvOrigin}/api/v1/auth/handoff/claim"><input name="token" value=""></form>
+<script>
+document.querySelector('input[name=token]').value = location.hash.slice(1)
+document.getElementById('attack').submit()
+</script>
+</body></html>`
+}
+
+function respond(
+  response: ServerResponse,
+  status: number,
+  headers: Record<string, string>,
+  body = ''
+): void {
+  response.writeHead(status, { 'cache-control': 'no-store', ...headers })
+  response.end(body)
+}
 
 /**
- * Serves the fake CentralizeMe interstitial on `http://127.0.0.1:<port>`: a different SITE from
- * PV's `http://localhost:<port>` (D2). Binds 127.0.0.1 only, never 0.0.0.0 (nightly runners are
- * shared, E3b), and fails fast on a busy port.
- *
- * CentralizeMe's real navigation mechanism is unconfirmed. This models a top-level
- * navigation (a link click); if CM turns out to use an iframe or an SPA route, revisit this harness.
+ * Serves the fake issuer on `http://127.0.0.1:<port>`: a different SITE from PV's
+ * `http://localhost:<port>` (D2). Binds 127.0.0.1 only, never 0.0.0.0 (nightly runners are
+ * shared, E3b), and fails fast on a busy port. The e2e api's `VAULT_HANDOFF_START_URL` points at
+ * its `/start`.
  */
-export async function startCmStub(options: { port: number; pvOrigin: string }): Promise<CmStub> {
-  const html = stubPage(options.pvOrigin)
+export async function startFakeIssuer(options: {
+  port: number
+  pvOrigin: string
+}): Promise<FakeIssuer> {
+  let current: IssuerPlan | null = null
+  const hits: IssuerHit[] = []
   const server = createServer((request, response) => {
-    if (request.method === 'GET' && request.url === '/') {
-      response.writeHead(200, {
-        'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-      })
-      response.end(html)
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+    const route = request.method === 'GET' ? url.pathname : ''
+    if (route === '/cross-site') {
+      const page = crossSitePage(options.pvOrigin)
+      respond(response, 200, { 'content-type': 'text/html; charset=utf-8' }, page)
+    } else if (route === '/cross-site-form') {
+      const page = crossSiteFormPage(options.pvOrigin)
+      respond(response, 200, { 'content-type': 'text/html; charset=utf-8' }, page)
+    } else if (route === '/start' && current) {
+      issue(current, url.searchParams.get('nonce') ?? '', response)
+    } else {
+      respond(response, 404, {})
+    }
+  })
+
+  function issue(plan: IssuerPlan, nonce: string, response: ServerResponse): void {
+    if (plan.mode === 'hold') {
+      hits.push({ nonce, minted: null })
+      respond(response, 200, { 'content-type': 'text/plain' }, 'held')
       return
     }
-    response.writeHead(404).end()
-  })
+    const organization =
+      plan.organizationId === undefined ? {} : { organizationId: plan.organizationId }
+    const minted = mintHandoffToken(plan.subject, { nonce, ...organization })
+    hits.push({ nonce, minted })
+    if (plan.mode === 'return') {
+      respond(response, 200, { 'content-type': 'text/plain' }, minted.token)
+    } else {
+      respond(response, 302, { location: `${options.pvOrigin}/auth/claim#${minted.token}` })
+    }
+  }
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', (error: NodeJS.ErrnoException) => {
       reject(
         error.code === 'EADDRINUSE'
           ? new Error(
-              `j31 CentralizeMe stub: 127.0.0.1:${options.port} is already in use. Another run ` +
-                'is probably using it; set E2E_HANDOFF_STUB_PORT to a free port in the shell for ' +
-                'the whole `make e2e` run (the e2e web allowlist reads the same variable).'
+              `j31 fake issuer: 127.0.0.1:${options.port} is already in use. Another run is ` +
+                'probably using it; set E2E_HANDOFF_STUB_PORT to a free port in the shell for the ' +
+                'whole `make e2e` run (the e2e api start URL reads the same variable).'
             )
           : error
       )
@@ -212,6 +279,10 @@ export async function startCmStub(options: { port: number; pvOrigin: string }): 
 
   return {
     origin: `http://127.0.0.1:${options.port}`,
+    plan: (next) => {
+      current = next
+    },
+    hits,
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections()
@@ -242,28 +313,26 @@ export async function isJtiBurned(sql: Sql, jti: string): Promise<boolean> {
   return row?.burned ?? false
 }
 
-/**
- * The claim's burn row is `claim:<HMAC(claim)>`, and the HMAC key is the stack's per-run throwaway
- * secret, which the test never sees. So the burn key is resolved through the pending row's own
- * stored `claim_hash` (the same HMAC), keyed by pendingId.
- */
-export async function isClaimBurned(sql: Sql, pendingId: string): Promise<boolean> {
-  const [row] = await sql<{ burned: boolean }[]>`
-    select exists (
-      select 1
-      from handoff_pending_states pending
-      join handoff_token_jti burned on burned.jti = 'claim:' || pending.claim_hash
-      where pending.id = ${pendingId}
-    ) as burned
+export type NonceRow = { consumedAt: Date | null; expiresAt: Date }
+
+/** Nonce rows written since `since` (a `dbNow()` taken right before `/auth/start`). */
+export function nonceRowsSince(sql: Sql, since: Date): Promise<NonceRow[]> {
+  return sql<NonceRow[]>`
+    select consumed_at as "consumedAt", expires_at as "expiresAt"
+    from handoff_nonces
+    where created_at >= ${since}
+    order by created_at
   `
-  return row?.burned ?? false
 }
 
-export async function countPendingStatesForJti(sql: Sql, jti: string): Promise<number> {
-  const [row] = await sql<{ count: number }[]>`
-    select count(*)::int as count from handoff_pending_states where jti = ${jti}
+/** Moves the expiry of every nonce row written since `since` into the past. */
+export async function expireNonceRowsSince(sql: Sql, since: Date): Promise<number> {
+  const rows = await sql`
+    update handoff_nonces set expires_at = now() - interval '1 second'
+    where created_at >= ${since}
+    returning nonce_hash
   `
-  return row?.count ?? 0
+  return rows.length
 }
 
 export async function countLoginSucceededAudit(sql: Sql, user: SeededHandoffUser): Promise<number> {

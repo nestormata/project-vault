@@ -21,8 +21,8 @@ function shouldNormalizeMfaParserError(
 
 const HANDOFF_GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
 
-// Story 30.2 AC3.8: an oversized /auth/handoff/prepare body is rejected by Fastify's body
-// parser (the route's own `bodyLimit: 16 * 1024`) BEFORE handlePrepare ever runs, so
+// Story 30.2 AC3.8 (Story 73.1: now /auth/handoff/claim): an oversized claim body is rejected by
+// Fastify's body parser (the route's own `bodyLimit: 16 * 1024`) BEFORE handleClaim ever runs, so
 // verifyHandoffToken's own MAX_HANDOFF_TOKEN_BYTES branch (which would emit
 // handoff_claims_oversized) is unreachable for this case. Mirrors shouldNormalizeMfaParserError's
 // precedent: normalize the parser-level 413 to the route's own generic rejection contract and
@@ -34,7 +34,7 @@ function shouldNormalizeHandoffParserError(
 ): boolean {
   const path = url.split('?')[0]
   return (
-    path === '/api/v1/auth/handoff/prepare' &&
+    path === '/api/v1/auth/handoff/claim' &&
     (statusCode === 413 || parserErrorCode === 'FST_ERR_CTP_BODY_TOO_LARGE')
   )
 }

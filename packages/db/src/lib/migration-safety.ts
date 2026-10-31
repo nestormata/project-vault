@@ -429,4 +429,9 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // proves one additive CREATE TABLE, no ALTER on any pre-existing table and exactly these grants.
   '0103_delegation_assertion_jti':
     'Story 71.7 reviewed table-creation-time append-only (SELECT, INSERT) vault_app grant plus vault_admin prune grant (SELECT org_id/jti/expires_at + DELETE) on the new delegation_assertion_jti burn ledger; paired migration safety test proves it is a single additive CREATE TABLE that alters no pre-existing table.',
+  // Story 73.1 D7: the first reviewed DROP TABLE. Nestor approved it on 2026-10-30 as an explicit
+  // quality-gate exception. The paired migration-0109-safety.test.ts proves the file drops exactly
+  // handoff_pending_states, without CASCADE, and nothing else.
+  '0109_drop_handoff_pending_states':
+    'Story 73.1 D7 human-approved (Nestor, 2026-10-30) drop of the retired handoff_pending_states table: no code reads or writes it since 73.1 and its rows lived 120 s; paired migration safety test proves a single DROP TABLE of that table with no CASCADE and nothing else.',
 }

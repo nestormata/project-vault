@@ -85,7 +85,7 @@ export function decodedPathname(pathname: string): string {
 }
 
 /** `exact`/`startsWith` match when the raw OR the decoded pathname does (code review 68-6, Nestor
- * 2026-10-03): `/%68andoff` renders the handoff page, so it gets the handoff rule. */
+ * 2026-10-03): `/auth/cl%61im` renders the handoff claim page, so it gets the handoff rule. */
 function pathMatches(pathname: string, test: (path: string) => boolean): boolean {
   if (test(pathname)) return true
   const decoded = decodedPathname(pathname)
@@ -337,7 +337,7 @@ const NO_STORE_HEADER = 'cache-control'
  * which stays outside the policy, see the file comment). */
 export const PV_HEADER_POLICY: HeaderPolicy = validateHeaderPolicy({
   defaults: getFrameProtectionHeaders(),
-  rules: [{ id: 'handoff', match: { exact: '/handoff' }, headers: getHandoffSecurityHeaders() }],
+  rules: [{ id: 'handoff', match: { exact: '/auth/claim' }, headers: getHandoffSecurityHeaders() }],
   routeSetHeaders: [
     {
       routeId: '/(app)/shares/[token]',

@@ -5,7 +5,7 @@
   // `centralizeMeOrigin` is set — resolved server-side from the web process's own
   // VAULT_HANDOFF_ISSUER (origin only, http(s) only), never from this page's query string. Same tab;
   // rel="external" marks it as a full-document navigation off-site (SvelteKit's router skips it),
-  // and rel="noreferrer" keeps this /handoff URL (which may still carry pendingId/claim) from being
+  // and rel="noreferrer" keeps this page's URL from being
   // sent to CM as a Referer. Both branches render from the same two message keys so the wording
   // cannot drift.
   let { centralizeMeOrigin }: { centralizeMeOrigin: string | null } = $props()

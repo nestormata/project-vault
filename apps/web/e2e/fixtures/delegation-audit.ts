@@ -129,7 +129,7 @@ export async function securityEventCount(sql: Sql, reason: string): Promise<numb
 
 export async function countTable(
   sql: Sql,
-  table: 'handoff_pending_states' | 'handoff_token_jti' | 'sessions' | 'platform_security_events'
+  table: 'handoff_token_jti' | 'sessions' | 'platform_security_events'
 ): Promise<number> {
   const [row] = await sql<{ count: number }[]>`select count(*)::int as count from ${sql(table)}`
   return row?.count ?? 0

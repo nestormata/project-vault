@@ -20,16 +20,25 @@ function withRules(...rules: HeaderRule[]): HeaderPolicy {
 }
 
 describe('PV_HEADER_POLICY (AC-5)', () => {
-  it('defaults are the frame-protection headers and the only rule is the exact /handoff rule', () => {
+  it('defaults are the frame-protection headers and the only rule is the exact /auth/claim rule', () => {
     expect(PV_HEADER_POLICY.defaults).toEqual(getFrameProtectionHeaders())
     expect(PV_HEADER_POLICY.rules.map((r) => r.id)).toEqual(['handoff'])
-    expect(PV_HEADER_POLICY.rules[0]?.match).toEqual({ exact: '/handoff' })
+    expect(PV_HEADER_POLICY.rules[0]?.match).toEqual({ exact: '/auth/claim' })
     expect(PV_HEADER_POLICY.rules[0]?.headers).toEqual(getHandoffSecurityHeaders())
   })
 
   it('first matching rule replaces the defaults; otherwise defaults (exact match only)', () => {
-    expect(resolveHeaders(PV_HEADER_POLICY, req('/handoff'))).toEqual(getHandoffSecurityHeaders())
-    for (const path of ['/handoff/x', '/handoff-admin', '/dashboard', '/extensions/panels']) {
+    expect(resolveHeaders(PV_HEADER_POLICY, req('/auth/claim'))).toEqual(
+      getHandoffSecurityHeaders()
+    )
+    for (const path of [
+      '/auth/claim/x',
+      '/auth/claimx',
+      '/auth/start',
+      '/handoff',
+      '/dashboard',
+      '/extensions/panels',
+    ]) {
       expect(resolveHeaders(PV_HEADER_POLICY, req(path))).toEqual(getFrameProtectionHeaders())
     }
   })
@@ -66,7 +75,7 @@ describe('PV_HEADER_POLICY (AC-5)', () => {
 })
 
 // Code review 68-6 (Nestor 2026-10-03): Kit decodes the path before it matches a route, so an
-// `exact`/`startsWith` rule matching only the raw pathname let `/%68andoff` render the handoff page
+// `exact`/`startsWith` rule matching only the raw pathname let `/auth/cl%61im` render the handoff page
 // with the defaults. Rules now match when the raw OR the decoded pathname matches, decoded exactly
 // as Kit's `decode_pathname` does (so a rule matches iff Kit renders the route it names).
 describe('exact/startsWith also match the decoded pathname (code review 68-6)', () => {
@@ -75,8 +84,12 @@ describe('exact/startsWith also match the decoded pathname (code review 68-6)', 
   )
 
   it('a percent-encoded URL gets the rule its decoded path matches', () => {
-    expect(resolveHeaders(PV_HEADER_POLICY, req('/%68andoff'))).toEqual(getHandoffSecurityHeaders())
-    expect(resolveHeaders(PV_HEADER_POLICY, req('/h%61ndoff'))).toEqual(getHandoffSecurityHeaders())
+    expect(resolveHeaders(PV_HEADER_POLICY, req('/auth/cl%61im'))).toEqual(
+      getHandoffSecurityHeaders()
+    )
+    expect(resolveHeaders(PV_HEADER_POLICY, req('/%61uth/claim'))).toEqual(
+      getHandoffSecurityHeaders()
+    )
     expect(resolveHeaders(policy, req('/%63m-area/x'))).toEqual({ 'x-a': 'cm' })
   })
 
@@ -92,13 +105,13 @@ describe('exact/startsWith also match the decoded pathname (code review 68-6)', 
   })
 
   it('decodes once: a double-encoded URL does not match (Kit routes it nowhere either)', () => {
-    expect(resolveHeaders(PV_HEADER_POLICY, req('/%2568andoff'))).toEqual(
+    expect(resolveHeaders(PV_HEADER_POLICY, req('/auth/cl%2561im'))).toEqual(
       getFrameProtectionHeaders()
     )
   })
 
   it('a malformed escape does not throw: the raw pathname is used', () => {
-    expect(resolveHeaders(PV_HEADER_POLICY, req('/handoff%E0%A4%A'))).toEqual(
+    expect(resolveHeaders(PV_HEADER_POLICY, req('/auth/claim%E0%A4%A'))).toEqual(
       getFrameProtectionHeaders()
     )
     expect(resolveHeaders(policy, req('/cm-area/%E0%A4%A'))).toEqual({ 'x-a': 'cm' })
@@ -256,7 +269,7 @@ describe('composeHeaderPolicy — contributions add, change and remove (AC-6)', 
     })
   })
 
-  it('change app-wide: every route without a rule gets it; /handoff keeps its own rule', () => {
+  it('change app-wide: every route without a rule gets it; /auth/claim keeps its own rule', () => {
     const csp = "frame-ancestors 'none'; img-src 'self' https://cdn.example"
     const composed = composeHeaderPolicy(PV_HEADER_POLICY, (pv) => ({
       ...pv,
@@ -266,7 +279,7 @@ describe('composeHeaderPolicy — contributions add, change and remove (AC-6)', 
     expect(
       resolveHeaders(composed, req('/cm-page', '/(cm)/cm-page'))['content-security-policy']
     ).toBe(csp)
-    expect(resolveHeaders(composed, req('/handoff'))).toEqual(getHandoffSecurityHeaders())
+    expect(resolveHeaders(composed, req('/auth/claim'))).toEqual(getHandoffSecurityHeaders())
     expect(describeHeaderPolicyDelta(PV_HEADER_POLICY, composed).changed).toEqual([
       'defaults.content-security-policy',
     ])
@@ -289,7 +302,7 @@ describe('composeHeaderPolicy — contributions add, change and remove (AC-6)', 
       defaults: {},
       rules: [],
     }))
-    expect(resolveHeaders(composed, req('/handoff'))).toEqual({})
+    expect(resolveHeaders(composed, req('/auth/claim'))).toEqual({})
     expect(describeHeaderPolicyDelta(PV_HEADER_POLICY, composed).removed).toEqual([
       'defaults.content-security-policy',
       'defaults.x-frame-options',
@@ -304,10 +317,10 @@ describe('composeHeaderPolicy — contributions add, change and remove (AC-6)', 
       rules: [
         {
           id: 'handoff',
-          match: { startsWith: '/handoff' },
+          match: { startsWith: '/auth/claim' },
           headers: {
             ...getHandoffSecurityHeaders(),
-            'referrer-policy': 'no-referrer',
+            'referrer-policy': 'same-origin',
             'x-new': '1',
           },
         },

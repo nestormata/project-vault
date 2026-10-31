@@ -12,7 +12,7 @@ describe('PV hooks files with empty contributions (AC-3, Q7)', () => {
     expect(serverHooks.handleError).toBeUndefined()
     expect(serverHooks.handleValidationError).toBeUndefined()
     expect(serverHooks.init).toBeUndefined()
-    expect(typeof serverHooks.checkHandoffCorsBootWarning).toBe('function')
+    expect(serverHooks).not.toHaveProperty('checkHandoffCorsBootWarning')
   })
 
   it('universal: reroute and transport are undefined', () => {

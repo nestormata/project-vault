@@ -25,7 +25,7 @@ vi.mock('virtual:pv-hooks/server', () => ({
   protectedPaths: { routeIds: [], add: [], remove: [] },
 }))
 
-import { handle, checkHandoffCorsBootWarning } from './hooks.server.js'
+import { handle } from './hooks.server.js'
 
 function makeEvent(pathname: string, cookieHeader: string | null = null) {
   const headers = new Headers()
@@ -64,37 +64,34 @@ describe('hooks.server handle', () => {
     })
   })
 
-  // AC5.20 (Story 30.5): the handoff confirmation page is the first (auth)-group page whose sole
-  // purpose is a single consent click, making UI-redress (iframe overlay) attacks a relevant
-  // threat class. Confirms by test, rather than assuming, that it inherits the same app-wide
-  // frame-protection headers as any other route -- no per-route opt-out exists for it.
-  // Story 60.3 AC4: superseded by the route-scoped getHandoffSecurityHeaders() branch below —
-  // /handoff now gets its own Referrer-Policy header alongside (not instead of) the same
-  // frame-protection headers AC5.20 originally required.
-  it('sets frame-protection headers plus a Referrer-Policy on the handoff confirmation route (AC5.20, Story 60.3 AC4)', async () => {
-    const event = makeEvent('/handoff')
+  // Story 73.1 AC5: the handoff claim page gets Referrer-Policy no-referrer alongside (not instead
+  // of) the app-wide frame-protection headers.
+  it('sets frame-protection headers plus Referrer-Policy no-referrer on the handoff claim page', async () => {
+    const event = makeEvent('/auth/claim')
 
     await handle({ event, resolve: resolveMock } as never)
 
     expect(event.setHeaders).toHaveBeenCalledWith({
       'content-security-policy': "frame-ancestors 'none'",
       'x-frame-options': 'DENY',
-      'referrer-policy': 'strict-origin',
+      'referrer-policy': 'no-referrer',
     })
   })
 
-  // Story 60.3 AC4 — precision requirement: a near-miss path must still get the app-wide default
-  // headers, never accidentally routed into the handoff-specific branch.
-  it('does not apply the handoff-specific Referrer-Policy header to a near-miss path', async () => {
-    const event = makeEvent('/handoff-admin')
+  // Precision requirement: a near-miss path still gets the app-wide default headers.
+  it.each(['/auth/claim-admin', '/handoff'])(
+    'does not apply the handoff Referrer-Policy header to %s',
+    async (path) => {
+      const event = makeEvent(path)
 
-    await handle({ event, resolve: resolveMock } as never)
+      await handle({ event, resolve: resolveMock } as never)
 
-    expect(event.setHeaders).toHaveBeenCalledWith({
-      'content-security-policy': "frame-ancestors 'none'",
-      'x-frame-options': 'DENY',
-    })
-  })
+      expect(event.setHeaders).toHaveBeenCalledWith({
+        'content-security-policy': "frame-ancestors 'none'",
+        'x-frame-options': 'DENY',
+      })
+    }
+  )
 
   it('sets a tighter, route-scoped CSP on the extension panel route instead of the general frame-protection headers (Story 29.1 code-review hardening)', async () => {
     const event = makeEvent('/extensions/panels/group')
@@ -266,80 +263,5 @@ describe('hooks.server handle', () => {
     const response = await handle({ event, resolve: echoResolve } as never)
 
     expect(await response.text()).toBe('<html lang="es">')
-  })
-})
-
-// AC4 (Story 60.1) — boot-time warning when handoff is enabled but apps/web's own
-// CORS_ALLOWED_ORIGINS has no non-PV origin (F1's "no PV-side log line" gap). Tested directly
-// against the extracted function, not only through hooks.server's module-scope call site, per
-// the story's own review finding: the function itself must be pure/non-throwing/silent by
-// default, since a bare top-level call re-executes on every test-file import.
-describe('checkHandoffCorsBootWarning', () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>
-
-  beforeEach(() => {
-    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-  })
-
-  it('warns when handoff is enabled and the allowlist contains only the PV origin', () => {
-    checkHandoffCorsBootWarning({
-      VAULT_HANDOFF_ENABLED: 'true',
-      CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
-      ORIGIN: 'http://localhost:5173',
-    })
-
-    expect(warnSpy).toHaveBeenCalledTimes(1)
-    expect(warnSpy.mock.calls[0]?.[0]).toContain('[handoff] WARN')
-    expect(warnSpy.mock.calls[0]?.[0]).toContain('CORS_ALLOWED_ORIGINS')
-    // Story 60.7: under Compose the env-file CORS_ALLOWED_ORIGINS is ignored, so the warning must
-    // name the knob a Compose operator can actually turn.
-    expect(warnSpy.mock.calls[0]?.[0]).toContain('CORS_EXTRA_ORIGINS')
-  })
-
-  it('warns when handoff is enabled and the allowlist is empty', () => {
-    checkHandoffCorsBootWarning({
-      VAULT_HANDOFF_ENABLED: 'true',
-      CORS_ALLOWED_ORIGINS: undefined,
-      ORIGIN: 'http://localhost:5173',
-    })
-
-    expect(warnSpy).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not warn when handoff is enabled and a non-PV origin is present', () => {
-    checkHandoffCorsBootWarning({
-      VAULT_HANDOFF_ENABLED: 'true',
-      CORS_ALLOWED_ORIGINS: 'http://localhost:5173,https://app.centralizeme.com',
-      ORIGIN: 'http://localhost:5173',
-    })
-
-    expect(warnSpy).not.toHaveBeenCalled()
-  })
-
-  it('does not warn when handoff is disabled, regardless of the allowlist', () => {
-    checkHandoffCorsBootWarning({
-      VAULT_HANDOFF_ENABLED: 'false',
-      CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
-      ORIGIN: 'http://localhost:5173',
-    })
-
-    expect(warnSpy).not.toHaveBeenCalled()
-  })
-
-  it('does not warn when VAULT_HANDOFF_ENABLED is unset', () => {
-    checkHandoffCorsBootWarning({
-      CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
-      ORIGIN: 'http://localhost:5173',
-    })
-
-    expect(warnSpy).not.toHaveBeenCalled()
-  })
-
-  // Pre-mortem finding — the fourth required case: with every relevant
-  // env var absent/undefined (the default state in a bare vitest run with no .env loaded), the
-  // call must throw nothing and print nothing.
-  it('throws nothing and warns nothing when every relevant env var is absent', () => {
-    expect(() => checkHandoffCorsBootWarning({})).not.toThrow()
-    expect(warnSpy).not.toHaveBeenCalled()
   })
 })

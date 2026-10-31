@@ -316,16 +316,16 @@ describe('Story 43.16 AC-2: createInternalApiFetch', () => {
     )
     const response = await proxyApiRequest({
       fetchFn: internal,
-      request: new Request('https://handoff.internal/exchange-claim', {
+      request: new Request('https://handoff.internal/claim', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ pendingId: 'p', claim: 'c' }),
       }),
-      path: 'auth/handoff/exchange-claim',
+      path: 'auth/handoff/claim',
       apiBaseUrl: server.baseUrl,
     })
     expect(response.status).toBe(200)
-    expect(server.seen.at(-1)?.url).toBe('/api/v1/auth/handoff/exchange-claim')
+    expect(server.seen.at(-1)?.url).toBe('/api/v1/auth/handoff/claim')
   })
 
   it('⚠️ 20 concurrent calls on a cold instance build exactly one Agent and all succeed over mTLS', async () => {

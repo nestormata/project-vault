@@ -615,7 +615,7 @@ describe('AC4: cookie namespace does not collide with any existing PV cookie nam
       }
     }
 
-    // Sanity: the scan actually found other real cookie literals (e.g. handoff-confirm), proving
+    // Sanity: the scan actually found other real cookie literals (e.g. auth cookies), proving
     // this test exercises something real rather than silently matching zero files.
     expect(literalNames.size).toBeGreaterThan(1)
     expect(constantDeclaredNames.has(OAUTH_HANDOFF_COOKIE_NAME)).toBe(true)

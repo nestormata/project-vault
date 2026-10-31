@@ -171,18 +171,14 @@ export function getCurrentUser(fetchFn: typeof fetch) {
   return apiFetch<AuthUser>(fetchFn, '/api/v1/auth/me')
 }
 
-// Story 30.5: the CM->PV handoff Confirm call. Reuses `AuthSessionResponse`/`MfaLoginChallenge`
-// (already defined above for `login`/`ssoCallback`) rather than a third distinct response type —
-// `handleConfirm`'s success shapes are identical. Deliberately takes no request body (the
-// backend route reads the `handoff-confirm` httpOnly cookie, not a JSON payload) and goes
-// through the existing, unmodified `/api/v1/[...path]` catch-all proxy — this call is always
-// same-origin by the time the confirmation page can render it (see Background's revised design),
-// so it needs no new CORS handling, unlike the sibling `prepare` proxy route.
-export function confirmHandoff(fetchFn: typeof fetch) {
+// Story 73.1: the nonce-bound handoff claim. Same success shapes as `login` (a session, or an MFA
+// challenge). Posts to PV web's own dedicated claim route, which adds the nonce from the host-only
+// cookie before calling the api; the token comes from the page's URL fragment.
+export function claimHandoff(fetchFn: typeof fetch, token: string) {
   return apiFetch<AuthSessionResponse | MfaLoginChallenge>(
     fetchFn,
-    '/api/v1/auth/handoff/confirm',
-    jsonPost()
+    '/api/v1/auth/handoff/claim',
+    jsonPost({ token })
   )
 }
 

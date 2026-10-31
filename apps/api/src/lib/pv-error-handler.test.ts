@@ -103,10 +103,10 @@ describe('pvErrorHandler goldens (Story 68.14 Task 1.4)', () => {
     ])
   })
 
-  it('normalizes an oversized handoff prepare body to 401 and records the security event', async () => {
+  it('normalizes an oversized handoff claim body to 401 and records the security event', async () => {
     const error = Object.assign(new Error('too big'), { statusCode: 413 })
     const { reply, sent } = fakeReply()
-    const { req } = fakeRequest('/api/v1/auth/handoff/prepare', { 'user-agent': 'cm-test' })
+    const { req } = fakeRequest('/api/v1/auth/handoff/claim', { 'user-agent': 'cm-test' })
     await pvErrorHandler(error as HandlerArgs[0], req as never, reply as never)
     expect(sent).toEqual([
       {
@@ -126,7 +126,7 @@ describe('pvErrorHandler goldens (Story 68.14 Task 1.4)', () => {
   it('records a null user agent for a handoff parser error without the header', async () => {
     writeHandoffSecurityEvent.mockClear()
     const error = Object.assign(new Error('too big'), { code: 'FST_ERR_CTP_BODY_TOO_LARGE' })
-    const { result } = run(error, '/api/v1/auth/handoff/prepare')
+    const { result } = run(error, '/api/v1/auth/handoff/claim')
     await result
     expect(writeHandoffSecurityEvent).toHaveBeenCalledWith(
       expect.objectContaining({ meta: { ipAddress: TEST_IP, userAgent: null } })

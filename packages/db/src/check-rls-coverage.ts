@@ -16,16 +16,15 @@ export const EXCLUDED_TABLES = new Set([
   'failed_auth_attempts',
   'pending_mfa_sessions',
   'platform_security_events',
-  // Story 30.2: instance-level replay-burn ledger / pending-handoff state — no tenant is
-  // known/trusted at ingestion time (handoff_pending_states.organization_id is untrusted claimed
-  // input until the confirm route's org cross-check runs). Same reasoning as
-  // sso_login_states/platform_security_events above.
+  // Story 30.2: instance-level replay-burn ledger — no tenant is known/trusted at ingestion time.
+  // Story 73.1: the browser-bound handoff nonce, written by /auth/start before any user or org is
+  // known. Same reasoning as sso_login_states/platform_security_events above.
   'handoff_token_jti',
-  'handoff_pending_states',
+  'handoff_nonces',
   // Story 39.1 — extension OAuth start/callback pending-state: no tenant is known/trusted at
   // insert (the start route's caller is authenticated but the row itself carries no org context)
   // or at lookup time (the callback is hit by an external OAuth provider, not PV's own
-  // authenticated frontend). Same no-FK/no-RLS reasoning as handoff_pending_states above.
+  // authenticated frontend). Same no-FK/no-RLS reasoning as handoff_token_jti above.
   'extension_oauth_pending_states',
   // Story 40.1 (AC12) — extension request-state peek/consume table. Unlike most org-scoped
   // tables, this one carries `org_id`/`identity_id` for a DELIBERATE reason that is NOT "isolate

@@ -15,7 +15,8 @@ import {
 import { pruneMfaPendingEnrollments } from './workers/prune-mfa-pending.js'
 import { pruneRevokedTokens } from './workers/prune-revoked-tokens.js'
 import {
-  pruneHandoffPendingStates,
+  pruneHandoffNonces,
+  RETIRED_HANDOFF_PRUNE_SCHEDULES,
   pruneHandoffTokenJti,
 } from './workers/prune-handoff-token-jti.js'
 import { pruneDelegationAssertionJti } from './workers/prune-delegation-assertion-jti.js'
@@ -235,7 +236,7 @@ async function main(): Promise<void> {
       // to the hourly revoked-tokens sweep — same 5-minute cadence as the sibling
       // handoff/clock-skew-check job registered alongside it.
       'prune-handoff-token-jti': { cron: EVERY_FIVE_MINUTES_CRON },
-      'prune-handoff-pending-states': { cron: EVERY_FIVE_MINUTES_CRON },
+      'prune-handoff-nonces': { cron: EVERY_FIVE_MINUTES_CRON },
       // Story 71.7: one bounded DELETE per minute keeps the delegation burn ledger small (rows
       // live about 90 s plus a 300 s prune grace).
       'delegation/prune-assertion-jti': { cron: '* * * * *' },
@@ -325,6 +326,8 @@ async function main(): Promise<void> {
     // re-create them; the next new-code boot removes them again, and the exclusive claim keeps
     // any duplicate jobs harmless in between.
     await Promise.all(RETIRED_NOTIFICATION_CATCHUP_SCHEDULES.map((name) => boss.unschedule(name)))
+    // Story 73.1: same for the retired handoff pending-state prune.
+    await Promise.all(RETIRED_HANDOFF_PRUNE_SCHEDULES.map((name) => boss.unschedule(name)))
     operationalLog(
       fastify.log,
       'info',
@@ -335,7 +338,7 @@ async function main(): Promise<void> {
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
       'prune-handoff-token-jti': () => pruneHandoffTokenJti(),
-      'prune-handoff-pending-states': () => pruneHandoffPendingStates(),
+      'prune-handoff-nonces': () => pruneHandoffNonces(),
       'delegation/prune-assertion-jti': () => pruneDelegationAssertionJti(),
       'mfa/prune-totp-used-codes': () => pruneTotpUsedCodes(),
       'mfa/prune-pending-mfa-sessions': () => prunePendingMfaSessions(),
