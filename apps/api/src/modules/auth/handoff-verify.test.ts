@@ -208,4 +208,39 @@ describe('verifyHandoffToken (Story 30.2 AC3/AC6)', () => {
     const token = signToken({}, { iss: 'https://evil.example.com' })
     expect(verifyHandoffToken(token)).toEqual({ ok: false, reason: 'handoff_malformed_claim' })
   })
+
+  describe('Story 73.1: optional nonce claim', () => {
+    const VALID_NONCE = 'A'.repeat(43)
+
+    it('a token without nonce verifies with nonce null', () => {
+      const result = verifyHandoffToken(signToken())
+      expect(result.ok && result.claims.nonce).toBeNull()
+    })
+
+    it.each([
+      ['a 16-char base64url nonce', 'abcdefghijklmn-_'],
+      ['a 43-char nonce (32 random bytes)', VALID_NONCE],
+      ['a 128-char nonce', 'z'.repeat(128)],
+    ])('accepts %s and returns it verbatim', (_label, nonce) => {
+      const result = verifyHandoffToken(signToken({}, { nonce }))
+      expect(result.ok && result.claims.nonce).toBe(nonce)
+    })
+
+    it.each([
+      ['15 chars', 'a'.repeat(15)],
+      ['129 chars', 'a'.repeat(129)],
+      ['an empty string', ''],
+      ['padding', `${'a'.repeat(20)}=`],
+      ['standard base64 characters', `${'a'.repeat(20)}+/`],
+      ['whitespace', `${'a'.repeat(20)} `],
+      ['a number', 12345678901234567],
+      ['null', null],
+      ['an array', [VALID_NONCE]],
+    ])('rejects a nonce of %s as handoff_malformed_claim', (_label, nonce) => {
+      expect(verifyHandoffToken(signToken({}, { nonce }))).toEqual({
+        ok: false,
+        reason: 'handoff_malformed_claim',
+      })
+    })
+  })
 })

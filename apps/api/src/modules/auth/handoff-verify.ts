@@ -46,6 +46,9 @@ export type HandoffVerifiedClaims = {
   quotas: Record<string, number> | undefined
   claimsVersion: number
   amr: string[] | undefined
+  /** Story 73.1: the browser-bound nonce the issuer signed in, or null when the token has none.
+   *  The claim route rejects a null nonce; the verifier only checks its shape. */
+  nonce: string | null
   /** AC4.17: claimsVersion !== 1 — identity/session claims still apply, but any
    *  capability/tier/quota claim must be treated by callers as a non-grant. */
   unknownClaimsVersion: boolean
@@ -63,6 +66,8 @@ const MAX_STRING_CLAIM_BYTES = 256
 const CLOCK_SKEW_TOLERANCE_SECONDS = 30
 const MAX_TOKEN_LIFETIME_SECONDS = 60
 const ALLOWED_AMR_VALUES = new Set(['pwd', 'otp', 'mfa', 'webauthn', 'sso'])
+// Story 73.1 AC1: base64url without padding, 16-128 chars (PV mints 32 bytes = 43 chars).
+const NONCE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/
 
 function reject(reason: HandoffRejectReason): HandoffVerifyResult {
   return { ok: false, reason }
@@ -148,6 +153,17 @@ function validateAmr(
     if (!ALLOWED_AMR_VALUES.has(item)) return { ok: false, reason: 'handoff_unknown_assurance' }
   }
   return { ok: true, value: raw as string[] }
+}
+
+function validateNonce(
+  payload: Record<string, unknown>
+): { ok: true; value: string | null } | { ok: false; reason: HandoffRejectReason } {
+  const raw = payload['nonce']
+  if (raw === undefined) return { ok: true, value: null }
+  if (typeof raw !== 'string' || !NONCE_PATTERN.test(raw)) {
+    return { ok: false, reason: 'handoff_malformed_claim' }
+  }
+  return { ok: true, value: raw }
 }
 
 /** Split out of `validateTimeClaims` to keep it under the repo's complexity threshold. */
@@ -275,6 +291,8 @@ function validatePayload(payload: unknown): PayloadValidation {
   if (!amr.ok) return amr
   const claimsVersion = validateClaimsVersion(payload)
   if (!claimsVersion.ok) return claimsVersion
+  const nonce = validateNonce(payload)
+  if (!nonce.ok) return nonce
 
   const timeIssue = validateTimeFields(payload)
   if (timeIssue) return { ok: false, reason: timeIssue }
@@ -295,6 +313,7 @@ function validatePayload(payload: unknown): PayloadValidation {
       quotas: quotas.value,
       claimsVersion: claimsVersion.value,
       amr: amr.value,
+      nonce: nonce.value,
       unknownClaimsVersion: claimsVersion.value !== 1,
     },
   }

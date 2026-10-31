@@ -9,20 +9,31 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
-## [1.7.0] - YYYY-MM-DD
+## [2.0.0] - YYYY-MM-DD
 
-Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.7.0`
-(aliases `1.7`, `1`, `latest`). Extension API contract: the source is at
+Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:2.0.0`
+(aliases `2.0`, `2`, `latest`). Extension API contract: the source is at
 `@project-vault/extension-api@3.38.0`, and this host loads extensions whose manifest `apiVersion`
 is in `>=3.0.0 <=3.38.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). The package is already published from the
 `extension-api-v3.38.0` tag; it includes `3.37.0`, which was never published on its own. CLI:
-`pvault-1.7.0.mjs` on this release's assets. Build-time composition packages publish from this tag to
-npm's `next` dist-tag: `@project-vault/web-host@1.7.0` and `@project-vault/composition-kit@0.10.0`
+`pvault-2.0.0.mjs` on this release's assets. Build-time composition packages publish from this tag to
+npm's `next` dist-tag: `@project-vault/web-host@2.0.0` and `@project-vault/composition-kit@0.10.0`
 (`0.9.0` was the last published kit).
 
 ### Upgrade notes (read before `docker compose pull`)
 
-- **Migrations 0106 and 0107 run automatically** via the `migrate` service. Both are additive and
+- **Major release: the sign-in handoff changed (Story 73-1, see Breaking).** The issuer (CentralizeMe)
+  must move to `/auth/start`, a `nonce` claim and `/auth/claim#<token>` in the same rollout, and the api
+  needs the new `VAULT_HANDOFF_START_URL` (an absolute `http(s)` URL without userinfo; unset makes
+  `/auth/start` fail closed, an invalid value refuses to boot). An issuer still calling `prepare` or
+  linking to `/handoff` gets 404s after this upgrade. Details:
+  [docs/runbooks/upgrade-notes.md](docs/runbooks/upgrade-notes.md).
+- **Migrations 0106 to 0109 run automatically** via the `migrate` service. 0108 adds the `handoff_nonces`
+  table. **0109 drops the retired `handoff_pending_states` table** (a reviewed destructive migration; its
+  rows lived 120 seconds, so nothing of value is lost). After 0109 do not start an older image on the
+  upgraded database: restore the pre-upgrade backup or re-create the table first (steps in the upgrade
+  notes). The background job `prune-handoff-pending-states` is replaced by `prune-handoff-nonces`.
+  0106 and 0107 are additive and
   idempotent. `0106` adds five nullable-or-defaulted columns to `projects` (`urls`, `deleted_at`,
   `deleted_by`, `purge_after`, `purged_at`), one foreign key to `users` and a partial index for the
   purge job. `0107` adds nine columns to `credential_shares` for guest recipient verification
@@ -39,7 +50,7 @@ npm's `next` dist-tag: `@project-vault/web-host@1.7.0` and `@project-vault/compo
   the project owner row or an org owner; an org `admin` without the owner row gets `403`. A caller that relied
   on admin edit (for example a Settings tab in a composed product) breaks until it adapts.
   `project.updated` now carries `{ authorizedVia, changedFields }` (field names only).
-- **Composed hosts:** web-host 1.7.0 pins `undici` 8.12.3 exactly (a major bump from 7.x); a host must match
+- **Composed hosts:** web-host 2.0.0 pins `undici` 8.12.3 exactly (a major bump from 7.x); a host must match
   it or `pv-compose` compatibility fails. The new `?purpose` query (72-8), the share and project routes and
   the TOTP route change the OpenAPI document, so refresh the composed snapshot. A header policy that itself
   sets `cache-control` on the routes listed under Story 72-8 now fails at boot. Story 72-5 changes
@@ -54,6 +65,24 @@ npm's `next` dist-tag: `@project-vault/web-host@1.7.0` and `@project-vault/compo
   on 3.38.0 or later can no longer create external shares unattended: it needs a human's
   `actingUserId` and a live code. Details and the migration for CentralizeMe:
   [packages/extension-api/CHANGELOG.md](packages/extension-api/CHANGELOG.md).
+
+### Breaking
+
+- **Nonce-bound handoff; the Confirm sign-in page is gone** (Story 73.1, Epic 73). A user arriving
+  from the issuer is signed in with no click. PV web's `GET /auth/start` sets a host-only
+  `__Host-pv-handoff-nonce` cookie (HttpOnly, Secure, SameSite=Lax, 120 s) and redirects to the new
+  `VAULT_HANDOFF_START_URL` with `nonce=<nonce>` added. The issuer signs a token carrying that
+  `nonce` claim and sends the browser to `/auth/claim#<token>`; the page posts the token to PV web's
+  same-origin `POST /api/v1/auth/handoff/claim`, which adds the cookie nonce, and the api consumes the
+  nonce (single use), checks the claim, burns the `jti` and issues a new session or the MFA challenge.
+  A token is useless in a browser that does not hold its nonce, which closes login CSRF. **Removed
+  for integrators:** `POST /api/v1/auth/handoff/prepare` (and its CORS route on web),
+  `POST /api/v1/auth/handoff/exchange-claim`, `POST /api/v1/auth/handoff/confirm`, the
+  `handoff-confirm` cookie and the `/handoff` page with its "Not me" link. Move to `/auth/start`,
+  `/auth/claim#<token>` and a `nonce` claim; see `docs/runbooks/handoff-instance-identity.md` and the
+  upgrade notes. New `handoff_nonce_{missing,unknown,reused,expired,mismatch}` security events. The
+  `auth.handoff.*` injection points move to route id `/(auth)/auth/claim`; `auth.handoff.confirm` is
+  removed. `/auth/claim` sends `Referrer-Policy: no-referrer`.
 
 ### Added
 
@@ -214,7 +243,7 @@ npm's `next` dist-tag: `@project-vault/web-host@1.7.0` and `@project-vault/compo
   The web server hook resolved the session with `GET /auth/me` for every request, including the
   same-origin `/api/v1/*` proxy requests that a page's own server loads issue, and it treated a
   429 or 5xx from `/auth/me` as "signed out" (303 to `/login`). The hook now skips that probe on
-  PV's own API proxy routes (`/api/v1/[...path]`, `/api/v1/auth/handoff/prepare`; the API still
+  PV's own API proxy routes (`/api/v1/[...path]` and, since Story 73.1, `/api/v1/auth/handoff/claim`; the API still
   authenticates every call), and a throttled or failing auth API answers a protected request with a
   retryable `429` (with a sanitized `Retry-After`) or `503` instead of a redirect. A genuine 401 or a
   rejected refresh still redirects to `/login`. No rate limit changed.
@@ -989,8 +1018,8 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.2.0`
 - The `fast-uri` transitive dependency is patched (CVE-2026-75899, CVE-2026-75931,
   CVE-2026-75975, CVE-2026-76172).
 
-[Unreleased]: https://github.com/nestormata/project-vault/compare/v1.7.0...HEAD
-[1.7.0]: https://github.com/nestormata/project-vault/compare/v1.6.0...v1.7.0
+[Unreleased]: https://github.com/nestormata/project-vault/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/nestormata/project-vault/compare/v1.6.0...v2.0.0
 [1.6.0]: https://github.com/nestormata/project-vault/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/nestormata/project-vault/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/nestormata/project-vault/compare/v1.3.0...v1.4.0

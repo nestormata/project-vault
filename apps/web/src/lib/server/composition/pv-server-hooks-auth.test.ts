@@ -88,10 +88,10 @@ describe('request budget (AC-1)', () => {
   })
 
   it.each(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])(
-    'skips the probe for %s on the proxy route and the handoff prepare route',
+    'skips the probe for %s on the proxy route and the handoff claim route',
     async (method) => {
       await run('/api/v1/projects', PROXY_ROUTE, { method })
-      await run('/api/v1/auth/handoff/prepare', '/api/v1/auth/handoff/prepare', { method })
+      await run('/api/v1/auth/handoff/claim', '/api/v1/auth/handoff/claim', { method })
       expect(authMeCalls()).toHaveLength(0)
     }
   )

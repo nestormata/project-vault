@@ -9,42 +9,6 @@ import { PV_HEADER_POLICY } from '$lib/security/header-policy.js'
 import { composeServerHooks } from '$lib/server/composition/compose-server-hooks.js'
 import { createPvHandle } from '$lib/server/composition/pv-server-hooks.js'
 import { PV_PROTECTED_PREFIXES, composeProtectedPaths } from '$lib/server/protected-paths.js'
-import { parseAllowedOrigins } from '$lib/server/handoff-cors.js'
-
-// A plain index-signature record (matching $env/dynamic/private's own shape) rather than a
-// closed object type — a closed all-optional type here trips TypeScript's "weak type" check
-// against env's actual type (which carries many other known keys), since the two would then
-// share no declared property in common.
-type HandoffCorsBootEnv = Record<string, string | undefined>
-
-// AC4 (Story 60.1) — Design Decision 2: apps/web has no createApp()-style boot sequence or
-// structured operationalLog/OperationalEvent machinery (unlike apps/api's
-// handoff-boot.ts::resolveHandoffAuthStrategy()), so this is a small, independently unit-testable
-// pure function instead of a port of that pattern. It must never throw and must stay silent
-// unless the real misconfiguration holds: called from this module's top level (see below), it
-// re-executes on every test-file import of this module and on every dev-server/build module load,
-// not only once per real server process start.
-export function checkHandoffCorsBootWarning(rawEnv: HandoffCorsBootEnv): void {
-  if (rawEnv.VAULT_HANDOFF_ENABLED !== 'true') return
-
-  const allowedOrigins = parseAllowedOrigins(rawEnv.CORS_ALLOWED_ORIGINS)
-  const pvOrigin = rawEnv.ORIGIN ?? ''
-  const hasNonPvOrigin = [...allowedOrigins].some((origin) => origin !== pvOrigin)
-  if (hasNonPvOrigin) return
-
-  // eslint-disable-next-line no-console -- intentional operator-facing boot diagnostic (AC4), not app logging
-  console.warn(
-    '[handoff] WARN: VAULT_HANDOFF_ENABLED is true but CORS_ALLOWED_ORIGINS contains no ' +
-      "non-PV origin — CentralizeMe's cross-origin handoff prepare call will be rejected. " +
-      "Under Docker Compose, add CentralizeMe's origin with CORS_EXTRA_ORIGINS (the env-file " +
-      'CORS_ALLOWED_ORIGINS is ignored there). See docs/configuration.md # Handoff & service integration.'
-  )
-}
-
-// Module-scope call: SvelteKit/adapter-node runs module-scope code once per server process start,
-// giving the same "boot time" semantics as apps/api's boot hook without inventing one here (see
-// checkHandoffCorsBootWarning's own doc comment for why this must be side-effect-free by default).
-checkHandoffCorsBootWarning(env)
 
 // Story 29.1 — code-review hardening (2026-08-29). The extension-panel route renders sanitized,
 // but not network-egress-restricted, third-party HTML inline into this same document/session

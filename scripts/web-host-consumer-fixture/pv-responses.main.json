@@ -28,7 +28,7 @@
       "status": 200,
       "headers": {
         "content-security-policy": "frame-ancestors 'none'",
-        "referrer-policy": "strict-origin",
+        "referrer-policy": "no-referrer",
         "x-frame-options": "DENY"
       },
       "setCookie": []

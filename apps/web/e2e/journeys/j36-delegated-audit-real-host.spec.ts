@@ -139,6 +139,8 @@ test.describe.serial('J36 — Epic 71 real-host proof: delegated, idempotent aud
         VAULT_HANDOFF_ENABLED: 'true',
         VAULT_HANDOFF_ISSUER: HANDOFF_E2E_ISSUER,
         VAULT_HANDOFF_VERIFY_KEYS: handoffVerifyKeysJson(),
+        // Story 73.1: lets the claim case mint a real nonce; nothing ever navigates there.
+        VAULT_HANDOFF_START_URL: 'http://127.0.0.1:9/start',
       },
     })
     apiProcess = api.process
@@ -247,9 +249,12 @@ test.describe.serial('J36 — Epic 71 real-host proof: delegated, idempotent aud
     expect(await auditRowCount(sql, orgA.orgId, eventType)).toBe(0)
   })
 
-  test('AC-2: a delegation assertion posted to the handoff prepare endpoint is rejected before any state change', async () => {
+  test('AC-2: a delegation assertion posted to the handoff claim endpoint mints nothing and burns nothing', async () => {
+    // Story 73.1: a real nonce, so the assertion gets past the nonce check to the token verifier.
+    const start = await fetch(`${apiBase}/api/v1/auth/handoff/start`, { method: 'POST' })
+    expect(start.status).toBe(200)
+    const { nonce } = ((await start.json()) as { data: { nonce: string } }).data
     const before = {
-      pending: await countTable(sql, 'handoff_pending_states'),
       sessions: await countTable(sql, 'sessions'),
       jtis: await countTable(sql, 'handoff_token_jti'),
     }
@@ -257,19 +262,18 @@ test.describe.serial('J36 — Epic 71 real-host proof: delegated, idempotent aud
       apiBase,
       org: orgA.cmOrgId,
       sub: 'sub',
-      op: 'POST /api/v1/auth/handoff/prepare',
+      op: 'POST /api/v1/auth/handoff/claim',
       body: '{}',
     })
     issuedTokens.push(assertion)
-    const response = await fetch(`${apiBase}/api/v1/auth/handoff/prepare`, {
+    const response = await fetch(`${apiBase}/api/v1/auth/handoff/claim`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: assertion }),
+      body: JSON.stringify({ token: assertion, nonce }),
     })
     expect(response.status).toBe(401)
     expect(await response.json()).toMatchObject({ code: 'handoff_rejected' })
     expect({
-      pending: await countTable(sql, 'handoff_pending_states'),
       sessions: await countTable(sql, 'sessions'),
       jtis: await countTable(sql, 'handoff_token_jti'),
     }).toEqual(before)

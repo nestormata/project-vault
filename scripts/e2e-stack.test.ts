@@ -646,17 +646,20 @@ describe('Story 60.6 AC7: e2e-only handoff wiring', () => {
     expect(key?.publicKeyPem).toBe(handoffE2ePublicKeyPem())
   })
 
-  it('allowlists PV itself and the stub origin on the web, with handoff enabled and an empty issuer', () => {
-    const web = e2eServiceEnv('web')
-    expect(web['VAULT_HANDOFF_ENABLED']).toBe('true')
-    expect(web['CORS_ALLOWED_ORIGINS']).toBe(
-      '${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}},' +
-        `http://127.0.0.1:\${E2E_HANDOFF_STUB_PORT:-${HANDOFF_E2E_STUB_DEFAULT_PORT}}`
+  it('points the e2e api start URL at the fake issuer on the stub port (Story 73.1)', () => {
+    expect(e2eServiceEnv('api')['VAULT_HANDOFF_START_URL']).toBe(
+      `http://127.0.0.1:\${E2E_HANDOFF_STUB_PORT:-${HANDOFF_E2E_STUB_DEFAULT_PORT}}/start`
     )
-    // j28's 60.4 tests assert the plain-text guidance an unset web issuer produces. Pinned empty,
-    // not omitted: the base file's `${VAULT_HANDOFF_ISSUER:-}` would otherwise pick up the
-    // worktree's local config (created from the example file, which sets it) and render a link.
+  })
+
+  it('gives the web only an empty issuer pin: no handoff CORS allowlist or toggle since 73.1', () => {
+    const web = e2eServiceEnv('web')
+    // j31 asserts the plain-text guidance an unset web issuer produces. Pinned empty, not omitted:
+    // the base file's `${VAULT_HANDOFF_ISSUER:-}` would otherwise pick up the worktree's local
+    // config (created from the example file, which sets it) and render a link.
     expect(web['VAULT_HANDOFF_ISSUER']).toBe('')
+    expect(web).not.toHaveProperty('VAULT_HANDOFF_ENABLED')
+    expect(web).not.toHaveProperty('CORS_ALLOWED_ORIGINS')
   })
 
   it('pins the fixture defaults to the override (stub port, issuer, instance id, kid)', () => {

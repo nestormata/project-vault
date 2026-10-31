@@ -4,12 +4,12 @@ import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
  * Story 39.1 — extension-scoped OAuth pending-state, created by `POST
  * /api/v1/extensions/oauth-handoff/start` (AC1) and consumed by `GET
  * /api/v1/extensions/oauth-handoff/callback` (AC2/AC3). Deliberately NOT `handoffPendingStates`
- * (`handoff-pending-states.ts`) — that table's row shape is auth-handoff-specific (WorkOS claim
+ * (the auth handoff's table, dropped by migration 0109 in Story 73.1) — that table's row shape is auth-handoff-specific (WorkOS claim
  * fields, a `jti` to burn into a SEPARATE `handoff_token_jti` ledger) and this story's Recommended
  * Mechanism Decision explicitly rejects reusing it blindly.
  *
  * `cookieHash` stores an HMAC-SHA256 of the raw start-cookie value — never the raw value itself —
- * mirroring `handoffPendingStates.cookieHash`'s existing hashing precedent.
+ * mirroring the hashing precedent of `handoffPendingStates.cookieHash` (since dropped).
  *
  * `stateJson` is the extension's own opaque, JSON-serialized `state` object (Recommended Mechanism
  * Decision) — PV never interprets its contents, only stores/returns it verbatim.
@@ -22,10 +22,10 @@ import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
  *
  * Single-use burn-before-use (AC3) is implemented as ONE atomic `UPDATE ... SET consumed_at = now()
  * WHERE cookie_hash = $1 AND consumed_at IS NULL AND expires_at > now() RETURNING *` — deliberately
- * NOT `handoffPendingStates`/`handoffTokenJti`'s two-table insert-first-burn pattern, since a
- * single atomic conditional UPDATE already gives the same replay-safety guarantee (at most one
- * concurrent caller can ever see a non-null `RETURNING` row for a given `cookieHash`) with less
- * schema surface. `expiresAt` comparisons always use the database's own `now()` in the query, never
+ * NOT the two-table insert-first-burn pattern the auth handoff used (`handoffPendingStates`, since
+ * dropped, plus `handoffTokenJti`), since a single atomic conditional UPDATE already gives the same
+ * replay-safety guarantee (at most one concurrent caller can ever see a non-null `RETURNING` row for
+ * a given `cookieHash`) with less schema surface. `expiresAt` comparisons always use the database's own `now()` in the query, never
  * app-process wall-clock time (Pre-Mortem finding 2), so multi-instance clock skew cannot cause an
  * early false rejection.
  *
@@ -38,7 +38,7 @@ import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
  *
  * Deliberately NOT org-scoped (no `orgId` FK, no RLS policy) — the external OAuth provider's own
  * callback request carries no PV session, so no tenant is trusted yet at insert OR lookup time,
- * mirroring `handoffPendingStates`/`sso_login_states`'s identical no-FK/no-RLS reasoning.
+ * mirroring `sso_login_states`'s identical no-FK/no-RLS reasoning.
  * `expiresAt` gets its own index so a future pruning worker (mirroring
  * `apps/api/src/workers/prune-handoff-token-jti.ts`) can sweep orphaned rows independently.
  */

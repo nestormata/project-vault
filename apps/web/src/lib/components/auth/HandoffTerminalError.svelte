@@ -3,8 +3,8 @@
   import { m } from '$lib/paraglide/messages.js'
   import HandoffReturnGuidance from './HandoffReturnGuidance.svelte'
 
-  // Story 60.4 AC2/AC3 (F11): every terminal error state (no-params/malformed, rejected, and
-  // login_failed) shares this block — an error heading instead of "Confirm sign-in", the alert, and
+  // Story 60.4 AC2/AC3 (F11): every terminal error state (no token, rejected, and
+  // login_failed) shares this block — an error heading, the alert, and
   // guidance back to CentralizeMe. The guidance is deliberately outside the role="alert" element
   // (the alert announces the error; this is follow-up help) and is never a retry action on PV.
   // Story 69.11: one sub-region for all three states.

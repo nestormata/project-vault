@@ -1,6 +1,5 @@
 import { generateKeyPairSync, sign as cryptoSign, createPrivateKey, randomUUID } from 'node:crypto'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
-import { parseSetCookies } from './auth-test-helpers.js'
 import {
   externalIdentities,
   organizations,
@@ -10,8 +9,7 @@ import {
 } from '@project-vault/db/schema'
 
 /**
- * Shared fixtures for the handoff route integration tests (`handoff-routes.test.ts`,
- * `handoff-claim-exchange-atomicity.test.ts` — Story 60.5 Task 2.1).
+ * Shared fixtures for the handoff route integration tests (`handoff-routes.test.ts`).
  *
  * Each test file must still assign `process.env['VAULT_HANDOFF_*']` itself, at its top and before
  * `bootstrapRouteIntegrationTest()`: env is read when the app module loads. Use
@@ -25,12 +23,7 @@ const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toStri
 export const HANDOFF_TEST_INSTANCE_ID = 'pv-handoff-route-test'
 export const HANDOFF_TEST_KID = 'kid-1'
 export const HANDOFF_PROVIDER = 'centralizeme-handoff'
-export const HANDOFF_COOKIE_NAME = 'handoff-confirm'
-
-/** The handoff pending-state cookie value a response set, if any (Map lookup, no dynamic key). */
-export function handoffCookieFrom(setCookie: string | string[] | undefined): string | undefined {
-  return new Map(Object.entries(parseSetCookies(setCookie))).get(HANDOFF_COOKIE_NAME)
-}
+export const HANDOFF_TEST_START_URL = 'https://router.example/handoff/start?v=1'
 
 export function b64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64url')
@@ -68,14 +61,14 @@ export function signToken(claimOverrides: Record<string, unknown> = {}): string 
  * burnAndResolveOrg's real, stored-value comparison (never a raw-UUID comparison against the
  * token's `organizationId` claim).
  *
- * Story 60.4: `options.email` overrides the linked user's `users.email` (default unchanged), so
- * prepare's display-label nulling can be exercised with a synthetic service-provisioned address.
+ * Story 73.1: `options.mfaEnrolled` marks the user MFA-enrolled and `options.membershipStatus`
+ * overrides the active membership, for the claim route's MFA and inactive-member branches.
  */
 export async function createLinkedHandoffOrg(
   label: string,
   workosUserId: string,
   centralizemeOrganizationId: string,
-  options: { email?: string } = {}
+  options: { mfaEnrolled?: boolean; membershipStatus?: 'active' | 'deactivated' } = {}
 ): Promise<{ orgId: string; userId: string; organizationName: string }> {
   const orgId = randomUUID()
   const suffix = orgId.slice(0, 8)
@@ -87,17 +80,20 @@ export async function createLinkedHandoffOrg(
       slug: `handoff-${label}-${suffix}`,
       centralizemeOrganizationId,
     })
-  const email = options.email ?? `handoff-${label}-${randomUUID()}@example.com`
+  const email = `handoff-${label}-${randomUUID()}@example.com`
   const [user] = await getDb()
     .insert(users)
-    .values({ email, passwordHash: 'x' })
+    .values({ email, passwordHash: 'x', mfaEnrolledAt: options.mfaEnrolled ? new Date() : null })
     .returning({ id: users.id })
   if (!user) throw new Error('expected user row')
   await getDb().insert(userIdentityTokens).values({ userId: user.id, displayName: email })
   await withOrg(orgId, (tx) =>
-    (tx as Tx)
-      .insert(orgMemberships)
-      .values({ orgId, userId: user.id, role: 'member', status: 'active' })
+    (tx as Tx).insert(orgMemberships).values({
+      orgId,
+      userId: user.id,
+      role: 'member',
+      status: options.membershipStatus ?? 'active',
+    })
   )
   await withOrg(orgId, (tx) =>
     (tx as Tx).insert(externalIdentities).values({

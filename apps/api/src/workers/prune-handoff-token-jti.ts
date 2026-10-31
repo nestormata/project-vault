@@ -1,6 +1,6 @@
 import { lt } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
-import { handoffPendingStates, handoffTokenJti } from '@project-vault/db/schema'
+import { handoffNonces, handoffTokenJti } from '@project-vault/db/schema'
 import { runPruneJob, type WorkerLogger } from './prune-utils.js'
 
 /**
@@ -18,16 +18,17 @@ export async function pruneHandoffTokenJti(logger?: WorkerLogger): Promise<void>
 }
 
 /**
- * Story 30.2 AC5.20: the prepare-time pending-handoff state (its own table, per Task 2's design
- * decision) also needs an independent expiry sweep — it is never burned/consumed by the confirm
- * route (only the JTI is), so an abandoned prepare (user never confirms) would otherwise leave an
- * orphaned row forever.
+ * Story 73.1: nonce records live 120 s. A consumed row is kept until it expires (so a second
+ * presentation reads as reused), then this sweep deletes it like an abandoned one.
  */
-export async function pruneHandoffPendingStates(logger?: WorkerLogger): Promise<void> {
+export async function pruneHandoffNonces(logger?: WorkerLogger): Promise<void> {
   await runPruneJob(
-    'prune-handoff-pending-states',
-    () =>
-      getDb().delete(handoffPendingStates).where(lt(handoffPendingStates.expiresAt, new Date())),
+    'prune-handoff-nonces',
+    () => getDb().delete(handoffNonces).where(lt(handoffNonces.expiresAt, new Date())),
     logger
   )
 }
+
+/** pg-boss keeps schedules across deploys, so the retired pending-state sweep is unscheduled at
+ *  boot (idempotent), the same way main.ts retires the old notification catch-ups. */
+export const RETIRED_HANDOFF_PRUNE_SCHEDULES = ['prune-handoff-pending-states'] as const

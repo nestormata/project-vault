@@ -93,8 +93,9 @@ period, and it exists so that an emergency does not become a reason to work arou
 
 The single-use, signed browser-based single sign-on that lets an already-authenticated
 CentralizeMe user land in a Project Vault session without logging in again. The token is verified
-with EdDSA, burned on first use to prevent replay, and confirmed through a two-step
-prepare/confirm flow that supports a multi-factor challenge. It is opt-in via
+with EdDSA, burned on first use to prevent replay, and bound to the browser that started it by a
+single-use nonce (`/auth/start` sets it, `/auth/claim` checks it), with no confirmation click. It
+supports a multi-factor challenge. It is opt-in via
 `VAULT_HANDOFF_ENABLED` and off by default.
 
 ### CentralizeMe

@@ -178,7 +178,7 @@ describe('HandoffEvent (Story 30.2 AC6.21)', () => {
   // AC6.21's prose says "21 named events" but its own enumerated list (repeated verbatim as
   // `expected` below) contains 22 distinct names — the concrete list is authoritative over the
   // summary count.
-  it('exposes exactly the 22 named handoff_* rejection-matrix/lifecycle events', () => {
+  it('exposes exactly the 27 named handoff_* rejection-matrix/lifecycle events (22 + 73-1 nonce)', () => {
     const expected = [
       'handoff_malformed_claim',
       'handoff_claims_oversized',
@@ -202,10 +202,16 @@ describe('HandoffEvent (Story 30.2 AC6.21)', () => {
       'handoff_session_claims_unavailable',
       'handoff_mfa_completed',
       'handoff_login_succeeded',
+      'handoff_nonce_missing',
+      'handoff_nonce_unknown',
+      'handoff_nonce_reused',
+      'handoff_nonce_expired',
+      'handoff_nonce_mismatch',
     ]
+    const byName = (a: string, b: string) => a.localeCompare(b)
     const actual = Object.values(HandoffEvent)
-    expect(actual).toHaveLength(22)
-    expect(actual.sort()).toEqual(expected.sort())
+    expect(actual).toHaveLength(27)
+    expect([...actual].sort(byName)).toEqual([...expected].sort(byName))
   })
 
   it('every value is prefixed handoff_ (never a raw claim value embedded in the constant)', () => {

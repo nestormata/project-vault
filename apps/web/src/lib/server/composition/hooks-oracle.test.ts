@@ -2,10 +2,12 @@
 // on `main` @ c4482a44 BEFORE any 68-6 change (the RED commit) and must stay byte-identical with
 // no CM contribution. Two intended differences: AC-7's percent-encoded rows (Q5): on `main` they
 // resolve without the hook's redirect; after 68-6 the route-id rule protects them. And the
-// `/%68andoff` rows (code review, Nestor 2026-10-03): on `main` they get the default headers;
+// percent-encoded handoff rows (code review, Nestor 2026-10-03): on `main` they get the default headers;
 // after 68-6 the header policy matches the decoded pathname too, so they get the handoff headers.
 // Paraglide 2.29 adds `Vary: Cookie` to every response because the cookie strategy decides the locale
 // (cache correctness), so the snapshot was regenerated once for that header on 2026-10-24.
+// Story 73.1 moved the handoff page from /handoff to /auth/claim (Referrer-Policy no-referrer) and
+// added /auth/start; only those rows changed when the snapshot was regenerated on 2026-10-30.
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { describeResponse, fakeKitRequest } from './kit-request-test-helpers.js'
 
@@ -46,9 +48,11 @@ const PATHS: ReadonlyArray<readonly [string, string | null]> = [
   ['/settings/notifications', '/(app)/settings/notifications'],
   ['/platform', '/(app)/platform'],
   ['/health', '/(app)/health'],
-  ['/handoff', '/(auth)/handoff'],
-  ['/handoff-admin', null],
-  ['/handoff/x', null],
+  ['/auth/claim', '/(auth)/auth/claim'],
+  ['/auth/claim-admin', null],
+  ['/auth/claim/x', null],
+  ['/auth/start', '/auth/start'],
+  ['/handoff', null],
   ['/extensions/panels', null],
   ['/extensions/panels/group', '/(app)/extensions/panels/[slot]/[...subpath]'],
   ['/extensions/panels/group/a/b', '/(app)/extensions/panels/[slot]/[...subpath]'],
@@ -63,7 +67,7 @@ const PATHS: ReadonlyArray<readonly [string, string | null]> = [
   ['/%73ettings/notifications', '/(app)/settings/notifications'],
   // Code review 68-6 (Nestor 2026-10-03): header rules also match the decoded pathname, so the
   // percent-encoded handoff URL gets the handoff headers (second intended change after Q5).
-  ['/%68andoff', '/(auth)/handoff'],
+  ['/auth/cl%61im', '/(auth)/auth/claim'],
 ]
 
 type AuthCase = 'anonymous' | 'authenticated' | 'session-expired' | 'unavailable'

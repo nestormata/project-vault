@@ -1,47 +1,53 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { eq, inArray } from 'drizzle-orm'
+import { inArray } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
-import {
-  handoffPendingStates,
-  handoffTokenJti,
-  organizations,
-  users,
-} from '@project-vault/db/schema'
-import {
-  HandoffEvent,
-  isServiceProvisionedEmail,
-  type HandoffEventType,
-} from '@project-vault/shared'
+import { organizations } from '@project-vault/db/schema'
+import { HandoffEvent, type HandoffEventType } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { env } from '../../config/env.js'
 import { secureRoute } from '../../lib/secure-route.js'
-import { isRejectedBySecFetchSite } from '../../extensions/panel-routes.js'
 import { writeHumanAuditEntry } from '../audit/human-entry.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { createPendingMfaSession } from './mfa-login.js'
 import type { LoginResult, RequestMeta } from './service.js'
 import { buildCookieTokens, setAuthCookies, type CookieReply, type JwtSigner } from './tokens.js'
-import { verifyHandoffToken, type HandoffRejectReason } from './handoff-verify.js'
-import { writeHandoffSecurityEvent } from './handoff-security-events.js'
-import { generateOpaqueId, hashCookieValue } from '../../lib/opaque-cookie-token.js'
 import {
-  ClaimRekeyMissError,
-  classifyClaimExchangeError,
-  findPendingForClaim,
-  rekeyPendingCookieHash,
-  type PendingRow,
-} from './handoff-claim-exchange-db.js'
+  verifyHandoffToken,
+  type HandoffRejectReason,
+  type HandoffVerifiedClaims,
+} from './handoff-verify.js'
+import { writeHandoffSecurityEvent } from './handoff-security-events.js'
+import { hashCookieValue } from '../../lib/opaque-cookie-token.js'
+import {
+  burnHandoffJti,
+  classifyJtiBurnError,
+  consumeHandoffNonce,
+  insertHandoffNonce,
+  type NonceConsumeOutcome,
+} from './handoff-nonce-db.js'
 import {
   findLinkedIdentity,
   findUserMfaEnrolledAndMembership,
   issueSessionForUser,
 } from './sso-routes.js'
 
-const HANDOFF_COOKIE_NAME = 'handoff-confirm'
-// Claim contract "Clock skew and replay protection": 60s max token lifetime + 30s skew before +
-// 30s margin = 120s. Both the pending-state record and the eventual JTI row use this same window.
-const PENDING_TTL_MS = 120_000
+/**
+ * Story 73.1: the nonce-bound handoff. Two routes replace prepare -> exchange-claim -> confirm:
+ *
+ * - `POST /start` (called server to server by PV web's `GET /auth/start`) mints a nonce, stores
+ *   its HMAC, and returns the issuer URL carrying it. Web puts the raw nonce in a host-only cookie.
+ * - `POST /claim` (called server to server by PV web's claim route, which reads that cookie)
+ *   consumes the nonce, verifies the token, requires the token's `nonce` claim to equal it, burns
+ *   the jti, then mints a session or an MFA challenge.
+ *
+ * The api never sees the browser cookie: web forwards the cookie's nonce in the body. Every
+ * rejection is the same generic 401 plus one `platform_security_events` row naming the reason.
+ */
+
+// Claim contract "Clock skew and replay protection": 60 s max token lifetime + 30 s skew before +
+// 30 s margin = 120 s. Both the nonce record and the burned jti row use this window.
+const HANDOFF_TTL_MS = 120_000
 
 const GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
 
@@ -54,30 +60,6 @@ function metaFromRequest(req: FastifyRequest): RequestMeta {
 
 function sendGenericRejection(reply: FastifyReply): unknown {
   return reply.status(401).send({ code: 'handoff_rejected', message: GENERIC_REJECTION_MESSAGE })
-}
-
-function readHandoffCookie(request: FastifyRequest): string | undefined {
-  const cookies = (request as unknown as { cookies?: Record<string, string> }).cookies
-  return Object.entries(cookies ?? {}).find(([name]) => name === HANDOFF_COOKIE_NAME)?.[1]
-}
-
-// AC4.16: defense-in-depth CSRF checks — never the primary boundary (that's the same-site
-// httpOnly cookie itself plus the one-time pending state). A request missing either header
-// entirely is passed through, matching isRejectedBySecFetchSite()'s existing
-// old-browser-compatibility convention.
-function isRejectedByOriginChecks(request: FastifyRequest): boolean {
-  if (isRejectedBySecFetchSite(request.headers['sec-fetch-site'])) return true
-  const origin = request.headers['origin']
-  const host = request.headers['host']
-  if (typeof origin === 'string' && typeof host === 'string') {
-    try {
-      const originHost = new URL(origin).host
-      if (originHost !== host) return true
-    } catch {
-      return true
-    }
-  }
-  return false
 }
 
 async function rejectHandoff(
@@ -104,312 +86,28 @@ const REJECT_REASON_TO_EVENT: Record<HandoffRejectReason, HandoffEventType> = {
   handoff_unknown_assurance: HandoffEvent.HANDOFF_UNKNOWN_ASSURANCE,
 }
 
-// ---------------------------------------------------------------------------
-// AC3: POST /auth/handoff/prepare
-// ---------------------------------------------------------------------------
-
-// Best-effort display hints for the /handoff consent screen. Story 60.4 (F10): a
-// CentralizeMe-provisioned user's `users.email` is a synthetic, undeliverable
-// `service-provisioned+<id>@invalid.projectvault` address that means nothing to the person
-// consenting, so it is returned as `null` (the page then shows its localized "your account"
-// fallback); a real, non-synthetic email is still returned verbatim. Display-only: this runs after
-// the pending state is written and never affects the auth outcome. The label is never logged.
-async function resolveDisplayNames(
-  providerName: string,
-  externalSubject: string
-): Promise<{ organizationName: string | null; accountLabel: string | null }> {
-  try {
-    const linked = await findLinkedIdentity(providerName, externalSubject)
-    if (linked.kind !== 'found') return { organizationName: null, accountLabel: null }
-    const [org] = await getDb()
-      .select({ name: organizations.name })
-      .from(organizations)
-      .where(eq(organizations.id, linked.orgId))
-      .limit(1)
-    const [user] = await withOrg(linked.orgId, (tx) =>
-      (tx as Tx)
-        .select({ email: users.email })
-        .from(users)
-        .where(eq(users.id, linked.userId))
-        .limit(1)
-    )
-    const email = user?.email ?? null
-    return {
-      organizationName: org?.name ?? null,
-      accountLabel: isServiceProvisionedEmail(email) ? null : email,
-    }
-  } catch {
-    // Best-effort only — display naming failure must never block the prepare response; the
-    // authoritative org/membership check happens again at confirm time.
-    return { organizationName: null, accountLabel: null }
-  }
-}
-
-async function handlePrepare(request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
-  // AC2.5: VAULT_HANDOFF_ENABLED is the explicit operator-controlled enablement toggle — its
-  // absence must make the whole feature a no-op regardless of whether verify keys/instance id are
-  // otherwise provisioned (e.g. staged ahead of a rollout per Story 30.1 AC2.6/AC2.7). Routes are
-  // still registered unconditionally (Fastify plugin registration happens at boot, before env can
-  // be re-checked per request), so the toggle must be enforced here, not just in handoff-boot.ts's
-  // AuthStrategy marker registration.
-  if (!env.VAULT_HANDOFF_ENABLED) return sendGenericRejection(reply)
-
-  const meta = metaFromRequest(request)
-  const body = request.body as { token?: unknown } | undefined
-
-  if (!body || typeof body !== 'object' || typeof body.token !== 'string') {
-    return rejectHandoff(reply, HandoffEvent.HANDOFF_MALFORMED_CLAIM, meta)
-  }
-
-  const result = verifyHandoffToken(body.token)
-  if (!result.ok) {
-    return rejectHandoff(reply, REJECT_REASON_TO_EVENT[result.reason], meta)
-  }
-  const { claims } = result
-  if (claims.unknownClaimsVersion) {
-    await writeHandoffSecurityEvent({
-      eventType: HandoffEvent.HANDOFF_UNKNOWN_CLAIMS_VERSION,
-      meta,
-      payload: { claimsVersion: claims.claimsVersion },
-    })
-    if (claims.capabilities.length > 0 || claims.tier) {
-      await writeHandoffSecurityEvent({
-        eventType: HandoffEvent.HANDOFF_UNKNOWN_CAPABILITY,
-        meta,
-        payload: { claimsVersion: claims.claimsVersion },
-      })
-    }
-  }
-
-  const rawCookie = randomBytes(32).toString('base64url')
-  const cookieHash = hashCookieValue(rawCookie)
-  // Story 60.3 AC1: `claim` is a second, distinct single-use opaque value — never derived from
-  // `rawCookie`/`pendingId` or vice versa — that lets a same-origin `/handoff` `load` later
-  // "claim-exchange" a cross-site-dropped confirmation cookie back into existence (see
-  // handleExchangeClaim below). Generated with the exact same primitive as rawCookie
-  // (randomBytes(32).toString('base64url')), relying on its collision space rather than an
-  // app-level uniqueness check, matching rawCookie/pendingId's own generation.
-  const claim = randomBytes(32).toString('base64url')
-  const claimHash = hashCookieValue(claim)
-  const id = generateOpaqueId()
-  const expiresAt = new Date(Date.now() + PENDING_TTL_MS)
-
-  try {
-    await getDb().insert(handoffPendingStates).values({
-      id,
-      cookieHash,
-      claimHash,
-      jti: claims.jti,
-      providerName: claims.providerName,
-      externalSubject: claims.workosUserId,
-      organizationId: claims.organizationId,
-      claimsVersion: claims.claimsVersion,
-      expiresAt,
-    })
-  } catch {
-    return rejectHandoff(reply, HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE, meta)
-  }
-
-  // Story 60.3/60.2: this cookie-set is KEPT unconditionally, even though the
-  // new claim-exchange mechanism below makes it redundant for cross-site deployments — removing it
-  // would break every cross-site handoff during the rollout gap before CentralizeMe ships its own
-  // claim-aware interstitial (AC5), and would needlessly affect same-site deployments that have no
-  // reason to be touched by this fix at all. The claim mechanism is purely additive.
-  ;(reply as unknown as CookieReply).setCookie(HANDOFF_COOKIE_NAME, rawCookie, {
-    httpOnly: true,
-    // AC3.7: "SameSite=Lax-or-stricter" — Strict is used here (stricter than sso-state's Lax)
-    // since, unlike the SSO callback redirect, the eventual confirm POST is a same-origin
-    // submission from PV's own rendered confirmation view, never a cross-site navigation target.
-    sameSite: 'strict',
-    secure: env.COOKIE_SECURE,
-    path: '/',
-    maxAge: PENDING_TTL_MS / 1000,
-  })
-
-  const { organizationName, accountLabel } = await resolveDisplayNames(
-    claims.providerName,
-    claims.workosUserId
-  )
-
-  return reply.status(200).send({
-    data: { pendingId: id, claim, organizationName, accountLabel },
-  })
-}
-
-// ---------------------------------------------------------------------------
-// AC4: POST /auth/handoff/confirm
-// ---------------------------------------------------------------------------
-
-async function loadPendingState(cookieHash: string): Promise<PendingRow | undefined> {
-  const [row] = await getDb()
-    .select()
-    .from(handoffPendingStates)
-    .where(eq(handoffPendingStates.cookieHash, cookieHash))
-    .limit(1)
-  return row
-}
-
-type BurnOutcome =
-  { ok: true } | { ok: false; reason: 'handoff_replay' | 'handoff_replay_store_unavailable' }
-
-async function burnJti(jti: string, expiresAt: Date): Promise<BurnOutcome> {
-  try {
-    await getDb().insert(handoffTokenJti).values({ jti, expiresAt })
-    return { ok: true }
-  } catch (error) {
-    // AC4.11/AC4.13: insert-first burn — a unique-violation on the primary key means the exact
-    // jti was already burned (replay). Any OTHER failure (connection refused, pool exhausted,
-    // etc.) is treated as the replay store being unavailable — fail closed, never fall back to
-    // an in-process Map or skip the burn (AC4.14). Story 60.5 Design Decision 3: the same
-    // classifier as the claim-exchange transaction, so the two paths never classify differently.
-    return { ok: false, reason: classifyClaimExchangeError(error) }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Story 60.3 AC3: POST /auth/handoff/exchange-claim — Option 1's claim-exchange consumption.
-// ---------------------------------------------------------------------------
-
-// A dedicated prefix keeps this burn's key space disjoint from real CentralizeMe-issued JTIs
-// burned by `burnAndResolveOrg` above — `claimHash` is a 64-char hex HMAC digest, so collision
-// with any real JTI value is not a practical concern either way, but the prefix makes the
-// intent explicit and greppable in the shared `handoff_token_jti` table.
-function claimBurnKey(claimHash: string): string {
-  return `claim:${claimHash}`
-}
-
-type ClaimExchangeResolution =
-  { ok: true; rawCookieValue: string; expiresAt: Date } | { ok: false; eventType: HandoffEventType }
-
-/**
- * Story 60.5 AC1: burns the claim and re-keys the pending row's `cookieHash` inside ONE plain
- * `getDb().transaction()` — no tenant GUC, never `withOrg()`: both tables are RLS exceptions and
- * the token's org is untrusted until `/confirm`. Either both statements commit or neither does, so
- * a failure after the burn (AC2) leaves the claim unconsumed and a retry of the same link works.
- *
- * Insert-first burn, identical pattern to burnJti(): a unique violation on the claim's burn key
- * means it was already consumed (replay) — never a SELECT-then-UPDATE, which would allow a TOCTOU
- * double consumption. Inside the transaction, a concurrent exchange of the same claim waits on
- * this uncommitted PK row: it gets `23505` if this commits, or proceeds if this rolls back (AC4).
- *
- * AC3: the re-key must hit exactly one row. 0 rows means the pending row vanished (pruned) between
- * the lookup and the update; throwing the sentinel rolls the burn back so the endpoint never
- * returns a cookie value that matches no row.
- */
-async function consumeClaimInTransaction(
-  pending: PendingRow,
-  claimHash: string,
-  cookieHash: string
-): Promise<void> {
-  await getDb().transaction(async (tx) => {
-    await tx
-      .insert(handoffTokenJti)
-      .values({ jti: claimBurnKey(claimHash), expiresAt: pending.expiresAt })
-    const updated = await rekeyPendingCookieHash(tx as Tx, {
-      pendingId: pending.id,
-      claimHash,
-      cookieHash,
-    })
-    if (updated !== 1) throw new ClaimRekeyMissError()
-  })
-}
-
-/**
- * Split out of handleExchangeClaim to keep both functions under the repo's complexity threshold
- * (mirroring burnAndResolveOrg's own split out of handleConfirm above). Looks up the row scoped by
- * BOTH pendingId and claimHash (outside any transaction — the common rejection paths never open
- * one), then burns the claim and re-keys the row to a freshly minted cookie value in a single
- * transaction (consumeClaimInTransaction). Every failure — lookup outage included (AC3b) — maps to
- * one internal event and the single generic rejection.
- */
-async function resolveClaimExchange(
-  pendingId: string,
-  claimHash: string
-): Promise<ClaimExchangeResolution> {
-  let pending: PendingRow | undefined
-  try {
-    pending = await findPendingForClaim(pendingId, claimHash)
-  } catch {
-    // AC3b: a lookup outage is the generic rejection, never a 5xx. Deliberately wraps the lookup
-    // only — a catch-all would also swallow programming errors further down.
-    return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE }
-  }
-  // AC3 edge case: expired matches replay's generic rejection exactly, same as confirm's own
-  // expired-pending-state handling — never a distinguishable response.
-  if (!pending || pending.expiresAt.getTime() <= Date.now()) {
-    return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY }
-  }
-
-  // `cookieHash` is never reversible (one-way HMAC), so rather than trying to recover the original
-  // `rawCookie`, a FRESH raw cookie value is minted and the pending row is re-keyed to it. It only
-  // leaves the server if the burn and the re-key both committed; a rolled-back attempt's minted
-  // hash is discarded with the transaction and can never confirm.
-  const rawCookieValue = randomBytes(32).toString('base64url')
-  try {
-    await consumeClaimInTransaction(pending, claimHash, hashCookieValue(rawCookieValue))
-  } catch (error) {
-    // Classified OUTSIDE the transaction, after it has rolled back: `23505` (already burned) and
-    // the 0-row sentinel are replays; anything else (connection loss, timeout, failed COMMIT) is
-    // the replay store being unavailable. Same classifier as burnJti() (Design Decision 3).
-    return { ok: false, eventType: classifyClaimExchangeError(error) }
-  }
-
-  return { ok: true, rawCookieValue, expiresAt: pending.expiresAt }
-}
-
-async function handleExchangeClaim(request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
-  // Matches handlePrepare/handleConfirm's own enablement guard.
-  if (!env.VAULT_HANDOFF_ENABLED) return sendGenericRejection(reply)
-
-  const meta = metaFromRequest(request)
-  const body = request.body as { pendingId?: unknown; claim?: unknown } | undefined
-  const pendingId = typeof body?.pendingId === 'string' ? body.pendingId : ''
-  // AC3 edge case: an empty-string claim is treated identically to a wholly missing one — never a
-  // distinct code path that could leak which failure mode occurred.
-  const claim = typeof body?.claim === 'string' ? body.claim : ''
-
-  if (!pendingId || !claim) {
-    return rejectHandoff(reply, HandoffEvent.HANDOFF_REPLAY, meta)
-  }
-
-  const resolution = await resolveClaimExchange(pendingId, hashCookieValue(claim))
-  if (!resolution.ok) {
-    return rejectHandoff(reply, resolution.eventType, meta)
-  }
-
-  return reply.status(200).send({
-    data: {
-      rawCookieValue: resolution.rawCookieValue,
-      expiresAt: resolution.expiresAt.toISOString(),
-    },
-  })
-}
-
 type OrgResolution =
   { ok: true; orgId: string; userId: string } | { ok: false; eventType: HandoffEventType }
 
 /**
  * AC4.11/AC4.12: the JTI burn happens BEFORE the org cross-check — a token rejected for org
  * mismatch is nonetheless burned and can never be replayed even after "correcting" the org.
- * Split out of `handleConfirm` to keep both functions under the repo's complexity threshold.
+ * Split out of `handleClaim` to keep both functions under the repo's complexity threshold.
  */
-async function burnAndResolveOrg(pending: PendingRow): Promise<OrgResolution> {
-  const burn = await burnJti(pending.jti, pending.expiresAt)
-  if (!burn.ok) {
-    return {
-      ok: false,
-      eventType:
-        burn.reason === 'handoff_replay'
-          ? HandoffEvent.HANDOFF_REPLAY
-          : HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE,
-    }
+async function burnAndResolveOrg(claims: HandoffVerifiedClaims): Promise<OrgResolution> {
+  try {
+    await burnHandoffJti(claims.jti, new Date(Date.now() + HANDOFF_TTL_MS))
+  } catch (error) {
+    // AC4.11/AC4.13/AC4.14: a unique violation is a replay; any other failure is the replay store
+    // being unavailable. Fail closed, never skip the burn.
+    return { ok: false, eventType: classifyJtiBurnError(error) }
   }
 
   // The JTI is already burned above — everything past this point must still fail closed into the
   // single generic-rejection contract (never an unhandled exception reaching Fastify's default
   // error handler) even though the burn's own try/catch no longer covers it.
   try {
-    const linked = await findLinkedIdentity(pending.providerName, pending.externalSubject)
+    const linked = await findLinkedIdentity(claims.providerName, claims.workosUserId)
     if (linked.kind === 'none') {
       return { ok: false, eventType: HandoffEvent.HANDOFF_ORG_MISMATCH }
     }
@@ -421,7 +119,7 @@ async function burnAndResolveOrg(pending: PendingRow): Promise<OrgResolution> {
     // directly. A `null` stored value (org provisioned before this field existed, or via a
     // non-CM path) never matches any claim — fail closed.
     const candidates = linked.kind === 'found' ? [linked] : linked.candidates
-    const matches = await filterOrgsByCentralizemeOrgId(candidates, pending.organizationId)
+    const matches = await filterOrgsByCentralizemeOrgId(candidates, claims.organizationId)
     if (matches.length === 0) {
       return { ok: false, eventType: HandoffEvent.HANDOFF_ORG_MISMATCH }
     }
@@ -466,7 +164,7 @@ async function filterOrgsByCentralizemeOrgId(
 
 /**
  * AC4.11: the same active-membership and `createPendingMfaSession` branch SSO already uses.
- * Split out of `handleConfirm` to keep both functions under the repo's complexity threshold.
+ * Split out of `handleClaim` to keep both functions under the repo's complexity threshold.
  */
 async function mintSessionOrMfaChallenge(
   fastify: FastifyApp,
@@ -531,38 +229,128 @@ async function mintSessionOrMfaChallenge(
   })
 }
 
-async function handleConfirm(
+function nonceRejectionEvent(outcome: Exclude<NonceConsumeOutcome, 'consumed'>): HandoffEventType {
+  if (outcome === 'unknown') return HandoffEvent.HANDOFF_NONCE_UNKNOWN
+  if (outcome === 'reused') return HandoffEvent.HANDOFF_NONCE_REUSED
+  return HandoffEvent.HANDOFF_NONCE_EXPIRED
+}
+
+// ---------------------------------------------------------------------------
+// AC1: POST /auth/handoff/start
+// ---------------------------------------------------------------------------
+
+function startRedirectUrl(startUrl: string, nonce: string): string {
+  const url = new URL(startUrl)
+  url.searchParams.set('nonce', nonce)
+  return url.toString()
+}
+
+async function handleStart(request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  // The enablement toggle gates route behavior, not just the boot-time AuthStrategy marker:
+  // routes are registered unconditionally at boot.
+  const startUrl = env.VAULT_HANDOFF_START_URL
+  if (!env.VAULT_HANDOFF_ENABLED || !startUrl) return sendGenericRejection(reply)
+
+  const nonce = randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + HANDOFF_TTL_MS)
+  try {
+    await insertHandoffNonce(hashCookieValue(nonce), expiresAt)
+  } catch {
+    return rejectHandoff(
+      reply,
+      HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE,
+      metaFromRequest(request)
+    )
+  }
+
+  return reply.status(200).send({
+    data: {
+      nonce,
+      expiresAt: expiresAt.toISOString(),
+      redirectUrl: startRedirectUrl(startUrl, nonce),
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// AC2-AC4: POST /auth/handoff/claim
+// ---------------------------------------------------------------------------
+
+type ClaimCheck =
+  { ok: true; claims: HandoffVerifiedClaims } | { ok: false; eventType: HandoffEventType }
+
+/** Compares through the HMACs so the comparison is fixed-length and constant-time. */
+function nonceMatches(tokenNonce: string | null, cookieNonceHash: string): boolean {
+  if (tokenNonce === null) return false
+  return timingSafeEqual(
+    Buffer.from(hashCookieValue(tokenNonce), 'hex'),
+    Buffer.from(cookieNonceHash, 'hex')
+  )
+}
+
+/**
+ * D5: the nonce is consumed FIRST, whatever happens to the token afterwards, so a failed attempt
+ * always needs a new `/auth/start`. Then the token is verified and must carry the same nonce.
+ */
+async function checkNonceAndToken(nonce: unknown, token: unknown): Promise<ClaimCheck> {
+  if (typeof nonce !== 'string' || nonce === '') {
+    return { ok: false, eventType: HandoffEvent.HANDOFF_NONCE_MISSING }
+  }
+  const nonceHash = hashCookieValue(nonce)
+  let outcome: NonceConsumeOutcome
+  try {
+    outcome = await consumeHandoffNonce(nonceHash)
+  } catch {
+    return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE }
+  }
+  if (outcome !== 'consumed') return { ok: false, eventType: nonceRejectionEvent(outcome) }
+
+  if (typeof token !== 'string')
+    return { ok: false, eventType: HandoffEvent.HANDOFF_MALFORMED_CLAIM }
+  const verified = verifyHandoffToken(token)
+  if (!verified.ok) return { ok: false, eventType: REJECT_REASON_TO_EVENT[verified.reason] }
+  if (!nonceMatches(verified.claims.nonce, nonceHash)) {
+    return { ok: false, eventType: HandoffEvent.HANDOFF_NONCE_MISMATCH }
+  }
+  return { ok: true, claims: verified.claims }
+}
+
+/** AC4.17: identity claims still apply on an unknown claims version; it is recorded, not fatal. */
+async function recordUnknownClaimsVersion(
+  claims: HandoffVerifiedClaims,
+  meta: RequestMeta
+): Promise<void> {
+  if (!claims.unknownClaimsVersion) return
+  const payload = { claimsVersion: claims.claimsVersion }
+  await writeHandoffSecurityEvent({
+    eventType: HandoffEvent.HANDOFF_UNKNOWN_CLAIMS_VERSION,
+    meta,
+    payload,
+  })
+  if (claims.capabilities.length > 0 || claims.tier) {
+    await writeHandoffSecurityEvent({
+      eventType: HandoffEvent.HANDOFF_UNKNOWN_CAPABILITY,
+      meta,
+      payload,
+    })
+  }
+}
+
+async function handleClaim(
   fastify: FastifyApp,
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<unknown> {
-  // See handlePrepare's matching guard: the enablement toggle must gate the actual route
-  // behavior, not just the boot-time AuthStrategy marker.
   if (!env.VAULT_HANDOFF_ENABLED) return sendGenericRejection(reply)
 
   const meta = metaFromRequest(request)
+  const body = (request.body ?? {}) as { token?: unknown; nonce?: unknown }
+  const checked = await checkNonceAndToken(body.nonce, body.token)
+  if (!checked.ok) return rejectHandoff(reply, checked.eventType, meta)
+  await recordUnknownClaimsVersion(checked.claims, meta)
 
-  // AC4.16: defense-in-depth only — never the primary CSRF boundary.
-  if (isRejectedByOriginChecks(request)) {
-    return rejectHandoff(reply, HandoffEvent.HANDOFF_MALFORMED_CLAIM, meta)
-  }
-
-  const rawCookie = readHandoffCookie(request)
-  if (!rawCookie) return rejectHandoff(reply, HandoffEvent.HANDOFF_REPLAY, meta)
-  const cookieHash = hashCookieValue(rawCookie)
-
-  const pending = await loadPendingState(cookieHash)
-  // AC4.15: a missing/expired pending state is rejected the same generic way as an already-burned
-  // JTI — internally distinguishable (this branch vs. the burn's unique-violation branch), never
-  // surfaced differently to the caller.
-  if (!pending || pending.expiresAt.getTime() <= Date.now()) {
-    return rejectHandoff(reply, HandoffEvent.HANDOFF_REPLAY, meta)
-  }
-
-  const resolution = await burnAndResolveOrg(pending)
-  if (!resolution.ok) {
-    return rejectHandoff(reply, resolution.eventType, meta)
-  }
+  const resolution = await burnAndResolveOrg(checked.claims)
+  if (!resolution.ok) return rejectHandoff(reply, resolution.eventType, meta)
 
   try {
     return await mintSessionOrMfaChallenge(
@@ -582,41 +370,25 @@ async function handleConfirm(
 export function handoffRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
-    url: '/prepare',
-    bodyLimit: 16 * 1024,
+    url: '/start',
     security: {
       requireAuth: false,
       writeAuditEvent: false,
-      // AC7: the existing public-route default — do not omit rateLimit (would silently disable
-      // it) and do not set a custom, undocumented limit.
-      rateLimit: { max: 60, timeWindowMs: 60_000 },
+      rateLimit: { max: 60, timeWindowMs: 60_000, key: 'POST /start' },
     },
-    handler: async (_ctx, request, reply) => handlePrepare(request, reply),
+    handler: async (_ctx, request, reply) => handleStart(request, reply),
   })
 
   secureRoute(fastify, {
     method: 'POST',
-    url: '/confirm',
-    security: {
-      requireAuth: false,
-      writeAuditEvent: false,
-      rateLimit: { max: 60, timeWindowMs: 60_000, key: 'POST /confirm' },
-    },
-    handler: async (_ctx, request, reply) => handleConfirm(fastify, request, reply),
-  })
-
-  // Story 60.3 AC3: same public/unauthenticated/replay-sensitive shape as prepare/confirm above,
-  // so it gets the same rate-limit treatment.
-  secureRoute(fastify, {
-    method: 'POST',
-    url: '/exchange-claim',
+    url: '/claim',
     bodyLimit: 16 * 1024,
     security: {
       requireAuth: false,
       writeAuditEvent: false,
-      rateLimit: { max: 60, timeWindowMs: 60_000, key: 'POST /exchange-claim' },
+      rateLimit: { max: 60, timeWindowMs: 60_000, key: 'POST /claim' },
     },
-    handler: async (_ctx, request, reply) => handleExchangeClaim(request, reply),
+    handler: async (_ctx, request, reply) => handleClaim(fastify, request, reply),
   })
   return Promise.resolve()
 }
