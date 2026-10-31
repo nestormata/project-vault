@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { eq, sql } from 'drizzle-orm'
+import { inArray, sql } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 import { getDb } from '@project-vault/db'
-import { handoffPendingStates, handoffTokenJti } from '@project-vault/db/schema'
-import { pruneHandoffPendingStates, pruneHandoffTokenJti } from './prune-handoff-token-jti.js'
+import { handoffNonces, handoffTokenJti } from '@project-vault/db/schema'
+import {
+  pruneHandoffNonces,
+  pruneHandoffTokenJti,
+  RETIRED_HANDOFF_PRUNE_SCHEDULES,
+} from './prune-handoff-token-jti.js'
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
@@ -34,43 +38,33 @@ describe('pruneHandoffTokenJti (Story 30.2 AC5.18/AC5.19)', () => {
   })
 })
 
-describe('pruneHandoffPendingStates (Story 30.2 AC5.20)', () => {
-  afterEach(async () => {
+describe('pruneHandoffNonces (Story 73.1)', () => {
+  it('deletes nonce rows past expiry, consumed or not, and leaves live rows alone', async () => {
+    const expired = `prune-test-${randomUUID()}`
+    const expiredConsumed = `prune-test-${randomUUID()}`
+    const fresh = `prune-test-${randomUUID()}`
     await getDb()
-      .delete(handoffPendingStates)
-      .where(sql`1=1`)
+      .insert(handoffNonces)
+      .values([
+        { nonceHash: expired, expiresAt: new Date(Date.now() - 1000) },
+        {
+          nonceHash: expiredConsumed,
+          expiresAt: new Date(Date.now() - 1000),
+          consumedAt: new Date(),
+        },
+        { nonceHash: fresh, expiresAt: new Date(Date.now() + 120_000) },
+      ])
+
+    await pruneHandoffNonces()
+
+    const remaining = await getDb()
+      .select({ nonceHash: handoffNonces.nonceHash })
+      .from(handoffNonces)
+      .where(inArray(handoffNonces.nonceHash, [expired, expiredConsumed, fresh]))
+    expect(remaining.map((r) => r.nonceHash)).toEqual([fresh])
   })
 
-  function pendingRow(overrides: Partial<typeof handoffPendingStates.$inferInsert> = {}) {
-    return {
-      id: randomUUID(),
-      cookieHash: randomUUID(),
-      jti: randomUUID(),
-      providerName: 'centralizeme-handoff',
-      externalSubject: 'sub',
-      organizationId: randomUUID(),
-      claimsVersion: 1,
-      expiresAt: new Date(Date.now() + 120_000),
-      ...overrides,
-    }
-  }
-
-  it('deletes orphaned (never-confirmed) pending-handoff rows past expiry', async () => {
-    const expired = pendingRow({ expiresAt: new Date(Date.now() - 1000) })
-    const fresh = pendingRow()
-    await getDb().insert(handoffPendingStates).values([expired, fresh])
-
-    await pruneHandoffPendingStates()
-
-    const [expiredRow] = await getDb()
-      .select()
-      .from(handoffPendingStates)
-      .where(eq(handoffPendingStates.id, expired.id))
-    const [freshRow] = await getDb()
-      .select()
-      .from(handoffPendingStates)
-      .where(eq(handoffPendingStates.id, fresh.id))
-    expect(expiredRow).toBeUndefined()
-    expect(freshRow).toBeDefined()
+  it('unschedules the retired pending-state prune job by its exact name', () => {
+    expect(RETIRED_HANDOFF_PRUNE_SCHEDULES).toEqual(['prune-handoff-pending-states'])
   })
 })

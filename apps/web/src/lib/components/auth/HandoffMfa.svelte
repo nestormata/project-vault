@@ -3,7 +3,7 @@
   import MfaLoginForm from '$lib/components/auth/MfaLoginForm.svelte'
   import { m } from '$lib/paraglide/messages.js'
 
-  // Story 69.11: the MFA prompt shown when the confirmed handoff needs a second factor.
+  // Story 69.11: the MFA prompt shown when the handoff needs a second factor (73.1: on /auth/claim).
   let {
     mfaToken,
     onExpired,
@@ -19,7 +19,7 @@
 
 <!-- @region auth.handoff.mfa -->
 <div class="space-y-4">
-  <h1 class="text-2xl font-bold">{m.auth_handoff_confirm_heading()}</h1>
+  <h1 class="text-2xl font-bold">{m.auth_handoff_mfa_heading()}</h1>
   <p class="text-sm text-slate-600">{m.auth_handoff_mfa_prompt()}</p>
   <MfaLoginForm {mfaToken} {onExpired} {onAuthenticated} /><InjectionPoint
     name="auth.handoff.mfa"

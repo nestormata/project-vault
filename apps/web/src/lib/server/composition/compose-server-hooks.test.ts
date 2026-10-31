@@ -285,8 +285,8 @@ describe('concurrency and isolation (AC-14)', () => {
     )
     for (let round = 0; round < 50; round++) {
       const delays = [Math.floor(Math.random() * 5), Math.floor(Math.random() * 5)]
-      const a = fakeKitRequest('/handoff', {
-        routeId: '/(auth)/handoff',
+      const a = fakeKitRequest('/auth/claim', {
+        routeId: '/(auth)/auth/claim',
         resolveDelayMs: 5 + (delays[0] ?? 0),
       })
       const b = fakeKitRequest('/dashboard', {
@@ -298,7 +298,7 @@ describe('concurrency and isolation (AC-14)', () => {
         hooks.handle({ event: a.event, resolve: a.resolve } as never),
         hooks.handle({ event: b.event, resolve: b.resolve } as never),
       ])
-      expect(ra.headers.get('referrer-policy')).toBe('strict-origin')
+      expect(ra.headers.get('referrer-policy')).toBe('no-referrer')
       expect(rb.headers.get('referrer-policy')).toBeNull()
       expect(a.event.locals.user).toBeNull()
       expect(b.event.locals.user).toEqual({ id: `user-${round}` })

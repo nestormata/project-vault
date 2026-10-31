@@ -44,7 +44,8 @@ describe('isProtectedRequest (AC-7)', () => {
     ['/dashboardx', null, false],
     ['/Dashboard', null, false],
     ['/status/tok', '/status/[token]', false],
-    ['/handoff', '/(auth)/handoff', false],
+    ['/auth/claim', '/(auth)/auth/claim', false],
+    ['/auth/start', '/auth/start', false],
     ['/shares/tok', '/(app)/shares/[token]', false],
     // Q5: reroute bypass closed.
     ['/r/dash', '/(app)/dashboard', true],

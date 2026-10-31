@@ -69,12 +69,11 @@ describe('sensitive log field registry coverage', () => {
     expect(REDACTED_BODY_FIELDS.has('exportKey')).toBe(true)
   })
 
-  // Story 30.2 AC6.22: a dedicated coverage test for the handoff routes' request body — the raw
-  // compact JWS travels under `token` in POST /auth/handoff/prepare's body and must never appear
-  // in a log line.
-  it('covers the handoff routes request body field ("token")', () => {
-    expect(BODY_SENSITIVE_LOG_FIELDS).toEqual(expect.arrayContaining(['token']))
-    expect(REDACTED_BODY_FIELDS.has('token')).toBe(true)
-    expect(pinoCoversField('token')).toBe(true)
+  // Story 30.2 AC6.22 / Story 73.1 AC5: the raw compact JWS (`token`) and the browser-bound
+  // `nonce` travel in POST /auth/handoff/claim's body and must never appear in a log line.
+  it.each(['token', 'nonce'])('covers the handoff claim request body field %j', (field) => {
+    expect(BODY_SENSITIVE_LOG_FIELDS).toEqual(expect.arrayContaining([field]))
+    expect(REDACTED_BODY_FIELDS.has(field)).toBe(true)
+    expect(pinoCoversField(field)).toBe(true)
   })
 })

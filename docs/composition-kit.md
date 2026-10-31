@@ -516,7 +516,7 @@ The second batch (Story 69-11) splits thirteen more region components; the page'
 | `/settings/audit/access-report`                | `settings.audit-access-report.form`, `.error`, `.summary`, `.results`, `.pagination`                           |
 | `/settings/users/[userId]/erasure/[requestId]` | `settings.users-erasure-detail.notice`, `.inventory`, `.execute`, `.report`                                    |
 | `/platform/settings/orgs`                      | `platform.settings-orgs.list`, `.create-status`, `.create-form`                                                |
-| `/handoff`                                     | `auth.handoff.error`, `.mfa`, `.confirm`                                                                       |
+| `/auth/claim`                                  | `auth.handoff.error`, `.mfa`                                                                                   |
 
 Two things differ from the first batch. The members team points (`project.members.team-*`) receive the page flags only
 (the same props as `project.members.header`), never the member rows. The services-card points on the status page

@@ -54,6 +54,23 @@ npm's `next` dist-tag: `@project-vault/web-host@1.7.0` and `@project-vault/compo
   on 3.38.0 or later can no longer create external shares unattended: it needs a human's
   `actingUserId` and a live code. Details and the migration for CentralizeMe:
   [packages/extension-api/CHANGELOG.md](packages/extension-api/CHANGELOG.md).
+### Breaking
+
+- **Nonce-bound handoff; the Confirm sign-in page is gone** (Story 73.1, Epic 73). A user arriving
+  from the issuer is signed in with no click. PV web's `GET /auth/start` sets a host-only
+  `__Host-pv-handoff-nonce` cookie (HttpOnly, Secure, SameSite=Lax, 120 s) and redirects to the new
+  `VAULT_HANDOFF_START_URL` with `nonce=<nonce>` added. The issuer signs a token carrying that
+  `nonce` claim and sends the browser to `/auth/claim#<token>`; the page posts the token to PV web's
+  same-origin `POST /api/v1/auth/handoff/claim`, which adds the cookie nonce, and the api consumes the
+  nonce (single use), checks the claim, burns the `jti` and issues a new session or the MFA challenge.
+  A token is useless in a browser that does not hold its nonce, which closes login CSRF. **Removed
+  for integrators:** `POST /api/v1/auth/handoff/prepare` (and its CORS route on web),
+  `POST /api/v1/auth/handoff/exchange-claim`, `POST /api/v1/auth/handoff/confirm`, the
+  `handoff-confirm` cookie and the `/handoff` page with its "Not me" link. Move to `/auth/start`,
+  `/auth/claim#<token>` and a `nonce` claim; see `docs/runbooks/handoff-instance-identity.md` and the
+  upgrade notes. New `handoff_nonce_{missing,unknown,reused,expired,mismatch}` security events. The
+  `auth.handoff.*` injection points move to route id `/(auth)/auth/claim`; `auth.handoff.confirm` is
+  removed. `/auth/claim` sends `Referrer-Policy: no-referrer`.
 
 ### Added
 
@@ -214,7 +231,7 @@ npm's `next` dist-tag: `@project-vault/web-host@1.7.0` and `@project-vault/compo
   The web server hook resolved the session with `GET /auth/me` for every request, including the
   same-origin `/api/v1/*` proxy requests that a page's own server loads issue, and it treated a
   429 or 5xx from `/auth/me` as "signed out" (303 to `/login`). The hook now skips that probe on
-  PV's own API proxy routes (`/api/v1/[...path]`, `/api/v1/auth/handoff/prepare`; the API still
+  PV's own API proxy routes (`/api/v1/[...path]` and, since Story 73.1, `/api/v1/auth/handoff/claim`; the API still
   authenticates every call), and a throttled or failing auth API answers a protected request with a
   retryable `429` (with a sanitized `Retry-After`) or `503` instead of a redirect. A genuine 401 or a
   rejected refresh still redirects to `/login`. No rate limit changed.

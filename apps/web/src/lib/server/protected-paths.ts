@@ -38,7 +38,7 @@ export const PV_PROTECTED_PREFIXES: readonly string[] = Object.freeze([
  */
 export const PV_BACKEND_AUTHENTICATED_ROUTE_IDS: readonly string[] = Object.freeze([
   '/api/v1/[...path]',
-  '/api/v1/auth/handoff/prepare',
+  '/api/v1/auth/handoff/claim',
 ])
 
 export function isBackendAuthenticatedRoute(routeId: string | null): boolean {

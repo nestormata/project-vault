@@ -1400,9 +1400,9 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
     'members-no-manage-members': { ...MEMBERS_PAGE, canManageMembers: false },
     'members-read-only': { ...MEMBERS_PAGE, canManage: false, canManageMembers: false },
   },
-  '/(auth)/handoff/+page.svelte': {
-    'handoff-with-origin': { centralizeMeOrigin: 'https://app.centralizeme.example' },
-    'handoff-without-origin': { centralizeMeOrigin: null },
+  '/(auth)/auth/claim/+page.svelte': {
+    'claim-with-origin': { centralizeMeOrigin: 'https://app.centralizeme.example' },
+    'claim-without-origin': { centralizeMeOrigin: null },
   },
 }
 

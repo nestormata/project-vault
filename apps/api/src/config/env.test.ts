@@ -1824,6 +1824,43 @@ describe('env', () => {
     })
   })
 
+  // Story 73.1 AC1: the issuer start URL /auth/start redirects to. Optional; when set it must be an
+  // absolute http(s) URL without userinfo, or the api refuses to boot.
+  describe('Story 73.1: VAULT_HANDOFF_START_URL', () => {
+    function startUrlEnv(value: string): NodeJS.ProcessEnv {
+      return { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL, VAULT_HANDOFF_START_URL: value }
+    }
+
+    it('is unset by default, and empty means unset', async () => {
+      process.env = startUrlEnv('')
+      const { env } = await import('./env.js')
+      expect(env.VAULT_HANDOFF_START_URL).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it.each(['https://router.example/handoff/start?v=1', 'http://127.0.0.1:48999/start'])(
+      'accepts %s verbatim',
+      async (value) => {
+        process.env = startUrlEnv(value)
+        const { env } = await import('./env.js')
+        expect(env.VAULT_HANDOFF_START_URL).toBe(value)
+        expect(exitSpy).not.toHaveBeenCalled()
+      }
+    )
+
+    it.each([
+      ['a relative path', '/handoff/start'],
+      ['a non-http scheme', 'javascript:alert(1)'],
+      ['an ftp URL', 'ftp://router.example/start'],
+      ['userinfo', 'https://user:pass@router.example/start'],
+      ['a bare username', 'https://router.example@evil.example/start'],
+      ['not a URL', 'not a url'],
+    ])('rejects %s at boot', async (_label, value) => {
+      process.env = startUrlEnv(value)
+      await expectInvalidEnv(exitSpy)
+    })
+  })
+
   // Story 60.7 AC1: CORS_EXTRA_ORIGINS is appended to PV's own origin under Compose, so an
   // operator-supplied `*` or `null` entry reaches this refine as part of a list.
   describe('Story 60.7: CORS_ALLOWED_ORIGINS rejects wildcard and null entries', () => {
