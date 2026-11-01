@@ -19,6 +19,16 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   home still carry the same sentence as fixed text. A host that still replaces `ShellBrand.svelte` sees its
   `hostSha256` change with this release and runs `--accept-host` until it drops the replacement.
 
+### Changed
+
+- **Release: container images build each platform on a native runner and tag only after both exist**
+  (Story 75.1). `container-publish.yml` builds `linux/amd64` on `ubuntu-24.04` and `linux/arm64` on
+  `ubuntu-24.04-arm` instead of emulating arm64 under QEMU, pushes each platform by digest only, and
+  creates `:X.Y.Z` and `:sha-<commit>` from the merged manifest list after every platform build
+  succeeded. A failed platform build therefore leaves no version tag and "re-run failed jobs"
+  recovers the run. `docs/releasing.md` now says to never cancel a release `container-publish` run.
+  No change to the published images or to a consumer.
+
 ## [2.0.2] - 2026-10-31
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:2.0.2`
