@@ -18,7 +18,7 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   and app shell tests read the message instead of the sentence, and the keys are listed as data in
   `src/lib/i18n/overlayable-message-keys.ts`. The `auth_handoff_confirm_prompt` key CM listed no longer
   exists (the nonce-bound handoff has no Confirm click, Story 73.1). `pnpm check-overlayable-messages`
-  guards the rule, and the mock UI pack overlays every listed key. No runtime or API change; a host that
+  guards the rule, and the mock UI pack overlays every listed key in `en` or `es`. No runtime or API change; a host that
   overrides one of those test files sees its `hostSha256` change with this release.
 
 ### Added

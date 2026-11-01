@@ -1,5 +1,5 @@
 // Story 72.19 (CentralizeMe request R4): the overlayable-message guard reads the key list, PV's locale
-// catalogs, every `*.test.ts` under apps/web/src and the mock UI pack's messages. It fails a test that
+// catalogs, every `*.test.ts` and `*.test.svelte.ts` under apps/web/src and the mock UI pack's messages. It fails a test that
 // writes a key's default text (raw or as a regexp literal, in any locale), a key missing from a
 // catalog, and a mock pack that overlays no key of its own. It has no exempt-file list and no skip.
 import { readFileSync } from 'node:fs'

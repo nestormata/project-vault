@@ -138,7 +138,7 @@ export function checkOverlayableMessagesGuard(
   }
   const catalogs = readCatalogs(join(webRoot, MESSAGES_DIR))
   const defaults = defaultTexts(keys, catalogs)
-  const tests = walkFiles(join(webRoot, 'src'), (file) => file.endsWith('.test.ts'))
+  const tests = walkFiles(join(webRoot, 'src'), (file) => /\.test\.(svelte\.)?ts$/.test(file))
   return {
     problems: [
       ...defaults.problems,
