@@ -41,8 +41,9 @@ test.describe('GlobalSearch results provider seam (M3 fill of app.layout.search)
     await expect(options.filter({ hasText: BILLING_ROW })).toHaveCount(1)
     const input = searchInput(page)
     const count = await options.count()
-    const billingIndex = await options.evaluateAll((nodes) =>
-      nodes.findIndex((node) => node.textContent?.includes(BILLING_ROW))
+    const billingIndex = await options.evaluateAll(
+      (nodes, text) => nodes.findIndex((node) => node.textContent?.includes(text)),
+      BILLING_ROW
     )
     expect(billingIndex).toBeGreaterThanOrEqual(0)
     expect(billingIndex).toBeLessThan(count)
