@@ -441,6 +441,46 @@ async function expectResolutionRejectedNotStale(
   expect(res.json()).toMatchObject({ code: 'rotation_not_stale', status: currentStatus })
 }
 
+/** Story 74.1: forces the OVERLAPPING interleaving of two resolution calls structurally, with no
+ *  timing assumption. A separate connection takes a row lock on the rotation, so the `winner`
+ *  call gets past the rotation-scoped advisory lock and then blocks on its own CAS UPDATE; once
+ *  Postgres reports that call as blocked by us (`pg_blocking_pids`), it provably holds the
+ *  advisory lock inside a live transaction. The `loser` call fired next can therefore only lose
+ *  the lock try and answer 409 `concurrent_modification`. Releasing the row lock lets the winner
+ *  finish with its 200. */
+async function raceResolutionsWithBlockedWinner(
+  app: TestApp,
+  cookies: Record<string, string>,
+  orgId: string,
+  ids: { projectId: string; credentialId: string; rotationId: string },
+  actions: { winner: 'resume' | 'abandon'; loser: 'resume' | 'abandon' }
+) {
+  let winnerPromise!: ReturnType<typeof resolutionViaApi>
+  let loserRes!: Awaited<ReturnType<typeof resolutionViaApi>>
+  await withOrg(orgId, async (tx) => {
+    await tx
+      .select({ id: rotations.id })
+      .from(rotations)
+      .where(eq(rotations.id, ids.rotationId))
+      .for('update')
+    const pidRows = await tx.execute(sql`SELECT pg_backend_pid() AS pid`)
+    const holderPid = Number((pidRows[0] as { pid: number }).pid)
+
+    winnerPromise = resolutionViaApi(app, cookies, ids, actions.winner)
+    await vi.waitFor(
+      async () => {
+        const blocked = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE ${holderPid} = ANY(pg_blocking_pids(pid))`
+        )
+        expect((blocked[0] as { n: number }).n).toBeGreaterThan(0)
+      },
+      { timeout: 10_000, interval: 20 }
+    )
+    loserRes = await resolutionViaApi(app, cookies, ids, actions.loser)
+  })
+  return { winnerRes: await winnerPromise, loserRes }
+}
+
 /** Directly transitions a rotation to `stale_recovery` — simulates what the AC-9 stale-detection
  *  job does, without depending on that job's own threshold-scan timing in these route-level
  *  tests (the job itself is covered by its own dedicated worker test file). */
@@ -499,6 +539,31 @@ function assertExactlyOneConflict(
   const statuses = [first.statusCode, second.statusCode].sort()
   expect(statuses).toEqual([successCode, conflictCode].sort())
   return first.statusCode === conflictCode ? first : second
+}
+
+/** Story 74.1: for an UNFORCED race of two resolution calls on one stale_recovery rotation.
+ *  Exactly one call succeeds (200). The other is one of the two answers the contract names:
+ *  409 `concurrent_modification` when the calls overlapped (lock or CAS lost), or 422
+ *  `rotation_not_stale` when it arrived after the winner committed and read the new status. */
+function expectOneSuccessAndOneContractLoss(
+  results: Array<Awaited<ReturnType<TestApp['inject']>>>,
+  statusSetByWinner: (winnerIndex: number) => string
+) {
+  const successes = results.filter((res) => res.statusCode === 200)
+  const losses = results.filter((res) => res.statusCode !== 200)
+  expect(successes).toHaveLength(1)
+  expect(losses).toHaveLength(1)
+  const [loss] = losses
+  const winnerIndex = results.findIndex((res) => res.statusCode === 200)
+  if (loss?.statusCode === 409) {
+    expect(loss.json()).toMatchObject({ code: 'concurrent_modification' })
+  } else {
+    expect(loss?.statusCode).toBe(422)
+    expect(loss?.json()).toMatchObject({
+      code: 'rotation_not_stale',
+      status: statusSetByWinner(winnerIndex),
+    })
+  }
 }
 
 /** Shared by every "role gate rejects member/viewer before any DB write" test. */
@@ -3249,12 +3314,42 @@ describe('Story 5.3 — break-glass emergency rotation + stale-recovery resume/a
       'resolve-race'
     )
 
-    const [resumeRes, abandonRes] = await Promise.all([
-      resolutionViaApi(app, owner.cookies, { projectId, credentialId, rotationId }, 'resume'),
-      resolutionViaApi(app, owner.cookies, { projectId, credentialId, rotationId }, 'abandon'),
-    ])
-    const conflict = assertExactlyOneConflict(resumeRes, abandonRes, 200, 409)
+    // Story 74.1: overlap is forced (see raceResolutionsWithBlockedWinner), not hoped for.
+    const { winnerRes, loserRes } = await raceResolutionsWithBlockedWinner(
+      app,
+      owner.cookies,
+      owner.orgId,
+      { projectId, credentialId, rotationId },
+      { winner: 'resume', loser: 'abandon' }
+    )
+    const conflict = assertExactlyOneConflict(winnerRes, loserRes, 200, 409)
+    expect(conflict).toBe(loserRes)
     expect(conflict.json()).toMatchObject({ code: 'concurrent_modification' })
+  })
+
+  it('POST resume/abandon racing WITHOUT forced overlap: exactly one 200, the other 409 concurrent_modification (overlap) or 422 rotation_not_stale (arrived after the commit)', async () => {
+    // Story 74.1 (nightly run 40990127435: [200, 422] where [200, 409] was expected). Two
+    // concurrent calls are not guaranteed to overlap: when one request's transaction commits
+    // before the other's starts there is no lock contention, the late call reads the new status
+    // and is rejected by the stale_recovery precondition with 422 (the same answer the
+    // sequential "resume immediately after abandon" test below pins). Both outcomes are the
+    // contract, so the unforced race asserts exactly the contract: one 200, the other either
+    // 409 (overlapped) or 422 rotation_not_stale (arrived after the commit).
+    const { projectId, credentialId, rotationId } = await createStaleRotationFixture(
+      app,
+      owner.cookies,
+      owner.orgId,
+      'resolve-race-unforced'
+    )
+    const ids = { projectId, credentialId, rotationId }
+
+    const [resumeRes, abandonRes] = await Promise.all([
+      resolutionViaApi(app, owner.cookies, ids, 'resume'),
+      resolutionViaApi(app, owner.cookies, ids, 'abandon'),
+    ])
+    expectOneSuccessAndOneContractLoss([resumeRes, abandonRes], (winner) =>
+      winner === 0 ? 'in_progress' : 'abandoned'
+    )
   })
 
   // ---------------------------------------------------------------------------------------
@@ -3272,15 +3367,63 @@ describe('Story 5.3 — break-glass emergency rotation + stale-recovery resume/a
       'abandon-race'
     )
 
-    const [first, second] = await Promise.all([
-      resolutionViaApi(app, owner.cookies, { projectId, credentialId, rotationId }, 'abandon'),
-      resolutionViaApi(app, owner.cookies, { projectId, credentialId, rotationId }, 'abandon'),
-    ])
-    const conflict = assertExactlyOneConflict(first, second, 200, 409)
+    // Story 74.1: overlap is forced (see raceResolutionsWithBlockedWinner), not hoped for. The
+    // route answers exactly one 200 and one 409 concurrent_modification on this interleaving.
+    const { winnerRes, loserRes } = await raceResolutionsWithBlockedWinner(
+      app,
+      owner.cookies,
+      owner.orgId,
+      { projectId, credentialId, rotationId },
+      { winner: 'abandon', loser: 'abandon' }
+    )
+    const conflict = assertExactlyOneConflict(winnerRes, loserRes, 200, 409)
+    expect(conflict).toBe(loserRes)
     expect(conflict.json()).toMatchObject({ code: 'concurrent_modification' })
 
     // Exactly one abandon actually took effect — the rotation ends up abandoned, not
     // double-processed.
+    const finalRotation = await withOrg(owner.orgId, (tx) =>
+      tx.select({ status: rotations.status }).from(rotations).where(eq(rotations.id, rotationId))
+    )
+    expect(finalRotation[0]?.status).toBe('abandoned')
+  })
+
+  it('POST abandon arriving after another abandon committed answers 422 rotation_not_stale (status abandoned), not 409', async () => {
+    // Story 74.1 root cause of nightly run 40990127435 ([200, 422] vs the old [200, 409]):
+    // the losing call read the already-committed `abandoned` status, so the precondition
+    // check (not the lock or the CAS) rejected it. Pinned here on the sequential
+    // interleaving, which is exactly "the second call started after the first committed".
+    const { projectId, credentialId, rotationId } = await createStaleRotationFixture(
+      app,
+      owner.cookies,
+      owner.orgId,
+      'abandon-late'
+    )
+    const ids = { projectId, credentialId, rotationId }
+
+    const first = await resolutionViaApi(app, owner.cookies, ids, 'abandon')
+    expect(first.statusCode).toBe(200)
+    await expectResolutionRejectedNotStale(app, owner.cookies, ids, 'abandon', 'abandoned')
+  })
+
+  it('POST two abandon calls fired together WITHOUT forced overlap: exactly one 200, the other 409 concurrent_modification or 422 rotation_not_stale', async () => {
+    // Story 74.1: the unforced form of the race. It cannot choose its interleaving, so it
+    // asserts the full documented contract (see the late-arrival test above for why 422 is
+    // legitimate) and the final state, not a single outcome.
+    const { projectId, credentialId, rotationId } = await createStaleRotationFixture(
+      app,
+      owner.cookies,
+      owner.orgId,
+      'abandon-race-unforced'
+    )
+    const ids = { projectId, credentialId, rotationId }
+
+    const results = await Promise.all([
+      resolutionViaApi(app, owner.cookies, ids, 'abandon'),
+      resolutionViaApi(app, owner.cookies, ids, 'abandon'),
+    ])
+    expectOneSuccessAndOneContractLoss(results, () => 'abandoned')
+
     const finalRotation = await withOrg(owner.orgId, (tx) =>
       tx.select({ status: rotations.status }).from(rotations).where(eq(rotations.id, rotationId))
     )
