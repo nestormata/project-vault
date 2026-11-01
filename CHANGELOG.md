@@ -12,9 +12,10 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 ## [2.0.1] - 2026-10-31
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:2.0.1`
-(aliases `2.0`, `2`, `latest`). The images change only in their version label: no application code
-changed since 2.0.0. Extension API contract: unchanged, `@project-vault/extension-api@3.38.0`, and
-this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.38.0`. CLI:
+(aliases `2.0`, `2`, `latest`). The images change only in their release version (the image label
+and the version the api reports): no application code changed since 2.0.0. Extension API contract:
+unchanged, `@project-vault/extension-api@3.38.0`, and this host loads extensions whose manifest
+`apiVersion` is in `>=3.0.0 <=3.38.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). CLI:
 `pvault-2.0.1.mjs` on this release's assets. Build-time composition packages: this tag publishes
 `@project-vault/web-host@2.0.1` to npm's `next` dist-tag. Its compatibility manifest names
 `pvRelease` 2.0.1, the `api:2.0.1` image, extension-api 3.38.0 and kit 0.10.0. The kit is unchanged
@@ -25,6 +26,8 @@ and already on npm, so the release run skips it.
 - **No operator action.** No migration, no environment-variable change and no behavior change:
   `docker compose pull && docker compose up -d`. A consumer of `@project-vault/web-host` pins 2.0.1
   and the `api:2.0.1` image together, as it pinned 2.0.0.
+- **web-host consumers whose composed tree adds `(app)` routes should move to 2.0.1.** The only
+  package change is one PV-tree-only test that no longer ships (see Fixed).
 
 ### Fixed
 
