@@ -381,7 +381,12 @@ if [[ "$STATUS" != '200' ]]; then
   cat "$WORK/server.err" >&2
   exit 1
 fi
-if ! grep -q '<form' "$WORK/login.html" || ! grep -q '<title>Sign in | Project Vault</title>' "$WORK/login.html"; then
+# Story 72.16: the name in the tab title is the `brand_name` message; the mock UI pack overlays it.
+EXPECTED_BRAND='Project Vault'
+if [[ "$VARIANT" == 'compose-mock-pack' ]]; then
+  EXPECTED_BRAND='Mock Product'
+fi
+if ! grep -q '<form' "$WORK/login.html" || ! grep -qF "<title>Sign in | ${EXPECTED_BRAND}</title>" "$WORK/login.html"; then
   echo 'fixture: /login did not server-render the sign-in form' >&2
   exit 1
 fi

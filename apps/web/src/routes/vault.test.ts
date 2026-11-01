@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -42,7 +43,7 @@ describe('vault operator UI', () => {
   it('unavailable shows retry only', () => {
     const model = getVaultGateModel({
       state: 'unavailable',
-      message: 'Project Vault is not ready yet. Try again shortly.',
+      message: `${m.brand_name()} is not ready yet. Try again shortly.`,
     })
 
     expect(model.primaryAction).toBe('Retry readiness')

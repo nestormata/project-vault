@@ -1,4 +1,5 @@
 // @pv-not-guard oracle of PV's own un-composed markup, valid only on PV's tree
+import { m } from '$lib/paraglide/messages.js'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import type { ComponentProps } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -481,6 +482,8 @@ async function statusAdminStates(): Promise<Record<string, string>> {
   return out
 }
 
+// The product name is the `brand_name` message (Story 72.16): the markup is pinned with the name
+// normalised to the recorded default, so a pack that overlays the key still matches byte for byte.
 describe('monitoring region extraction oracle (Story 69.3 AC-2)', () => {
   it('renders the four monitoring routes exactly as before the extraction', async () => {
     const result = {
@@ -489,9 +492,9 @@ describe('monitoring region extraction oracle (Story 69.3 AC-2)', () => {
       ...(await detailStates()),
       ...(await statusAdminStates()),
     }
-    await expect(`${JSON.stringify(result, null, 2)}\n`).toMatchFileSnapshot(
-      './monitoring-extraction.snapshot.json'
-    )
+    await expect(
+      `${JSON.stringify(result, null, 2)}\n`.replaceAll(m.brand_name(), 'Project Vault')
+    ).toMatchFileSnapshot('./monitoring-extraction.snapshot.json')
     expect(Object.keys(result).length).toBeGreaterThanOrEqual(40)
   })
 })

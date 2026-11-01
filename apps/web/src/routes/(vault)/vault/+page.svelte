@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import VaultHomeHeader from '$lib/components/vault/VaultHomeHeader.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { goto } from '$app/navigation'
@@ -36,7 +37,7 @@
 </script>
 
 <svelte:head>
-  <title>Vault readiness | Project Vault</title>
+  <title>Vault readiness | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="vault.home.before" data={data?.__inject} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import MachineUsersListHeader from '$lib/components/machine-users/MachineUsersListHeader.svelte'
   import MachineUsersListContent from '$lib/components/machine-users/MachineUsersListContent.svelte'
 
@@ -12,7 +13,7 @@
 </script>
 
 <svelte:head>
-  <title>Machine users | Project Vault</title>
+  <title>Machine users | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="project.machine-users.before" data={data?.__inject} />

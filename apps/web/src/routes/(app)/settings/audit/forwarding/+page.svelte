@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import AuditForwardingHeader from '$lib/components/settings/AuditForwardingHeader.svelte'
   import AuditForwardingPanel from '$lib/components/settings/AuditForwardingPanel.svelte'
   import NavLinkRegion from '$lib/components/shell/NavLinkRegion.svelte'
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Forwarding & Retention | Project Vault</title>
+  <title>Forwarding & Retention | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.audit-forwarding.before" data={data?.__inject} />

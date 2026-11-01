@@ -9,7 +9,7 @@ import type { SurfaceBuilder } from './define.js'
 import { text } from './define.js'
 
 export const shellBrandItems: SurfaceBuilder<'shell.brand'> = () => [
-  { id: 'shell.brand.home', label: text('Project Vault'), href: () => resolve('/dashboard') },
+  { id: 'shell.brand.home', label: () => m.brand_name(), href: () => resolve('/dashboard') },
 ]
 
 export const shellUtilityItems: SurfaceBuilder<'shell.utility'> = () => [

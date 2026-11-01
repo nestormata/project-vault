@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import DeletedProjectsHeader from '$lib/components/projects/DeletedProjectsHeader.svelte'
   import DeletedProjectsList from '$lib/components/projects/DeletedProjectsList.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -7,7 +8,7 @@
 </script>
 
 <svelte:head>
-  <title>Deleted projects | Project Vault</title>
+  <title>Deleted projects | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="project.deleted.before" data={data.__inject} />

@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
@@ -67,9 +68,9 @@ describe('/login +page.svelte', () => {
     pageMock.url = new URL('http://localhost/login?reason=registered')
     render(LoginPage)
 
-    expect(document.title).toBe('Iniciar sesión | Project Vault')
+    expect(document.title).toBe(`Iniciar sesión | ${m.brand_name()}`)
     expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeTruthy()
-    expect(screen.getByText('Usa tu cuenta de Project Vault para continuar.')).toBeTruthy()
+    expect(screen.getByText(`Usa tu cuenta de ${m.brand_name()} para continuar.`)).toBeTruthy()
     expect(screen.getByText('Cuenta creada. Inicia sesión para continuar.')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Registrarse' })).toBeTruthy()
     expect(screen.getByRole('link', { name: '¿No puedes acceder a tu cuenta?' })).toBeTruthy()

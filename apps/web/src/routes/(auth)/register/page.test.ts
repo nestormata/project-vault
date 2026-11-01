@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
@@ -32,7 +33,7 @@ describe('/register +page.svelte', () => {
     setLocale('es', { reload: false })
     render(RegisterPage)
 
-    expect(document.title).toBe('Registrarse | Project Vault')
+    expect(document.title).toBe(`Registrarse | ${m.brand_name()}`)
     expect(screen.getByRole('heading', { name: 'Registrarse' })).toBeTruthy()
     expect(
       screen.getByText('Crea una organización independiente nueva en este vault.')

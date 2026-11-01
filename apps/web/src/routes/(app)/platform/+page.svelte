@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import PlatformHomeHeader from '$lib/components/platform/PlatformHomeHeader.svelte'
   import NavCardsRegion from '$lib/components/shell/NavCardsRegion.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -30,7 +31,7 @@
 </script>
 
 <svelte:head>
-  <title>Platform Admin | Project Vault</title>
+  <title>Platform Admin | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="platform.home.before" data={data?.__inject} />

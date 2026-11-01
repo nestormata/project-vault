@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import ShellBrand from './ShellBrand.svelte'
@@ -10,7 +11,7 @@ describe('ShellBrand.svelte', () => {
     const { container } = render(ShellBrand, { props: { hidePrimaryNav: false } })
 
     expect(container.querySelector('img')?.getAttribute('src')).toBe('/logo-mark.png')
-    expect(screen.getByRole('link', { name: 'Project Vault' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: m.brand_name() }).getAttribute('href')).toBe(
       '/dashboard'
     )
     expect(screen.getByText('Run complex projects. Miss nothing.')).toBeTruthy()
@@ -20,6 +21,6 @@ describe('ShellBrand.svelte', () => {
     render(ShellBrand, { props: { hidePrimaryNav: true } })
 
     expect(screen.queryByRole('link')).toBeNull()
-    expect(screen.getByText('Project Vault')).toBeTruthy()
+    expect(screen.getByText(m.brand_name())).toBeTruthy()
   })
 })

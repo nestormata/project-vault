@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import ExternalIdentitiesHeader from '$lib/components/settings/ExternalIdentitiesHeader.svelte'
   import ExternalIdentitiesPanel from '$lib/components/settings/ExternalIdentitiesPanel.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -7,7 +8,7 @@
 </script>
 
 <svelte:head>
-  <title>External Identities | Project Vault</title>
+  <title>External Identities | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.external-identities.before" data={data?.__inject} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import ErasureHeader from '$lib/components/settings/ErasureHeader.svelte'
   import ErasureRequestPanel from '$lib/components/settings/ErasureRequestPanel.svelte'
   import NavLinkRegion from '$lib/components/shell/NavLinkRegion.svelte'
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Erasure Request | Project Vault</title>
+  <title>Erasure Request | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.users-erasure-detail.before" data={data?.__inject} />

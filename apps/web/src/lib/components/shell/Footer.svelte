@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   // Story 68.7 (S7): the footer's links are the `footer` surface's data (PV's GitHub and AGPL-3.0
   // source links; a composed app may change them, and pv-compose notes the AGPL source offer).
   import NavNodeEntry from '$lib/navigation/NavNodeEntry.svelte'
@@ -13,7 +14,7 @@
 <footer
   class="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:gap-4"
 >
-  <p>© {new Date().getFullYear()} Project Vault</p>
+  <p>© {new Date().getFullYear()} {m.brand_name()}</p>
   {#each links as link, index (link.id)}{#if index > 0}{GAP}{/if}<NavNodeEntry
       node={link}
       class={LINK_CLASS}

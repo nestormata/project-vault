@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
 import VaultGate from './VaultGate.svelte'
@@ -40,7 +41,7 @@ describe('VaultGate.svelte', () => {
     const componentProps = props({ state: 'unavailable', message: 'The vault host is offline.' })
     render(VaultGate, { props: componentProps })
 
-    expect(screen.getByText('Project Vault is not ready')).toBeTruthy()
+    expect(screen.getByText(`${m.brand_name()} is not ready`)).toBeTruthy()
     const button = screen.getByRole('button', { name: /retry readiness/i })
     await fireEvent.click(button)
 
@@ -50,7 +51,7 @@ describe('VaultGate.svelte', () => {
   it('shows a ready message with no form and no retry button when ready', () => {
     render(VaultGate, { props: props({ state: 'ready' }) })
 
-    expect(screen.getByText('Project Vault is ready')).toBeTruthy()
+    expect(screen.getByText(`${m.brand_name()} is ready`)).toBeTruthy()
     expect(screen.getByText('Continue to sign in or register.')).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.queryByLabelText('Bootstrap token')).toBeNull()

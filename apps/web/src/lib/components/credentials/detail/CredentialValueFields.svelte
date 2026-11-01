@@ -25,7 +25,7 @@
     <FormHelpText id="credential-reveal-fields-help" text={m.credential_reveal_auto_hide_help()} />
     <FormHelpText
       id="credential-copy-fields-clipboard-note"
-      text={m.credential_copy_fields_clipboard_note()}
+      text={m.credential_copy_fields_clipboard_note({ brand: m.brand_name() })}
     />
     <button
       class="mt-3 rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-2 text-sm font-medium disabled:opacity-60"

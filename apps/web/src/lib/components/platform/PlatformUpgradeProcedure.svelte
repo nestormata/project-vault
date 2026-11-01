@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
 
@@ -14,7 +15,7 @@
     <h2 class="text-base font-semibold text-gray-900">Upgrade Procedure</h2>
     <div class="mt-3 space-y-3 text-sm text-gray-700">
       <p>
-        Project Vault supports <strong>in-place upgrades</strong> via
+        {m.brand_name()} supports <strong>in-place upgrades</strong> via
         <code class="font-mono text-xs">docker compose up -d</code>
         with a newer image. The migration system applies only
         <strong>additive schema migrations</strong>

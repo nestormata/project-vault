@@ -24,5 +24,5 @@
 <InjectionPoint name="auth.handoff.after" data={data?.__inject} />
 
 <svelte:head>
-  <title>{m.auth_handoff_page_title()}</title>
+  <title>{m.auth_handoff_page_title({ brand: m.brand_name() })}</title>
 </svelte:head>
