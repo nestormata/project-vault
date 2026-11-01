@@ -79,6 +79,13 @@ describe('check-brand-name: mutation self-tests (Story 72.16 AC-2)', () => {
     ])
   })
 
+  it('catches case, line-break and non-breaking-space variants of the name', () => {
+    expect(problems({ 'src/a.svelte': '<p>project vault</p>\n' })).toHaveLength(1)
+    expect(problems({ 'src/a.svelte': '<p>Project\n  Vault</p>\n' })).toHaveLength(1)
+    expect(problems({ 'src/b.ts': "export const t = 'Project\u00a0Vault'\n" })).toHaveLength(1)
+    expect(problems({ 'src/c.js': "export const t = 'Project Vault'\n" })).toHaveLength(1)
+  })
+
   it('an empty scan never passes', () => {
     const root = makeRoot()
     expect(checkBrandNameGuard(root).problems).toEqual([

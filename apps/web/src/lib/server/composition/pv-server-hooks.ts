@@ -180,7 +180,7 @@ export function createPvHandle({ apiBaseUrl, protectedPaths }: PvHandleOptions):
               const html = (await opts?.transformPageChunk?.(chunk)) ?? chunk.html
               return html
                 .replace('%paraglide.lang%', locale)
-                .replace('%brand.name%', escapeHtml(m.brand_name()))
+                .replace('%brand.name%', () => escapeHtml(m.brand_name()))
             },
           }),
       })
