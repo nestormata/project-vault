@@ -244,6 +244,7 @@
   "nav_status_warning": "Requiere atención",
   "nav_status_danger": "Problema",
   "shell_skip_to_content": "Saltar al contenido principal",
+  "shell_brand_tagline": "Run complex projects. Miss nothing.",
   "shell_search_field_placeholder": "Buscar proyectos y secretos",
   "shell_more": "Más",
   "shell_more_current": "la página actual está dentro",
