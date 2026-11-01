@@ -9,6 +9,13 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Fixed
+
+- **The PV tests web-host ships pass over a composed tree that adds `(app)` routes** (Story 72-22,
+  `@project-vault/web-host` PATCH). The shell route-tree classification moved to
+  `shell-route-tree.test.ts`, which is PV-tree-only and no longer ships; it failed CentralizeMe's
+  composed run on a pack route (`/projects/x/docs/new`) that PV never classified.
+
 ## [2.0.0] - 2026-10-31
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:2.0.0`

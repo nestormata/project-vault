@@ -73,6 +73,10 @@ export const PV_TREE_ONLY_TESTS: ReadonlyMap<string, string> = new Map([
     'src/routes/server-files-wiring.test.ts',
     "pins the shape of every page and layout server file in PV's own build (no actions where PV has none); valid only on PV's own tree",
   ],
+  [
+    'src/lib/components/shell/shell-route-tree.test.ts',
+    "classifies every (app) page PV ships against PV's hand-kept task-page list (Story 72.7); a pack adds routes PV never classified, so valid only on PV's tree",
+  ],
 ])
 
 function pvTreeOnlyReason(file: string): string | undefined {

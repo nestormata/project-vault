@@ -93,6 +93,7 @@ describe('classifyTest', () => {
     for (const [name, reason] of [
       ['hooks-files.test.ts', /hooks files with no contributions/],
       ['routes/server-files-wiring.test.ts', /every page and layout server file/],
+      ['lib/components/shell/shell-route-tree.test.ts', /every \(app\) page PV ships/],
     ] as const) {
       const file = `${WEB_SRC}/${name}`
       const result = classifyTest(file, VITEST_IMPORT, context({ [file]: '' }))
