@@ -546,18 +546,23 @@ function assertExactlyOneConflict(
  *  409 `concurrent_modification` when the calls overlapped (lock or CAS lost), or 422
  *  `rotation_not_stale` when it arrived after the winner committed and read the new status. */
 function expectOneSuccessAndOneContractLoss(
-  results: Array<Awaited<ReturnType<TestApp['inject']>>>
+  results: Array<Awaited<ReturnType<TestApp['inject']>>>,
+  statusSetByWinner: (winnerIndex: number) => string
 ) {
   const successes = results.filter((res) => res.statusCode === 200)
   const losses = results.filter((res) => res.statusCode !== 200)
   expect(successes).toHaveLength(1)
   expect(losses).toHaveLength(1)
   const [loss] = losses
+  const winnerIndex = results.findIndex((res) => res.statusCode === 200)
   if (loss?.statusCode === 409) {
     expect(loss.json()).toMatchObject({ code: 'concurrent_modification' })
   } else {
     expect(loss?.statusCode).toBe(422)
-    expect(loss?.json()).toMatchObject({ code: 'rotation_not_stale' })
+    expect(loss?.json()).toMatchObject({
+      code: 'rotation_not_stale',
+      status: statusSetByWinner(winnerIndex),
+    })
   }
 }
 
@@ -3322,7 +3327,7 @@ describe('Story 5.3 — break-glass emergency rotation + stale-recovery resume/a
     expect(conflict.json()).toMatchObject({ code: 'concurrent_modification' })
   })
 
-  it('POST resume/abandon racing WITHOUT forced overlap: the call arriving after the other committed answers 422 rotation_not_stale, never a second 200', async () => {
+  it('POST resume/abandon racing WITHOUT forced overlap: exactly one 200, the other 409 concurrent_modification (overlap) or 422 rotation_not_stale (arrived after the commit)', async () => {
     // Story 74.1 (nightly run 40990127435: [200, 422] where [200, 409] was expected). Two
     // concurrent calls are not guaranteed to overlap: when one request's transaction commits
     // before the other's starts there is no lock contention, the late call reads the new status
@@ -3342,7 +3347,9 @@ describe('Story 5.3 — break-glass emergency rotation + stale-recovery resume/a
       resolutionViaApi(app, owner.cookies, ids, 'resume'),
       resolutionViaApi(app, owner.cookies, ids, 'abandon'),
     ])
-    expectOneSuccessAndOneContractLoss([resumeRes, abandonRes])
+    expectOneSuccessAndOneContractLoss([resumeRes, abandonRes], (winner) =>
+      winner === 0 ? 'in_progress' : 'abandoned'
+    )
   })
 
   // ---------------------------------------------------------------------------------------
@@ -3415,7 +3422,7 @@ describe('Story 5.3 — break-glass emergency rotation + stale-recovery resume/a
       resolutionViaApi(app, owner.cookies, ids, 'abandon'),
       resolutionViaApi(app, owner.cookies, ids, 'abandon'),
     ])
-    expectOneSuccessAndOneContractLoss(results)
+    expectOneSuccessAndOneContractLoss(results, () => 'abandoned')
 
     const finalRotation = await withOrg(owner.orgId, (tx) =>
       tx.select({ status: rotations.status }).from(rotations).where(eq(rotations.id, rotationId))
