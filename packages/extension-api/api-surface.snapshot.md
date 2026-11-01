@@ -766,6 +766,13 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `(run: () => void | Promise<void>) => Promise<BackgroundPromiseConformanceResult>`
 - call-signature: `(run: () => void | Promise<void>): Promise<BackgroundPromiseConformanceResult>`
 
+## export `checkCredentialSharingMachineUserMode`
+
+- since: 3.39.0
+- kind: value
+- type: `(manifest: { apiVersion: string; }) => CredentialSharingMachineUserModeResult`
+- call-signature: `(manifest: { apiVersion: string; }): CredentialSharingMachineUserModeResult`
+
 ## export `checkExtensionEmitters`
 
 - since: 3.34.0
@@ -917,6 +924,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.23.0
   - type: `(params: CredentialSharingOrgListParams) => Promise<CredentialSharingListResult>`
   - call-signature: `(params: CredentialSharingOrgListParams): Promise<CredentialSharingListResult>`
+- member: `provisionMachineUser`
+  - since: 3.39.0
+  - type: `(params: CredentialSharingProvisionMachineUserParams) => Promise<CredentialSharingProvisionMachineUserResult>`
+  - call-signature: `(params: CredentialSharingProvisionMachineUserParams): Promise<CredentialSharingProvisionMachineUserResult>`
 - member: `revealShare`
   - since: 3.22.0
   - type: `(rawToken: string) => Promise<CredentialSharingRevealResult>`
@@ -972,6 +983,34 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `total`
   - since: 3.23.0
   - type: `number`
+
+## export `CredentialSharingMachineUserMode`
+
+- since: 3.39.0
+- kind: type
+- type: `CredentialSharingMachineUserMode`
+- union-members: `"host-managed"`, `"admin-provisioned-only"`
+
+## export `CredentialSharingMachineUserModeReason`
+
+- since: 3.39.0
+- kind: type
+- type: `CredentialSharingMachineUserModeReason`
+- union-members: `"declared_since"`, `"legacy_contract"`, `"unparsable_version"`
+
+## export `CredentialSharingMachineUserModeResult`
+
+- since: 3.39.0
+- kind: type
+- type: `CredentialSharingMachineUserModeResult`
+- member: `readonly mode`
+  - since: 3.39.0
+  - type: `CredentialSharingMachineUserMode`
+  - union-members: `"host-managed"`, `"admin-provisioned-only"`
+- member: `readonly reason`
+  - since: 3.39.0
+  - type: `CredentialSharingMachineUserModeReason`
+  - union-members: `"declared_since"`, `"legacy_contract"`, `"unparsable_version"`
 
 ## export `CredentialSharingNoMachineUserError`
 
@@ -1063,6 +1102,28 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.22.0
   - type: `string | undefined`
   - union-members: `undefined`, `string`
+
+## export `CredentialSharingProvisionMachineUserParams`
+
+- since: 3.39.0
+- kind: type
+- type: `CredentialSharingProvisionMachineUserParams`
+- member: `organizationId`
+  - since: 3.39.0
+  - type: `string`
+
+## export `CredentialSharingProvisionMachineUserResult`
+
+- since: 3.39.0
+- kind: type
+- type: `CredentialSharingProvisionMachineUserResult`
+- member: `created`
+  - since: 3.39.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `machineUserId`
+  - since: 3.39.0
+  - type: `string`
 
 ## export `CredentialSharingRateLimitedError`
 
@@ -1430,7 +1491,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.38.0"`
+- type: `"3.39.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -1772,6 +1833,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
     - since: 3.23.0
     - type: `(params: CredentialSharingOrgListParams) => Promise<CredentialSharingListResult>`
     - call-signature: `(params: CredentialSharingOrgListParams): Promise<CredentialSharingListResult>`
+  - member: `provisionMachineUser`
+    - since: 3.39.0
+    - type: `(params: CredentialSharingProvisionMachineUserParams) => Promise<CredentialSharingProvisionMachineUserResult>`
+    - call-signature: `(params: CredentialSharingProvisionMachineUserParams): Promise<CredentialSharingProvisionMachineUserResult>`
   - member: `revealShare`
     - since: 3.22.0
     - type: `(rawToken: string) => Promise<CredentialSharingRevealResult>`
@@ -3449,14 +3514,14 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `readonly ungated`
   - since: 3.37.0
   - type: `ProjectWriteUngatedReason | null`
-  - union-members: `null`, `"declared_viewer"`, `"legacy_contract"`, `"unauthenticated"`
+  - union-members: `null`, `"legacy_contract"`, `"declared_viewer"`, `"unauthenticated"`
 
 ## export `ProjectWriteUngatedReason`
 
 - since: 3.37.0
 - kind: type
 - type: `ProjectWriteUngatedReason`
-- union-members: `"declared_viewer"`, `"legacy_contract"`, `"unauthenticated"`
+- union-members: `"legacy_contract"`, `"declared_viewer"`, `"unauthenticated"`
 
 ## export `PublicRouteHooks`
 
@@ -3766,6 +3831,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
       - since: 3.23.0
       - type: `(params: CredentialSharingOrgListParams) => Promise<CredentialSharingListResult>`
       - call-signature: `(params: CredentialSharingOrgListParams): Promise<CredentialSharingListResult>`
+    - member: `provisionMachineUser`
+      - since: 3.39.0
+      - type: `(params: CredentialSharingProvisionMachineUserParams) => Promise<CredentialSharingProvisionMachineUserResult>`
+      - call-signature: `(params: CredentialSharingProvisionMachineUserParams): Promise<CredentialSharingProvisionMachineUserResult>`
     - member: `revealShare`
       - since: 3.22.0
       - type: `(rawToken: string) => Promise<CredentialSharingRevealResult>`

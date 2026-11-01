@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { apiKeys, machineUsers } from '@project-vault/db/schema'
 import { getAdminDb } from '../../lib/db.js'
+import { withProjectId } from './admin-provisioned.js'
 import { isMachineKeyLive } from './key-validity.js'
 
 export type ApiKeyByHashRow = {
@@ -31,7 +32,7 @@ export type ApiKeyByHashRow = {
  * exception, not a pattern that spreads further into the request lifecycle.
  */
 export async function findApiKeyByHash(keyHash: string): Promise<ApiKeyByHashRow | null> {
-  const [row] = await getAdminDb()
+  const rows = await getAdminDb()
     .select({
       id: apiKeys.id,
       orgId: apiKeys.orgId,
@@ -50,7 +51,7 @@ export async function findApiKeyByHash(keyHash: string): Promise<ApiKeyByHashRow
     .innerJoin(machineUsers, eq(machineUsers.id, apiKeys.machineUserId))
     .where(eq(apiKeys.keyHash, keyHash))
     .limit(1)
-  return row ?? null
+  return withProjectId(rows)[0] ?? null
 }
 
 /**

@@ -55,6 +55,7 @@ export function fakeHostServices(overrides: Partial<HostServices> = {}): HostSer
       supersedeSharesForRotation: unavailable('credentialSharing.supersedeSharesForRotation'),
       listSharesForCredential: unavailable('credentialSharing.listSharesForCredential'),
       listSharesForOrganization: unavailable('credentialSharing.listSharesForOrganization'),
+      provisionMachineUser: unavailable('credentialSharing.provisionMachineUser'),
     },
     ...overrides,
   }

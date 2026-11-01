@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { apiKeys, machineUsers, securityAlerts } from '@project-vault/db/schema'
+import { apiKeys, auditLogEntries, machineUsers, securityAlerts } from '@project-vault/db/schema'
 import { insertTestProject } from '@project-vault/db/test-helpers'
 import { createMockBoss } from '../__tests__/helpers/notification-test-helpers.js'
 import { queueEntriesForTemplate, withExpiryAlertTestOrg } from './expiry-alert-test-helpers.js'
@@ -194,6 +194,58 @@ describe('machine key dormancy check job (AC-21)', () => {
 
       const queueEntries = await queueEntriesForTemplate(orgId, DORMANT_TEMPLATE_ID)
       expect(queueEntries.length).toBeGreaterThan(0)
+    })
+  }, 60_000)
+
+  // Story 73.9 AC-4: a host-managed machine user is keyless by construction, so the job never
+  // selects, alerts on or modifies it, even when it is older than the threshold.
+  it('never touches a host-managed machine user', async () => {
+    const { boss } = createMockBoss()
+    await boss.start()
+
+    await withExpiryAlertTestOrg('dormancy-host-managed', async ({ orgId, ownerId }) => {
+      const project = await insertTestProject(orgId, { userId: ownerId, slug: 'dormancy-hm' })
+      const adminProvisioned = await insertMachineUser(orgId, project.id, ownerId)
+      await withOrg(orgId, (tx) =>
+        tx.insert(apiKeys).values({
+          orgId,
+          machineUserId: adminProvisioned.id,
+          name: 'stale-admin-key',
+          keyHash: 'e'.repeat(64),
+          lastUsedAt: NINETY_ONE_DAYS_AGO,
+        })
+      )
+      const [hostManaged] = await withOrg(orgId, (tx) =>
+        tx
+          .insert(machineUsers)
+          .values({
+            orgId,
+            projectId: null,
+            name: 'com.centralizeme.module-pack',
+            role: 'viewer',
+            createdBy: null,
+            hostManaged: true,
+            createdAt: NINETY_ONE_DAYS_AGO,
+          })
+          .returning()
+      )
+      if (!hostManaged) throw new Error('expected host-managed machine user to be inserted')
+
+      await runMachineKeyDormancyCheckJob(boss)
+
+      const alerts = await withOrg(orgId, (tx) =>
+        tx.select().from(securityAlerts).where(eq(securityAlerts.alertType, DORMANT_TEMPLATE_ID))
+      )
+      expect(alerts).toHaveLength(1)
+      expect(JSON.stringify(alerts)).not.toContain(hostManaged.id)
+      const queueEntries = await queueEntriesForTemplate(orgId, DORMANT_TEMPLATE_ID)
+      expect(JSON.stringify(queueEntries)).not.toContain(hostManaged.id)
+      const audit = await withOrg(orgId, (tx) => tx.select().from(auditLogEntries))
+      expect(JSON.stringify(audit)).not.toContain(hostManaged.id)
+      const [after] = await withOrg(orgId, (tx) =>
+        tx.select().from(machineUsers).where(eq(machineUsers.id, hostManaged.id))
+      )
+      expect(after).toEqual(hostManaged)
     })
   }, 60_000)
 })

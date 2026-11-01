@@ -14,6 +14,7 @@ import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed
 import { findProjectInOrg } from '../credentials/service.js'
 import { apiKeys, machineUsers, projects } from '@project-vault/db/schema'
 import type { Tx } from '@project-vault/db'
+import { isAdminProvisioned, withProjectId, type WithProjectId } from './admin-provisioned.js'
 import { generateApiKey, hashApiKey } from './tokens.js'
 import { activeMachineUserKeysQuery } from './archival-check.js'
 import { emergencyRevokeApiKey, lockApiKeyForUpdate, rotateApiKey } from './rotation.js'
@@ -63,7 +64,7 @@ const MACHINE_USER_DEACTIVATED = {
   message: 'Machine user is deactivated',
 } as const
 
-type MachineUserRow = typeof machineUsers.$inferSelect
+type MachineUserRow = WithProjectId<typeof machineUsers.$inferSelect>
 type ApiKeyRow = typeof apiKeys.$inferSelect
 
 /**
@@ -169,6 +170,8 @@ async function findMachineUserById(
     .where(
       and(
         eq(machineUsers.id, machineUserId),
+        // Story 73.9 AC-4: a host-managed row answers exactly like an unknown id.
+        isAdminProvisioned,
         // Story 72-9: these routes have no :projectId, so the deleted-project gate cannot see them.
         inArray(
           machineUsers.projectId,
@@ -177,7 +180,7 @@ async function findMachineUserById(
       )
     )
     .limit(1)
-  return rows[0]
+  return withProjectId(rows)[0]
 }
 
 /** Parses page/limit query params and resolves a bounded offset, replying with 422 on either
@@ -329,7 +332,7 @@ export function machineUserRoutes(fastify: FastifyApp): Promise<void> {
 
       return {
         data: {
-          items: rows.map(toMachineUserSummary),
+          items: withProjectId(rows).map(toMachineUserSummary),
           ...buildPaginationMeta(pagination, Number(total)),
         },
       }
@@ -390,7 +393,13 @@ export function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       const [claimed] = await secureCtx.tx
         .update(machineUsers)
         .set({ deactivatedAt })
-        .where(and(eq(machineUsers.id, params.machineUserId), isNull(machineUsers.deactivatedAt)))
+        .where(
+          and(
+            eq(machineUsers.id, params.machineUserId),
+            isNull(machineUsers.deactivatedAt),
+            isAdminProvisioned
+          )
+        )
         .returning({ id: machineUsers.id, deactivatedAt: machineUsers.deactivatedAt })
 
       let result: { id: string; deactivatedAt: Date | null }

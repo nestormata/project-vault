@@ -41,6 +41,8 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'checkExtensionEmitters',
         // Story 69.18 — project-write role conformance helper.
         'checkProjectWriteRoles',
+        // Story 73.9 — credential-sharing machine-user mode conformance helper.
+        'checkCredentialSharingMachineUserMode',
         'isExtensionApiVersionSupported',
         'registerExtension',
         // Story 34.1 — new HostServices.monitoring hook-specific error classes (AC2/AC3/AC7).

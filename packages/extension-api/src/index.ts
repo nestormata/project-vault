@@ -177,6 +177,8 @@ export type {
   CredentialSharingListParams,
   CredentialSharingListResult,
   CredentialSharingOrgListParams,
+  CredentialSharingProvisionMachineUserParams,
+  CredentialSharingProvisionMachineUserResult,
   CredentialSharingRevealResult,
   CredentialSharingRevokeShareParams,
   CredentialSharingRevokeShareResult,
@@ -316,6 +318,9 @@ export { isExtensionApiVersionSupported, registerExtension } from './register-ex
 export type {
   BackgroundPromiseConformanceResult,
   ConformanceEmitter,
+  CredentialSharingMachineUserMode,
+  CredentialSharingMachineUserModeReason,
+  CredentialSharingMachineUserModeResult,
   EmitterConformanceResult,
   ProjectWriteRoleConformanceResult,
   ProjectWriteRoleFinding,
@@ -324,6 +329,7 @@ export type {
 export {
   assertExtensionEmittersContained,
   checkBackgroundPromisesHandled,
+  checkCredentialSharingMachineUserMode,
   checkExtensionEmitters,
   checkProjectWriteRoles,
 } from './conformance.js'

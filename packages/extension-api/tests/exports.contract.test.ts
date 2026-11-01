@@ -53,6 +53,7 @@ describe('@project-vault/extension-api public value exports', () => {
       'UI_PANEL_SLOT_NAME_PATTERN',
       'assertExtensionEmittersContained',
       'checkBackgroundPromisesHandled',
+      'checkCredentialSharingMachineUserMode',
       'checkExtensionEmitters',
       'checkProjectWriteRoles',
       'defineExtension',

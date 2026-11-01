@@ -630,6 +630,37 @@ admin-equivalent access can learn anyway.
   3.37.0 behaviour (no step-up). A scheduled task on 3.38.0 or later cannot create shares unattended:
   it needs a human's `actingUserId` and live code.
 
+**Host-managed machine user (since 3.39.0).** `createExternalShare`, `revokeShare` and
+`supersedeSharesForRotation` are attributed to a Project Vault machine user. Until 3.39.0 that had to
+be a machine user an admin created in a project, named exactly like your manifest, with a live API
+key; without one each call throws `CredentialSharingNoMachineUserError`. When the manifest declares
+`apiVersion` 3.39.0 or later the host resolves the attribution in this order:
+
+1. An admin-provisioned machine user with a live key and a known creator. Nothing changes for it:
+   the share's `shared_by` is that creator and the audit row names the key.
+2. Otherwise the host-managed machine user of the organization, which the host creates in the same
+   transaction if it does not exist yet (audited once as `machine_user.created`, actor type
+   `extension`, `trigger: 'lazy:<method>'`).
+3. Otherwise (a deactivated host-managed machine user, an unknown organization)
+   `CredentialSharingNoMachineUserError`.
+
+- `credentialSharing.provisionMachineUser({ organizationId })` creates it up front and returns
+  `{ machineUserId, created }`. It is idempotent and safe to call concurrently. You do not need to
+  call it: the three write methods provision lazily.
+- The host-managed machine user has no project, no human creator and role `viewer`, and it never
+  holds a key: nothing can authenticate as it, nothing expires or goes dormant, and no key, hash or
+  token is ever issued or returned. Project Vault's machine-user routes answer its id as unknown.
+- Attribution: the share's `sharedBy` is the validated acting user (the step-up already requires
+  one), and every share audit row carries the host-managed `machineUserId` with `keyId: null`.
+- A call that throws (a refused step-up, an invalid acting user) rolls the new machine user back. A
+  call that returns a non-ok result (for example `credential_not_found`) keeps it.
+- A manifest that declares 3.38.0 or older, or a version the host cannot parse, keeps the old rule
+  and never uses a host-managed machine user, even one another call created.
+- Kill switch: a deactivated host-managed machine user is never re-created. Project Vault has no
+  endpoint to deactivate one yet, so to stop it acting, disable the extension.
+- `checkCredentialSharingMachineUserMode(manifest)` returns `host-managed` or
+  `admin-provisioned-only` with the reason; assert the mode you expect in your CI.
+
 **Handler context.** An authenticated, organization-scoped route gets
 `ctx = { auth, tx, onPostCommit, audit }`. `ctx.tx` is Project Vault's request transaction (a
 drizzle `PgTransaction` at runtime, with `app.current_org_id` set, so RLS limits every query to
@@ -830,7 +861,7 @@ session. The declaration is plain data and is validated at registration:
 - A write that carries an `idempotencyKey` is limited to a 1 MiB audit entry (the payload as stored); over it the write
   fails with `payload_too_large`, even though the same payload without a key is accepted. Split or trim large payloads.
 
-##### Host version compatibility of the audit-write contract (3.28.0 to 3.38.0)
+##### Host version compatibility of the audit-write contract (3.28.0 to 3.39.0)
 
 What a consumer gets in each release, and what an older host does with it. "Ignores" means the field is accepted
 and has no effect.
@@ -845,6 +876,7 @@ and has no effect.
 | 3.36.0 | `CredentialSharingShareRecord.sharedBy`, `viewer` / `actor` / `actingUserId` on credential sharing                          | Not relied on: confirm the host version first.                                         |
 | 3.37.0 | `security.minimumProjectRole`, the project-role default, `checkProjectWriteRoles`                                           | An older host ignores the field and gates no extension route: check the host version.  |
 | 3.38.0 | `createExternalShare({ totpCode })`, `CredentialSharingStepUpRequiredError`, `CredentialSharingTotpEnrollmentRequiredError` | An older host ignores `totpCode` and checks no step-up: check the host version.        |
+| 3.39.0 | `provisionMachineUser`, lazy host-managed machine user, `checkCredentialSharingMachineUserMode`                             | No `provisionMachineUser`; writes need an admin key.                                   |
 
 ```ts
 import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'
