@@ -117,7 +117,7 @@ function existingOrFail(
   logger: Logger
 ): ProvisionedMachineUser {
   // D6: a deactivated host-managed row is never resurrected.
-  if (!row || row.deactivatedAt !== null) failNoMachineUser(logger, scope)
+  if (row?.deactivatedAt !== null) failNoMachineUser(logger, scope)
   return { machineUserId: row.id, created: false }
 }
 
