@@ -10,6 +10,7 @@ export const NAV_RENDERER_FILES = [
   'src/lib/navigation/**/*.svelte',
   'src/lib/components/shell/AppShell.svelte',
   'src/lib/components/shell/Footer.svelte',
+  'src/lib/components/shell/GlobalSearch.svelte',
   'src/lib/components/shell/NotificationsLink.svelte',
   'src/lib/components/shell/PrimaryNav.svelte',
   'src/lib/components/shell/ProjectNav.svelte',
