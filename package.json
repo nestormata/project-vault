@@ -76,8 +76,8 @@
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@project-vault/db": "workspace:*",
-    "@stryker-mutator/core": "^10.0.0",
-    "@stryker-mutator/vitest-runner": "^10.0.0",
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/vitest-runner": "^10.1.1",
     "audit-ci": "^7.1.0",
     "drizzle-orm": "^0.45.4",
     "eslint": "^10.13.0",
@@ -90,7 +90,7 @@
     "semver": "^7.8.5",
     "tsx": "4.23.15",
     "turbo": "latest",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.5"
   }
 }
