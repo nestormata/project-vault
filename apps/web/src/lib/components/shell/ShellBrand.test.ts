@@ -1,4 +1,3 @@
-import { m } from '$lib/paraglide/messages.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import ShellBrand from './ShellBrand.svelte'
