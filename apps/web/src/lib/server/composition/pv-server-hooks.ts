@@ -28,6 +28,12 @@ function escapeHtml(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
+function substituteHtmlPlaceholders(html: string, locale: string): string {
+  return html
+    .replace('%paraglide.lang%', locale)
+    .replace('%brand.name%', () => escapeHtml(m.brand_name()))
+}
+
 function withMutableHeaders(response: Response): Response {
   return new Response(response.body, {
     status: response.status,
@@ -178,9 +184,7 @@ export function createPvHandle({ apiBaseUrl, protectedPaths }: PvHandleOptions):
             ...opts,
             transformPageChunk: async (chunk) => {
               const html = (await opts?.transformPageChunk?.(chunk)) ?? chunk.html
-              return html
-                .replace('%paraglide.lang%', locale)
-                .replace('%brand.name%', () => escapeHtml(m.brand_name()))
+              return substituteHtmlPlaceholders(html, locale)
             },
           }),
       })

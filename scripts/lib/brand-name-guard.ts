@@ -175,7 +175,7 @@ export function checkBrandNameGuard(webRoot: string): BrandNameResult {
   const messagesDir = join(webRoot, 'messages')
   const catalogues = listNames(messagesDir)
     .filter((name) => name.endsWith('.json') && statPath(join(messagesDir, name)).isFile())
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
   for (const name of catalogues) {
     problems.push(...messageProblems(`messages/${name}`, readText(join(messagesDir, name))))
   }
