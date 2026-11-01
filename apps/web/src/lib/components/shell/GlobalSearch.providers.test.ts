@@ -222,7 +222,7 @@ describe('GlobalSearch results providers (Story 72.18)', () => {
     const { registry } = mountWith([])
     registry.register({ id: 'late', search: async () => [tenant] })
     await typeQuery('acme')
-    await findOption('Acme Holdings')
+    expect(await findOption('Acme Holdings')).toContain('Acme Holdings')
   })
 
   it('an unregistered provider is no longer asked', async () => {

@@ -115,13 +115,14 @@ export function runSearchProvider(
       if (!Array.isArray(answer)) finish({ status: 'failed' })
       else finish({ status: 'ok', results: dedupeById(answer.filter(isValidResult)) })
     }
-    try {
-      provider.search(query, { signal: controller.signal }).then(settle, () => {
+    const run = async () => {
+      try {
+        settle(await provider.search(query, { signal: controller.signal }))
+      } catch {
         finish({ status: 'failed' })
-      })
-    } catch {
-      finish({ status: 'failed' })
+      }
     }
+    void run()
   })
 }
 
