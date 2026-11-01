@@ -22,7 +22,7 @@ describeEachAppearance('M6 message overlay: shell tagline', (appearance) => {
   }) => {
     await seedOrgOwner(context, 'm6-tagline')
 
-    await gotoHydrated(page, '/dashboard', page.getByRole('heading', { name: 'Secret overview' }))
+    await gotoHydrated(page, '/dashboard', page.getByText(PACK_TAGLINE, { exact: true }))
     await expectAppearanceApplied(page, appearance)
 
     await expect(page.getByText(PACK_TAGLINE, { exact: true })).toBeVisible()
