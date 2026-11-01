@@ -11,8 +11,7 @@ import { checkOverlayableMessagesGuard } from './lib/overlayable-messages-guard.
 import { reportGuard } from './lib/nav-guards.js'
 
 export function run(args: readonly string[]): number {
-  const index = args.indexOf('--web')
-  const webRoot = resolve(index === -1 ? 'apps/web' : (args[index + 1] ?? 'apps/web'))
+  const webRoot = resolve(args.find((_, index) => args[index - 1] === '--web') ?? 'apps/web')
   const result = checkOverlayableMessagesGuard(webRoot)
   const ok = `check-overlayable-messages: ${result.keys} keys x ${result.locales} locales, ${result.tests} unit tests scanned — OK`
   return reportGuard(result.problems, ok, 'overlayable messages')
