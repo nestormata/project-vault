@@ -207,16 +207,27 @@ export interface CredentialSharingMachineUserModeResult {
 
 const CANONICAL_VERSION = /^(\d+)\.(\d+)\.(\d+)$/
 
-/** `MAJOR.MINOR.PATCH` as one sortable number, or null when it is not exactly three numbers. */
-function canonicalVersionRank(version: string): number | null {
+type VersionTuple = readonly [number, number, number]
+
+/** `MAJOR.MINOR.PATCH` as numbers, or null when it is not exactly three numbers. */
+function parseCanonicalVersion(version: string): VersionTuple | null {
   const match = CANONICAL_VERSION.exec(version)
   if (!match) return null
   const [, major = '0', minor = '0', patch = '0'] = match
-  return Number(major) * 1_000_000 + Number(minor) * 1_000 + Number(patch)
+  return [Number(major), Number(minor), Number(patch)]
+}
+
+function isAtLeast(
+  [major, minor, patch]: VersionTuple,
+  [floorMajor, floorMinor, floorPatch]: VersionTuple
+): boolean {
+  if (major !== floorMajor) return major > floorMajor
+  if (minor !== floorMinor) return minor > floorMinor
+  return patch >= floorPatch
 }
 
 /** The first contract version whose credential-sharing writes get a host-managed machine user. */
-const HOST_MANAGED_MACHINE_USER_SINCE = canonicalVersionRank('3.39.0') ?? 0
+const HOST_MANAGED_MACHINE_USER_SINCE: VersionTuple = [3, 39, 0]
 
 /**
  * Story 73.9 — answers the host's own rule for the manifest's declared `apiVersion`. `host-managed`
@@ -230,9 +241,9 @@ const HOST_MANAGED_MACHINE_USER_SINCE = canonicalVersionRank('3.39.0') ?? 0
 export function checkCredentialSharingMachineUserMode(manifest: {
   apiVersion: string
 }): CredentialSharingMachineUserModeResult {
-  const rank = canonicalVersionRank(manifest.apiVersion)
-  if (rank === null) return { mode: 'admin-provisioned-only', reason: 'unparsable_version' }
-  return rank >= HOST_MANAGED_MACHINE_USER_SINCE
+  const version = parseCanonicalVersion(manifest.apiVersion)
+  if (version === null) return { mode: 'admin-provisioned-only', reason: 'unparsable_version' }
+  return isAtLeast(version, HOST_MANAGED_MACHINE_USER_SINCE)
     ? { mode: 'host-managed', reason: 'declared_since' }
     : { mode: 'admin-provisioned-only', reason: 'legacy_contract' }
 }

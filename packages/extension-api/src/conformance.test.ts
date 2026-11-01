@@ -169,7 +169,7 @@ describe('checkCredentialSharingMachineUserMode (Story 73.9)', () => {
     }
   )
 
-  it.each(['3.38.0', '3.38.9', '3.22.0', '2.99.99'])(
+  it.each(['3.38.0', '3.38.9', '3.38.1000', '3.22.0', '2.99.99', '2.1000000.0'])(
     '%s keeps admin-provisioned machine users only',
     (apiVersion) => {
       expect(checkCredentialSharingMachineUserMode({ apiVersion })).toEqual({
