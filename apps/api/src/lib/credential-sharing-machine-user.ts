@@ -28,6 +28,9 @@ export type ProvisionedMachineUser = { machineUserId: string; created: boolean }
 
 type MachineUserScope = { organizationId: string; extensionName: string; methodName: string }
 
+/** `machine_users_name_len_check`: `char_length(name) BETWEEN 1 AND 128`. */
+const MACHINE_USER_NAME_MAX_LENGTH = 128
+
 /**
  * Every fail-closed path logs the same warn (AC-7) and throws the one existing error, whatever the
  * cause, so the error is no oracle for org existence beyond what the facade already exposes (D5).
@@ -131,6 +134,9 @@ export async function provisionHostManagedMachineUser(
   scope: MachineUserScope & { trigger: string },
   logger: Logger
 ): Promise<ProvisionedMachineUser> {
+  // The manifest name pattern has no length bound, but `machine_users_name_len_check` does: a name
+  // it would refuse fails closed here instead of surfacing a raw CHECK violation.
+  if (scope.extensionName.length > MACHINE_USER_NAME_MAX_LENGTH) failNoMachineUser(logger, scope)
   if (!(await organizationExists(tx, scope.organizationId))) failNoMachineUser(logger, scope)
 
   const existing = await findHostManaged(tx, scope)

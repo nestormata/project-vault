@@ -272,6 +272,17 @@ describe('host-managed credential-sharing machine user — real Postgres (Story 
       expect(logCapture.lines.join('')).toContain('credential_sharing_host.no_machine_user')
     })
 
+    it('fails closed for a manifest name longer than a machine-user name may be', async () => {
+      const org = await newOrg('long-name')
+      const longName = `com.${'a'.repeat(125)}`
+      expect(longName).toHaveLength(129)
+      const host = buildCredentialSharingHost({ ...CURRENT, name: longName }, logger)
+      await expect(host.provisionMachineUser({ organizationId: org.orgId })).rejects.toEqual(
+        new CredentialSharingNoMachineUserError('provisionMachineUser')
+      )
+      expect(await hostManagedRows(org.orgId)).toEqual([])
+    })
+
     it('goes through the per-extension in-flight cap', async () => {
       const org = await newOrg('capped')
       const host = buildCredentialSharingHost(CURRENT, logger, { maxInFlight: 0 })
