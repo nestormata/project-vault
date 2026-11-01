@@ -9,6 +9,16 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Added
+
+- **Web: the shell header tagline is the `shell_brand_tagline` message** (Story 72.17, CentralizeMe
+  request R2). `ShellBrand` renders `m.shell_brand_tagline()` instead of a hard-coded sentence; the
+  default text in `en` and `es` is unchanged ("Run complex projects. Miss nothing."), so PV renders
+  exactly as before. A host changes it by overlaying that one key in its pack `messages/<locale>.json`,
+  with no `ShellBrand` replacement. Only the shell header is covered: the auth pages and the public
+  home still carry the same sentence as fixed text. A host that still replaces `ShellBrand.svelte` sees its
+  `hostSha256` change with this release and runs `--accept-host` until it drops the replacement.
+
 ## [2.0.2] - 2026-10-31
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:2.0.2`
