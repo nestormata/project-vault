@@ -457,7 +457,7 @@ async). Behaviour, all pinned by `GlobalSearch.providers.test.ts`, `search-provi
 - **Failure and time.** A provider that rejects, throws, returns a non-array or does not answer within `timeoutMs`
   (its `signal` is aborted) shows one calm status line, "Some results could not be loaded.", and never an unhandled
   rejection or console output; other providers and the native results are unaffected. Malformed results (no `id`,
-  `label` or `group`, or neither or both of `href` and `action`) are dropped. An `action` that throws keeps the palette
+  `label` or `group`, or neither or both of `href` and `action`, an `href` that is not an app path starting with a single `/`, a repeated `id`) are dropped. An `action` that throws keeps the palette
   open with "That action could not be completed. Try again." A superseded query or a closed palette drops late answers.
 - **Where the registry lives.** `AppLayoutSearch` creates one registry per mounted layout and provides it by Svelte
   context; `registerSearchProvider` registers in `onMount` (never during SSR, never in module state shared between
