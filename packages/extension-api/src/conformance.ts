@@ -193,3 +193,46 @@ export function checkProjectWriteRoles(manifest: {
     )
   return { ok: routes.every((route) => route.ungated === null), routes }
 }
+
+/** How the host attributes this extension's credential-sharing writes (Story 73.9). */
+export type CredentialSharingMachineUserMode = 'host-managed' | 'admin-provisioned-only'
+
+export type CredentialSharingMachineUserModeReason =
+  'declared_since' | 'legacy_contract' | 'unparsable_version'
+
+export interface CredentialSharingMachineUserModeResult {
+  readonly mode: CredentialSharingMachineUserMode
+  readonly reason: CredentialSharingMachineUserModeReason
+}
+
+const CANONICAL_VERSION = /^(\d+)\.(\d+)\.(\d+)$/
+
+/** `MAJOR.MINOR.PATCH` as one sortable number, or null when it is not exactly three numbers. */
+function canonicalVersionRank(version: string): number | null {
+  const match = CANONICAL_VERSION.exec(version)
+  if (!match) return null
+  const [, major = '0', minor = '0', patch = '0'] = match
+  return Number(major) * 1_000_000 + Number(minor) * 1_000 + Number(patch)
+}
+
+/** The first contract version whose credential-sharing writes get a host-managed machine user. */
+const HOST_MANAGED_MACHINE_USER_SINCE = canonicalVersionRank('3.39.0') ?? 0
+
+/**
+ * Story 73.9 — answers the host's own rule for the manifest's declared `apiVersion`. `host-managed`
+ * (3.39.0 or later): when no admin-provisioned machine user with a live key exists, the host
+ * provisions a keyless, org-scoped one and `createExternalShare` / `revokeShare` /
+ * `supersedeSharesForRotation` proceed. `admin-provisioned-only`: those methods throw
+ * `CredentialSharingNoMachineUserError` until an admin creates a machine user named after the
+ * extension and issues it a key. An unparsable version is never granted the new mode. Assert the
+ * mode you expect in the extension's CI.
+ */
+export function checkCredentialSharingMachineUserMode(manifest: {
+  apiVersion: string
+}): CredentialSharingMachineUserModeResult {
+  const rank = canonicalVersionRank(manifest.apiVersion)
+  if (rank === null) return { mode: 'admin-provisioned-only', reason: 'unparsable_version' }
+  return rank >= HOST_MANAGED_MACHINE_USER_SINCE
+    ? { mode: 'host-managed', reason: 'declared_since' }
+    : { mode: 'admin-provisioned-only', reason: 'legacy_contract' }
+}

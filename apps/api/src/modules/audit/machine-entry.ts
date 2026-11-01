@@ -18,7 +18,9 @@ export type MachineAuditFields = {
   payload: Record<string, unknown>
   /** Story 7.2 D5 — the machine actor's identity lives in the payload, not a new indexed column. */
   machineUserId: string
-  keyId: string
+  /** Story 73.9 (D3) — `null` for a host-managed machine user, which never holds a key. The
+   * payload key is still written, so readers see `keyId: null`, never a missing key. */
+  keyId: string | null
   // Story 13.3 — see HumanAuditFields.revealedFields; same first-class column, populated for the
   // machine reveal route's own `?field=` support.
   revealedFields?: string[]
