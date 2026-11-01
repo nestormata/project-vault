@@ -4,6 +4,7 @@ import { apiKeys, machineUsers, organizations } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
 import type { BossService } from '../lib/boss.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
+import { withProjectId } from '../modules/machine-users/admin-provisioned.js'
 import {
   createOrgAdminNotificationEntries,
   sendNotificationJobs,
@@ -113,6 +114,7 @@ function fetchDormantKeys(
           or(isNull(apiKeys.dormancySnoozedUntil), sql`${apiKeys.dormancySnoozedUntil} < now()`)
         )
       )
+      .then(withProjectId)
   )
 }
 
