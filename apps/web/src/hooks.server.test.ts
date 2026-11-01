@@ -299,7 +299,9 @@ describe('hooks.server handle', () => {
           await opts?.transformPageChunk?.({ html: '<title>%brand.name%</title>' })
         ) as Response
     )
-    const spy = vi.spyOn(m, 'brand_name').mockReturnValue('A&B <i> $& $$ Safe')
+    const spy = vi
+      .spyOn(m, 'brand_name')
+      .mockReturnValue('A&B <i> $& $$ Safe' as ReturnType<typeof m.brand_name>)
 
     const response = await handle({ event, resolve: echoResolve } as never)
 
