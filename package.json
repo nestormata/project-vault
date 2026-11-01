@@ -53,6 +53,7 @@
     "check-monolithic-regions": "tsx scripts/check-monolithic-regions.ts",
     "check-route-regions": "tsx scripts/check-route-regions.ts",
     "check-nav-ids": "tsx scripts/check-nav-ids.ts",
+    "check-overlayable-messages": "tsx scripts/check-overlayable-messages.ts",
     "check-nav-surfaces": "tsx scripts/check-nav-surfaces.ts",
     "check-migration-compatibility": "tsx scripts/migration-compatibility-check.ts",
     "check-public-safety": "tsx scripts/check-public-safety.ts",

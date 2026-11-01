@@ -9,6 +9,18 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Changed
+
+- **Web: PV's unit tests no longer write the text of an overlayable message key** (Story 72.19,
+  CentralizeMe request R4). A host that overlays `auth_login_page_title`, `auth_login_page_description`,
+  `auth_register_page_title` or `shell_brand_tagline` (in `en`, `es` or any locale) keeps PV's shipped
+  tests green over the composed tree, with no `excludedPvTests` entry. The login, register, shell brand
+  and app shell tests read the message instead of the sentence, and the keys are listed as data in
+  `src/lib/i18n/overlayable-message-keys.ts`. The `auth_handoff_confirm_prompt` key CM listed no longer
+  exists (the nonce-bound handoff has no Confirm click, Story 73.1). `pnpm check-overlayable-messages`
+  guards the rule, and the mock UI pack overlays every listed key. No runtime or API change; a host that
+  overrides one of those test files sees its `hostSha256` change with this release.
+
 ### Added
 
 - **Web: the shell header tagline is the `shell_brand_tagline` message** (Story 72.17, CentralizeMe

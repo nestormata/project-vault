@@ -64,7 +64,7 @@ describe('/(app) +layout.svelte', () => {
   // Story 63.2 AC-4: the dashboard page (owner of the Dashboard title) is not mounted while the
   // wizard is open, so the shell must supply the title instead of leaving the previous page's.
   it('titles the tab "Dashboard | Project Vault" while the onboarding wizard is open', () => {
-    document.title = 'Sign in | Project Vault'
+    document.title = 'Previous page | Test'
     render(Layout, {
       props: {
         data: appLayoutData({

@@ -52,6 +52,24 @@ pv-compose  ->  paraglide compile  ->  svelte-kit sync  ->  pv-verify --only tsc
    the shell header, `ShellBrand.svelte`; Story 72.17). The default is PV's own sentence in `en` and
    `es`; overlaying the key replaces the text with no component replacement. It covers the shell
    header only; the auth pages and the public home keep the fixed sentence.
+
+   **Overlayable message keys (Story 72.19, CentralizeMe request R4).** PV's list is
+   `OVERLAYABLE_MESSAGE_KEYS` in `src/lib/i18n/overlayable-message-keys.ts` (shipped in `web-host`):
+   `auth_login_page_title`, `auth_login_page_description`, `auth_register_page_title` and
+   `shell_brand_tagline`. Overlaying any of them, in any locale, leaves PV's shipped unit tests that
+   run over the composed tree green, with no entry in `excludedPvTests` and no pack-side exclusion:
+   a PV test never writes the default text of one of these keys. It reads the message
+   (`m.<key>()`, or `overlayableMessage(key, locale)` from `$lib/test/overlayable-messages` for a
+   given locale), and a markup oracle that has to keep the sentence masks it (`maskOverlayable`,
+   which stores the token `%%<key>%%`). `pnpm check-overlayable-messages` fails a unit test that
+   writes the text of a listed key (raw or as a regular-expression literal) and fails when the mock UI
+   pack stops overlaying a listed key; the pack's `messages/es.json` and `messages/en.json` overlay all
+   of them between them, so the composed run in CI is the proof. The oracles valid only on PV's own
+   tree (`PV_TREE_ONLY_TESTS`) are not shipped and are the one place the default text may still appear
+   in a stored snapshot. A key outside the list is not a contract: overlaying it may turn a PV test
+   red, so add it to the list (a minor change, with its tests moved off the literal) before relying
+   on it.
+
 7. **Lock.** `composition.lock.json` is written atomically.
 
 `compose()` is a pure `plan()` (reads, computes, writes nothing) plus an `apply()` that builds the tree

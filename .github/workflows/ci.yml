@@ -264,6 +264,11 @@ jobs:
           pnpm check-nav-surfaces &&
           pnpm vitest run scripts/check-nav-surfaces.test.ts
 
+      - name: Check overlayable messages are not pinned by unit tests (Story 72.19)
+        run: |
+          pnpm check-overlayable-messages &&
+          pnpm vitest run scripts/check-overlayable-messages.test.ts
+
       - name: Check native-credential surface (Story 23.2 AC19)
         run: pnpm check-native-credential-surface
 

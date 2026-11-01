@@ -250,6 +250,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-nav-ids.test.ts
 	pnpm check-nav-surfaces
 	pnpm vitest run scripts/check-nav-surfaces.test.ts
+	@# Story 72.19: PV unit tests do not write the text of an overlayable message key; the mock pack overlays each one
+	pnpm check-overlayable-messages
+	pnpm vitest run scripts/check-overlayable-messages.test.ts
 	pnpm vitest run scripts/extension-authoring-docs.test.ts # Story 59.2 AC-3 authoring-doc drift guard
 	pnpm vitest run scripts/check-delegation-alert-rules.test.ts # Story 71.9: delegation alert rules, runbook and monitoring docs
 	pnpm check-native-credential-surface

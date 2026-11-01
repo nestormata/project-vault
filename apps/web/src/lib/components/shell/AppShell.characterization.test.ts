@@ -14,6 +14,7 @@ vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/dashboard'
 
 import type { AuthUser } from '$lib/api/auth.js'
 import { testAuthUser } from '$lib/test/page-data.js'
+import { maskOverlayable } from '$lib/test/overlayable-messages.js'
 import AppShell from './AppShell.svelte'
 
 // Footer prints the current year; pin it so the snapshot does not rot on 1 January.
@@ -45,7 +46,10 @@ function markup(props: Case): string {
       ...rest,
     },
   })
-  return withoutComments(container).innerHTML.replaceAll('><', '>\n<')
+  // Story 72.19: the tagline is an overlayable message, so the snapshot holds its token, not its text.
+  return maskOverlayable(withoutComments(container).innerHTML.replaceAll('><', '>\n<'), [
+    'shell_brand_tagline',
+  ])
 }
 
 // Svelte's hydration anchors are comment nodes; drop them by node type, not with a regexp over HTML.
@@ -94,7 +98,7 @@ describe('AppShell characterization (AC-10)', () => {
       <div>
       <div class="flex items-center gap-2">
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <a class="text-xl font-bold text-brand-600" href="/dashboard">Project Vault</a>
-      </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
+      </div> <p class="text-sm text-slate-600">%%shell_brand_tagline%%</p>
       </div> <nav aria-label="Primary navigation" data-testid="primary-nav" class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
       <button type="button" class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 md:hidden" aria-label="Search (⌘K)" title="Search (⌘K)">
       <span aria-hidden="true">⌕</span> <span class="sr-only">Search</span> <kbd class="hidden rounded border border-slate-300 px-1 text-xs sm:inline" aria-hidden="true">⌘K</kbd>
@@ -144,7 +148,7 @@ describe('AppShell characterization (AC-10)', () => {
       <div>
       <div class="flex items-center gap-2">
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <p class="text-xl font-bold text-brand-600">Project Vault</p>
-      </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
+      </div> <p class="text-sm text-slate-600">%%shell_brand_tagline%%</p>
       </div>  <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600"> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <details class="relative" data-testid="account-menu">
       <summary class="cursor-pointer list-none rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800">Account menu <span aria-hidden="true">▾</span>
       </summary> <div class="mt-1 flex min-w-48 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg md:absolute md:right-0 md:z-10">
@@ -170,7 +174,7 @@ describe('AppShell characterization (AC-10)', () => {
       <div>
       <div class="flex items-center gap-2">
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <a class="text-xl font-bold text-brand-600" href="/dashboard">Project Vault</a>
-      </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
+      </div> <p class="text-sm text-slate-600">%%shell_brand_tagline%%</p>
       </div> <nav aria-label="Primary navigation" data-testid="primary-nav" class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
       <button type="button" class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 md:hidden" aria-label="Search (⌘K)" title="Search (⌘K)">
       <span aria-hidden="true">⌕</span> <span class="sr-only">Search</span> <kbd class="hidden rounded border border-slate-300 px-1 text-xs sm:inline" aria-hidden="true">⌘K</kbd>
@@ -221,7 +225,7 @@ describe('AppShell characterization (AC-10)', () => {
       <div>
       <div class="flex items-center gap-2">
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <a class="text-xl font-bold text-brand-600" href="/dashboard">Project Vault</a>
-      </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
+      </div> <p class="text-sm text-slate-600">%%shell_brand_tagline%%</p>
       </div> <nav aria-label="Primary navigation" data-testid="primary-nav" class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
       <button type="button" class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 md:hidden" aria-label="Search (⌘K)" title="Search (⌘K)">
       <span aria-hidden="true">⌕</span> <span class="sr-only">Search</span> <kbd class="hidden rounded border border-slate-300 px-1 text-xs sm:inline" aria-hidden="true">⌘K</kbd>
@@ -272,7 +276,7 @@ describe('AppShell characterization (AC-10)', () => {
       <div>
       <div class="flex items-center gap-2">
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <a class="text-xl font-bold text-brand-600" href="/dashboard">Project Vault</a>
-      </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
+      </div> <p class="text-sm text-slate-600">%%shell_brand_tagline%%</p>
       </div> <nav aria-label="Primary navigation" data-testid="primary-nav" class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
       <button type="button" class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 md:hidden" aria-label="Search (⌘K)" title="Search (⌘K)">
       <span aria-hidden="true">⌕</span> <span class="sr-only">Search</span> <kbd class="hidden rounded border border-slate-300 px-1 text-xs sm:inline" aria-hidden="true">⌘K</kbd>
@@ -322,7 +326,7 @@ describe('AppShell characterization (AC-10)', () => {
       <div>
       <div class="flex items-center gap-2">
       <img alt="" width="276" height="240" class="h-8 w-auto" src="/logo-mark.png"> <p class="text-xl font-bold text-brand-600">Project Vault</p>
-      </div> <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
+      </div> <p class="text-sm text-slate-600">%%shell_brand_tagline%%</p>
       </div>  <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600"> <span>Role: admin</span> <span class="max-w-full break-all">Org: Acme Inc</span> <details class="relative" data-testid="account-menu">
       <summary class="cursor-pointer list-none rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800">Account menu <span aria-hidden="true">▾</span>
       </summary> <div class="mt-1 flex min-w-48 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg md:absolute md:right-0 md:z-10">
