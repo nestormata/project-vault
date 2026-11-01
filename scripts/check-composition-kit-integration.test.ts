@@ -99,7 +99,7 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
       )
       // Code review 68-6: AC-8 derived ids vs Kit's route list, the remaining AC-9 rows, and the
       // header-policy delta printed by composed-hooks-init.test.ts in the composed tree (Q3).
-      expect(output).toContain('OK: 5 derived route ids are all Kit routes')
+      expect(output).toContain('OK: 6 derived route ids are all Kit routes')
       expect(output).toContain(
         'OK: protectedPaths add/remove, CM shares override, refreshed cookies (incl. an immutable proxied response) and the rerouted action'
       )
