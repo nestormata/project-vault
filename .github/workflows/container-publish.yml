@@ -180,6 +180,7 @@ jobs:
           name: digest-${{ matrix.image.name }}-${{ matrix.platform.arch }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
+          overwrite: true
           retention-days: 30
 
   # Merges the per-platform digests of one image into a manifest list and only then creates the

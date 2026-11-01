@@ -483,6 +483,17 @@ describe('Story 75.1: native platform builds and a tag-after-both-platforms merg
     expect(createIndex).toBeGreaterThan(rejectIndex)
   })
 
+  it('ties the uploaded digest artifact names to the download pattern', () => {
+    const upload = buildSteps.find((step) => /^actions\/upload-artifact@/.test(step.uses ?? ''))
+    const download = publishSteps.find((step) =>
+      /^actions\/download-artifact@/.test(step.uses ?? '')
+    )
+    expect(upload?.with?.name).toBe('digest-${{ matrix.image.name }}-${{ matrix.platform.arch }}')
+    expect(download?.with?.pattern).toBe('digest-${{ matrix.name }}-*')
+    expect(download?.with?.['merge-multiple']).toBe(true)
+    expect(upload?.with?.overwrite).toBe(true)
+  })
+
   it('requires exactly one digest per published platform before it creates any tag', () => {
     const expected = /EXPECTED_DIGESTS: '(\d+)'/.exec(workflowText())?.[1]
     expect(Number(expected)).toBe(PLATFORM_ARCHES.length)
