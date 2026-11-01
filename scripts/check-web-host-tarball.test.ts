@@ -215,6 +215,11 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
     expect(excluded.get('apps/web/src/lib/navigation/nav-not-security.test.ts')).toEqual([
       "pins PV's own hooks and (app) layout answers (Story 68.7); valid only on PV's tree",
     ])
+    // A pack adds (app) routes, so the hand-kept task-page classification holds on PV's tree only.
+    expect(
+      excluded.get('apps/web/src/lib/components/shell/shell-route-tree.test.ts')?.join(' ')
+    ).toMatch(/every \(app\) page PV ships/)
+    expect(result.shippedTests).toContain('apps/web/src/lib/components/shell/shell-variant.test.ts')
     for (const reasons of excluded.values()) expect(reasons.length).toBeGreaterThan(0)
   })
 
