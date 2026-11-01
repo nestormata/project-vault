@@ -48,6 +48,9 @@ pv-compose  ->  paraglide compile  ->  svelte-kit sync  ->  pv-verify --only tsc
    copy; CM files get `@source` lines. A pack `messages/<locale>.json` overrides PV's own message keys
    and adds locales PV lacks. CM's own strings are not merged (ADR 0007 decision 7); a key PV does not
    define is reported as a note.
+   Keys a host overlays for branding: `shell_brand_tagline` (the tagline under the product name in
+   the shell header, `ShellBrand.svelte`; Story 72.17). The default is PV's own sentence in `en` and
+   `es`; overlaying the key replaces the text with no component replacement.
 7. **Lock.** `composition.lock.json` is written atomically.
 
 `compose()` is a pure `plan()` (reads, computes, writes nothing) plus an `apply()` that builds the tree
