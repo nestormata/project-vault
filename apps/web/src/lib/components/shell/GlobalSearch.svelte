@@ -103,7 +103,7 @@
     return (providerRegistry?.providers ?? []).flatMap((provider) =>
       (providerResults[provider.id] ?? []).map((result): PaletteRow => ({
         group: 'provider',
-        id: `${provider.id}:${result.id}`,
+        id: `${provider.id.length}:${provider.id}:${result.id}`,
         heading: result.group,
         result,
       }))

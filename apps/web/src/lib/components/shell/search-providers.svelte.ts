@@ -57,15 +57,34 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
+/** An app path only ("/x", never "//host", a scheme or a backslash); else it goes through `action`. */
+function isAppPath(value: unknown): boolean {
+  return (
+    isNonEmptyString(value) &&
+    value.startsWith('/') &&
+    !value.startsWith('//') &&
+    !value.includes('\\')
+  )
+}
+
+function hasTarget(candidate: Record<string, unknown>): boolean {
+  const hasAction = typeof candidate.action === 'function'
+  if (candidate.href !== undefined && !isAppPath(candidate.href)) return false
+  return (candidate.href !== undefined) !== hasAction
+}
+
 function isValidResult(value: unknown): value is SearchProviderResult {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
-  if (!isNonEmptyString(candidate.id) || !isNonEmptyString(candidate.label)) return false
-  if (!isNonEmptyString(candidate.group)) return false
+  const texts = [candidate.id, candidate.label, candidate.group]
+  if (!texts.every(isNonEmptyString)) return false
   if (candidate.hint !== undefined && typeof candidate.hint !== 'string') return false
-  const hasHref = isNonEmptyString(candidate.href)
-  const hasAction = typeof candidate.action === 'function'
-  return hasHref !== hasAction
+  return hasTarget(candidate)
+}
+
+/** Keeps the first result of each id: duplicate ids would collide as keyed rows. */
+function dedupeById(results: SearchProviderResult[]): SearchProviderResult[] {
+  return results.filter((entry, at) => results.findIndex((other) => other.id === entry.id) === at)
 }
 
 /**
@@ -94,7 +113,7 @@ export function runSearchProvider(
     querySignal.addEventListener('abort', onQueryAbort, { once: true })
     const settle = (answer: unknown) => {
       if (!Array.isArray(answer)) finish({ status: 'failed' })
-      else finish({ status: 'ok', results: answer.filter(isValidResult) })
+      else finish({ status: 'ok', results: dedupeById(answer.filter(isValidResult)) })
     }
     try {
       provider.search(query, { signal: controller.signal }).then(settle, () => {

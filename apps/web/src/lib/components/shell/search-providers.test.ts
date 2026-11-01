@@ -108,6 +108,10 @@ describe('runSearchProvider (Story 72.18)', () => {
             { id: 'x', label: 'no target', group: 'Tenants' },
             { id: 'y', group: 'Tenants', href: '/y' },
             { id: 'z', label: 'both', group: 'Tenants', href: '/z', action },
+            { id: 'e1', label: 'external', group: 'Tenants', href: 'https://evil.example' },
+            { id: 'e2', label: 'proto-relative', group: 'Tenants', href: '//evil.example' },
+            { id: 'e3', label: 'script', group: 'Tenants', href: 'javascript:alert(1)' },
+            { id: 'r1', label: 'duplicate id', group: 'Tenants', href: '/dup' },
             null,
             'text',
           ] as unknown as SearchProviderResult[]

@@ -9,8 +9,8 @@ vi.mock('$app/state', () => ({ page: { data: { user: { orgRole: 'viewer', userId
 
 import { path } from '$lib/navigation/nav-render-test-helpers.js'
 import SearchProviderFill from '$lib/test/SearchProviderFill.test.svelte'
+import SearchProviderToggle from '$lib/test/SearchProviderToggle.test.svelte'
 import SearchProviderHarness from '$lib/test/SearchProviderHarness.test.svelte'
-import GlobalSearch from './GlobalSearch.svelte'
 import { installSearchFetchMock, searchResponse } from './global-search-test-helpers.js'
 
 afterEach(() => {
@@ -42,9 +42,10 @@ describe('AppLayoutSearch provider registration (Story 72.18)', () => {
   it('unmounting the fill unregisters the provider', async () => {
     installSearchFetchMock(() => searchResponse([], 'beta'))
     const search = vi.fn(async () => [])
-    const view = render(SearchProviderHarness, { props: { provider: { id: 'cm', search } } })
-    view.unmount()
-    render(GlobalSearch, { props: { open: true } })
+    const view = render(SearchProviderToggle, {
+      props: { provider: { id: 'cm', search }, filled: true },
+    })
+    await view.rerender({ filled: false })
     await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'zzz' } })
     await screen.findByText(/No results/, {}, { timeout: 2000 })
     expect(search).not.toHaveBeenCalled()
