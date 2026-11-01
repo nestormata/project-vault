@@ -9,25 +9,48 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
-## [2.0.1] - 2026-10-31
+## [2.0.2] - 2026-10-31
 
-Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:2.0.1`
-(aliases `2.0`, `2`, `latest`). The images change only in their release version (the image label
-and the version the api reports): no application code changed since 2.0.0. Extension API contract:
-unchanged, `@project-vault/extension-api@3.38.0`, and this host loads extensions whose manifest
-`apiVersion` is in `>=3.0.0 <=3.38.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). CLI:
-`pvault-2.0.1.mjs` on this release's assets. Build-time composition packages: this tag publishes
-`@project-vault/web-host@2.0.1` to npm's `next` dist-tag. Its compatibility manifest names
-`pvRelease` 2.0.1, the `api:2.0.1` image, extension-api 3.38.0 and kit 0.10.0. The kit is unchanged
+Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:2.0.2`
+(aliases `2.0`, `2`, `latest`). This release ships the code that 2.0.1 was meant to ship, because
+2.0.1 never finished publishing (see [2.0.1]). The images change only in their release version (the
+image label and the version the api reports): no application code changed since 2.0.0. Extension
+API contract: unchanged, `@project-vault/extension-api@3.38.0`, and this host loads extensions whose
+manifest `apiVersion` is in `>=3.0.0 <=3.38.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). CLI:
+`pvault-2.0.2.mjs` on this release's assets. Build-time composition packages: this tag publishes
+`@project-vault/web-host@2.0.2` to npm's `next` dist-tag. Its compatibility manifest names
+`pvRelease` 2.0.2, the `api:2.0.2` image, extension-api 3.38.0 and kit 0.10.0. The kit is unchanged
 and already on npm, so the release run skips it.
 
 ### Upgrade notes (read before `docker compose pull`)
 
 - **No operator action.** No migration, no environment-variable change and no behavior change:
-  `docker compose pull && docker compose up -d`. A consumer of `@project-vault/web-host` pins 2.0.1
-  and the `api:2.0.1` image together, as it pinned 2.0.0.
-- **web-host consumers whose composed tree adds `(app)` routes should move to 2.0.1.** The only
+  `docker compose pull && docker compose up -d`. A consumer of `@project-vault/web-host` pins 2.0.2
+  and the `api:2.0.2` image together, as it pinned 2.0.0.
+- **web-host consumers whose composed tree adds `(app)` routes should move to 2.0.2.** The only
   package change is one PV-tree-only test that no longer ships (see Fixed).
+- **Skip 2.0.1.** Do not pin any `2.0.1` image or `pvault-2.0.1.mjs`, and do not look for
+  `@project-vault/web-host@2.0.1`; use 2.0.2.
+
+### Fixed
+
+- **The PV tests web-host ships pass over a composed tree that adds `(app)` routes** (Story 72-22,
+  `@project-vault/web-host` PATCH). The shell route-tree classification moved to
+  `shell-route-tree.test.ts`, which is PV-tree-only and no longer ships; it failed CentralizeMe's
+  composed run on a pack route (`/projects/x/docs/new`) that PV never classified.
+
+## [2.0.1] - 2026-10-31
+
+**Not completed; use 2.0.2.** The `v2.0.1` tag exists (on `90b7c15e`) and so does its GitHub
+Release, but the release's container publish failed: an arm64 build hit a transient emulation crash
+(`qemu: uncaught target signal 4 (Illegal instruction)`), and the run was cancelled; it cannot go
+green on re-run. Some or all `ghcr.io/nestormata/project-vault/*:2.0.1` image tags may exist on
+GHCR, but they did not pass the release's scan and attestation gate as one set: do not use them.
+The `2.0`, `2` and `latest` aliases were never moved to 2.0.1. The release workflow rejects an
+existing immutable image tag, and a manual repair would still not publish web-host 2.0.1, so 2.0.1
+is abandoned rather than repaired. `@project-vault/web-host@2.0.1` was never published to npm. The
+Release's `pvault-2.0.1.mjs` asset and the public demo's 2.0.1 deploy carry the same code as 2.0.2;
+use `pvault-2.0.2.mjs`. Its drafted Fixed entry is kept below for the record.
 
 ### Fixed
 
@@ -1045,7 +1068,8 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.2.0`
 - The `fast-uri` transitive dependency is patched (CVE-2026-75899, CVE-2026-75931,
   CVE-2026-75975, CVE-2026-76172).
 
-[Unreleased]: https://github.com/nestormata/project-vault/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/nestormata/project-vault/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/nestormata/project-vault/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/nestormata/project-vault/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/nestormata/project-vault/compare/v1.6.0...v2.0.0
 [1.6.0]: https://github.com/nestormata/project-vault/compare/v1.5.0...v1.6.0
