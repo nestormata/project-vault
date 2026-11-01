@@ -23,8 +23,8 @@ export const TABS_INLINE_WHEN_NARROW = 3
 
 // A task page is a page whose job is finishing one form or flow (CM D-09: forms with a sticky action
 // bar). Its last path segment names the task. The bottom bar is not rendered there, so only one
-// fixed element is ever on screen. `shell-variant.test.ts` walks the real route tree to keep this
-// list honest when a route is added.
+// fixed element is ever on screen. `shell-route-tree.test.ts` walks the real route tree to keep
+// this list honest when a route is added.
 const TASK_SEGMENTS: ReadonlySet<string> = new Set(['new', 'import', 'rotate'])
 
 export function isTaskPage(pathname: string): boolean {
