@@ -40,14 +40,14 @@ export function readOverlayableKeys(webRoot: string): string[] | undefined {
   if (!pathExists(file)) return undefined
   const array = /OVERLAYABLE_MESSAGE_KEYS\s*=\s*\[([^\]]*)\]/.exec(readText(file))
   if (array === null) return undefined
-  return [...(array[1] ?? '').matchAll(/'([A-Za-z0-9_]+)'/g)].map((match) => match[1] ?? '')
+  return [...(array[1] ?? '').matchAll(/'(\w+)'/g)].map((match) => match[1] ?? '')
 }
 
 /** Locale name -> catalog, for every `<locale>.json` in `dir`. */
 function readCatalogs(dir: string): Map<string, Catalog> {
   const catalogs = new Map<string, Catalog>()
   if (!pathExists(dir)) return catalogs
-  for (const name of listNames(dir).sort()) {
+  for (const name of listNames(dir).sort((a, b) => a.localeCompare(b))) {
     if (!name.endsWith('.json')) continue
     const parsed = JSON.parse(readText(join(dir, name))) as Record<string, unknown>
     catalogs.set(name.slice(0, -'.json'.length), new Map(Object.entries(parsed)))
@@ -56,7 +56,7 @@ function readCatalogs(dir: string): Map<string, Catalog> {
 }
 
 function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
 }
 
 /** The ways a test can write `text`: as is, or escaped the way a regular-expression literal needs. */
