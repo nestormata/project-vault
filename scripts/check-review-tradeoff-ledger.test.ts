@@ -502,6 +502,113 @@ describe('scanReviewTradeoffLedger: "no deferred-work.md entry needed" (AC-4)', 
   })
 })
 
+describe('PR-only review pointers', () => {
+  const done = (key: string, content: string) =>
+    messages({
+      sprint: sprint([`${key}: done`]),
+      ledger: '',
+      stories: { [`${key}.md`]: content },
+    })
+
+  it('fails a review section whose only text points at the pull request, naming the story and line', () => {
+    expect(done(KEY, story('See the PR body "Independent review" section.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the PR body "Independent review" section.")`,
+    ])
+    expect(done(KEY, story('See PR #662.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See PR #662.")`,
+    ])
+  })
+
+  it('fails the same pointer when it sits outside a review heading', () => {
+    const content = '# Story\n\n## Dev Agent Record\n\n- Independent review: see PR body.\n'
+    expect(done(KEY, content)).toEqual([
+      `${KEY}: review text only points at the pull request ("Independent review: see PR body.")`,
+    ])
+  })
+
+  it('passes a verdict recorded in the file, a section that also lists findings, and a task mention', () => {
+    expect(done(KEY, story('Verdict: clean, no findings.'))).toEqual([])
+    expect(
+      done(KEY, story('See the PR body.\n\n(1) low, fixed in abc. Verdict: findings-addressed.'))
+    ).toEqual([])
+    const tasks =
+      '# Story\n\n## Tasks\n\n- [x] **Task 9: Static checks and tests** (see PR body).\n'
+    expect(done(KEY, tasks)).toEqual([])
+    expect(done(KEY, story('See PR #342 for the line-number resync detail.'))).toEqual([])
+  })
+
+  it('does not treat a heading, a date, or a hyphenated word as findings', () => {
+    expect(done(KEY, story('### Verdict\n\nSee the PR body.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the PR body.")`,
+    ])
+    expect(done(KEY, story('Reviewed 2026-11-02.\n\nSee the PR body.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the PR body.")`,
+    ])
+    expect(done(KEY, story('high-level note.\n\nSee the PR body.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the PR body.")`,
+    ])
+    expect(done(KEY, story('fixed width layout.\n\nSee the PR body.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the PR body.")`,
+    ])
+  })
+
+  it('passes when the file records a clean verdict, even if another section is a pointer', () => {
+    const content = [
+      '# Story',
+      '',
+      REVIEW_HEADING,
+      '',
+      'Verdict: clean, no findings.',
+      '',
+      '## Dev Agent Record',
+      '',
+      '- Independent review: see PR body.',
+      '',
+    ].join('\n')
+    expect(done(KEY, content)).toEqual([])
+  })
+
+  it('fails wrapped pointers and a sprint-status comment that is only a pointer', () => {
+    expect(done(KEY, story('> See the PR body.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the PR body.")`,
+    ])
+    expect(done(KEY, story('"See the PR body."'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the PR body.")`,
+    ])
+    expect(done(KEY, story('See the [PR body](https://example.com/pull/1).'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the PR body.")`,
+    ])
+    expect(done(KEY, story('See the pull request #662.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the pull request #662.")`,
+    ])
+    expect(done(KEY, story('Independent review: see PR #662.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("Independent review: see PR #662.")`,
+    ])
+    const root = fixture({
+      sprint: sprint([`${KEY}: done # See the PR body.`]),
+      ledger: '',
+      stories: { [`${KEY}.md`]: story('The change is a guard.') },
+    })
+    expect(scanReviewTradeoffLedger(root).violations.map((v) => `${v.line}:${v.message}`)).toEqual([
+      `3:${KEY}: review text only points at the pull request ("See the PR body.")`,
+    ])
+  })
+
+  it('ignores a fenced pointer, an empty review section, and a story that is not done', () => {
+    expect(done(KEY, story('```\nSee the PR body.\n```\n\nVerdict: clean, no findings.'))).toEqual(
+      []
+    )
+    expect(done(KEY, story('\n'))).toEqual([])
+    expect(
+      messages({
+        sprint: sprint([`${KEY}: review`]),
+        ledger: '',
+        stories: { [`${KEY}.md`]: story('See the PR body.') },
+      })
+    ).toEqual([])
+  })
+})
+
 describe('check-review-tradeoff-ledger CLI (AC-6)', () => {
   const clean: Fixture = {
     sprint: sprint([`${KEY}: done`, '2-2-y: done']),
