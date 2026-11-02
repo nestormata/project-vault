@@ -530,8 +530,9 @@ function replaceMarkdownLinks(text: string): string {
   let index = 0
   while (index < text.length) {
     const open = text.indexOf('[', index)
-    if (open < 0 || text.indexOf(']', open + 1) < 0) return out + text.slice(index)
+    if (open < 0) return out + text.slice(index)
     const close = text.indexOf(']', open + 1)
+    if (close < 0) return out + text.slice(index)
     if (text.charAt(close + 1) !== '(') {
       out += text.slice(index, open + 1)
       index = open + 1
