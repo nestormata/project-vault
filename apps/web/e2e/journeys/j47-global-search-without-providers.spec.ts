@@ -1,14 +1,6 @@
 import { expect, test } from '@playwright/test'
-import { registerAndLoginViaApi } from '../fixtures/auth.js'
-import {
-  describeEachAppearance,
-  expectAppearanceApplied,
-  expectNoHorizontalOverflow,
-} from '../fixtures/appearance.js'
-import { gotoHydrated } from '../fixtures/hydration.js'
-import { uniqueEmail, uniqueOrgName } from '../fixtures/ids.js'
-
-const OWNER_PASSWORD = 'e2e-Owner-Password-123'
+import { describeEachAppearance, expectNoHorizontalOverflow } from '../fixtures/appearance.js'
+import { openPaletteOnDashboard } from '../fixtures/palette.js'
 
 // J47 (Story 72.18, CM request R3): PV's own build has no results provider, so the palette must
 // behave exactly as before the seam existed: native action group, the empty-query state, the plain
@@ -21,18 +13,7 @@ describeEachAppearance('J47 global search without providers', (appearance) => {
     page,
     context,
   }) => {
-    await registerAndLoginViaApi(context, {
-      email: uniqueEmail('j47-owner'),
-      password: OWNER_PASSWORD,
-      orgName: uniqueOrgName('J47 Org'),
-    })
-
-    await gotoHydrated(page, '/dashboard', page.getByRole('heading', { name: 'Secret overview' }))
-    await expectAppearanceApplied(page, appearance)
-
-    await page.keyboard.press('Control+K')
-    const dialog = page.getByRole('dialog', { name: 'Global search' })
-    await expect(dialog).toBeVisible()
+    const dialog = await openPaletteOnDashboard(page, context, appearance, 'j47')
     await expect(dialog.getByText('Actions', { exact: true })).toBeVisible()
     await expect(dialog.getByRole('option', { name: 'Create project' })).toBeVisible()
 

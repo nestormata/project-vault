@@ -44,6 +44,7 @@
   let query = $state('')
   let results = $state<SearchResultItem[]>([])
   let loading = $state(false)
+  let settledQuery = $state<string | null>(null)
   let selectedIndex = $state(0)
   let dialogRef = $state<HTMLElement | null>(null)
   let inputRef = $state<HTMLInputElement | null>(null)
@@ -65,6 +66,24 @@
   /** The heading a row sits under; provider rows carry their own (Story 72.18). */
   function headingOf(row: PaletteRow): string {
     return row.group === 'provider' ? row.heading : GROUP_LABEL[row.group]
+  }
+
+  /** Stable DOM id for one palette row. The hash keeps sanitized ids unique; a repeated
+   * identity gets a numeric suffix so two rows never share an id. */
+  function optionDomIds(list: PaletteRow[]): string[] {
+    return list.map((row, index) => {
+      const occurrence = list
+        .slice(0, index)
+        .filter((earlier) => earlier.group === row.group && earlier.id === row.id).length
+      let hash = 2166136261
+      for (let charIndex = 0; charIndex < row.id.length; charIndex += 1) {
+        hash ^= row.id.charCodeAt(charIndex)
+        hash = Math.imul(hash, 16777619)
+      }
+      const safe = Array.from(row.id, (ch) => (/[A-Za-z0-9_-]/.test(ch) ? ch : '_')).join('')
+      const base = `global-search-option-${row.group}-${(hash >>> 0).toString(36)}-${safe || 'row'}`
+      return occurrence === 0 ? base : `${base}-${occurrence}`
+    })
   }
 
   let recentItems = $state<RecentItem[]>([])
@@ -123,12 +142,23 @@
     return [...actions, ...rest, ...providerRows]
   })
 
+  const optionIds = $derived(optionDomIds(rows))
+  const activeOptionId = $derived(rows.length > 0 ? optionIds[selectedIndex] : undefined)
+  const resultAnnouncement = $derived.by(() => {
+    if (rows.length === 1) return '1 result'
+    if (rows.length > 1) return `${rows.length} results`
+    const term = query.trim()
+    const settled = term.length > 0 && settledQuery === term && !loading && providersPending === 0
+    return settled ? 'No results' : ''
+  })
+
   function closeSearch() {
     open = false
     query = ''
     results = []
     selectedIndex = 0
     loading = false
+    settledQuery = null
     if (abortController) abortController.abort()
     resetProviders()
     generation += 1
@@ -240,13 +270,15 @@
   }
 
   async function runSearch(term: string) {
-    if (!term.trim()) {
+    const needle = term.trim()
+    if (!needle) {
       results = []
       loading = false
+      settledQuery = null
       resetProviders()
       return
     }
-    startProviders(term.trim())
+    startProviders(needle)
     if (abortController) abortController.abort()
     abortController = new AbortController()
     loading = true
@@ -254,17 +286,21 @@
       // The signal scopes to the search request only; it must never reach the shared session
       // refresh apiFetch may issue on a 401 (Story 61.3).
       const data = await globalSearch(fetch, {
-        q: term.trim(),
+        q: needle,
         limit: 10,
         signal: abortController.signal,
       })
       results = data.results
       selectedIndex = 0
+      settledQuery = needle
       void ensureProjectInfo(
         data.results.flatMap((item) => (item.type === 'project' ? [item.id] : [])).slice(0, 3)
       )
     } catch (error) {
-      if ((error as Error).name !== 'AbortError') results = []
+      if ((error as Error).name !== 'AbortError') {
+        results = []
+        settledQuery = needle
+      }
     } finally {
       loading = false
     }
@@ -466,10 +502,13 @@
           bind:value={query}
           class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-3 text-base"
           type="search"
+          role="combobox"
           placeholder="Search secrets, projects…"
           aria-label="Search"
           aria-autocomplete="list"
+          aria-expanded={rows.length > 0}
           aria-controls="global-search-results"
+          aria-activedescendant={activeOptionId}
           autocomplete="off"
           oninput={handleQueryInput}
           aria-describedby="global-search-help"
@@ -479,6 +518,9 @@
 
       <p class={shownNotice ? 'px-4 pt-3 text-sm text-amber-900' : 'sr-only'} role="status">
         {shownNotice ?? ''}
+      </p>
+      <p id="global-search-result-count" class="sr-only" aria-live="polite" aria-atomic="true">
+        {resultAnnouncement}
       </p>
 
       {#if rows.length > 0}
@@ -490,6 +532,7 @@
               </li>
             {/if}
             <li
+              id={optionIds[index]}
               role="option"
               aria-selected={index === selectedIndex}
               class={`rounded-xl ${index === selectedIndex ? 'bg-slate-100' : ''}`}
