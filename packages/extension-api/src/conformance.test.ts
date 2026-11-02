@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   assertExtensionEmittersContained,
   checkBackgroundPromisesHandled,
+  checkCredentialSharingMachineUserMode,
   checkExtensionEmitters,
   checkProjectWriteRoles,
 } from './conformance.js'
+import { EXTENSION_API_VERSION } from './manifest.js'
 
 describe('checkExtensionEmitters', () => {
   it('fails an emitter that has no error listener (the pg.Pool-without-listener class)', () => {
@@ -154,4 +156,36 @@ describe('checkProjectWriteRoles (Story 69.18)', () => {
     ).toBe(true)
     expect(checkProjectWriteRoles({ apiVersion: '3.37.0' })).toEqual({ ok: true, routes: [] })
   })
+})
+
+describe('checkCredentialSharingMachineUserMode (Story 73.9)', () => {
+  it.each(['3.39.0', '3.39.7', '3.40.0', '4.0.0', EXTENSION_API_VERSION])(
+    '%s gets the host-managed machine user',
+    (apiVersion) => {
+      expect(checkCredentialSharingMachineUserMode({ apiVersion })).toEqual({
+        mode: 'host-managed',
+        reason: 'declared_since',
+      })
+    }
+  )
+
+  it.each(['3.38.0', '3.38.9', '3.38.1000', '3.22.0', '2.99.99', '2.1000000.0'])(
+    '%s keeps admin-provisioned machine users only',
+    (apiVersion) => {
+      expect(checkCredentialSharingMachineUserMode({ apiVersion })).toEqual({
+        mode: 'admin-provisioned-only',
+        reason: 'legacy_contract',
+      })
+    }
+  )
+
+  it.each(['', '3.39', '3.39.0-rc.1', 'v3.39.0', '3.x.0', '3.39.0.1', ' 3.39.0'])(
+    'an unparsable %o is admin-provisioned only (the host never grants what it cannot read)',
+    (apiVersion) => {
+      expect(checkCredentialSharingMachineUserMode({ apiVersion })).toEqual({
+        mode: 'admin-provisioned-only',
+        reason: 'unparsable_version',
+      })
+    }
+  )
 })

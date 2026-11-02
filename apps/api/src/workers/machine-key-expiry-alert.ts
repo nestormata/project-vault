@@ -2,6 +2,7 @@ import { and, eq, isNotNull, isNull } from 'drizzle-orm'
 import { apiKeys, machineUsers } from '@project-vault/db/schema'
 import type { BossService } from '../lib/boss.js'
 import { runOrgScopedJob } from '../middleware/rls.js'
+import { withProjectId } from '../modules/machine-users/admin-provisioned.js'
 import {
   baseExpiryPayload,
   formatExpiryDate,
@@ -51,6 +52,7 @@ export async function runMachineKeyExpiryAlertJob(
           .where(
             and(eq(apiKeys.orgId, orgId), isNotNull(apiKeys.expiresAt), isNull(apiKeys.revokedAt))
           )
+          .then(withProjectId)
       ),
     getExpiryDate: (row) => row.expiresAt,
     buildPayload: (row, ctx) => ({

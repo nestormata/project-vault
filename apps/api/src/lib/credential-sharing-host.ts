@@ -1,13 +1,11 @@
 import type { FastifyBaseLogger } from 'fastify'
-import { and, eq, isNull } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
-import { apiKeys, machineUsers } from '@project-vault/db/schema'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { CredentialSharingHost, ExtensionManifest } from '@project-vault/extension-api'
 import {
+  checkCredentialSharingMachineUserMode,
   CredentialSharingActingUserInvalidError,
   CredentialSharingActingUserMismatchError,
-  CredentialSharingNoMachineUserError,
   CredentialSharingNotAuthorizedError,
   CredentialSharingOrgRateLimitedError,
   CredentialSharingRateLimitedError,
@@ -39,10 +37,16 @@ import {
 import { writeMachineAuditEntry } from '../modules/audit/machine-entry.js'
 import { hasConfirmedTotpEnrollment } from '../modules/auth/mfa.js'
 import { verifyStepUp } from '../modules/credential-shares/step-up.js'
-import { isMachineKeyLive } from '../modules/machine-users/key-validity.js'
 import { resolveActiveOrgRoleInTx } from '../plugins/authenticate.js'
 import type { OrgRole } from '../plugins/require-org-role.js'
+import {
+  failNoMachineUser,
+  provisionHostManagedMachineUser,
+  requireMachineUserForExtension,
+  type MachineUserAttribution,
+} from './credential-sharing-machine-user.js'
 import { operationalLog } from './logger.js'
+import { isUuid } from '../middleware/rls.js'
 import { withMinResponseTime } from './min-response-time.js'
 import { forEachSequential } from './for-each-sequential.js'
 import { getRequestContext } from './request-context.js'
@@ -333,77 +337,6 @@ function enforceOrgRateLimit(
 }
 
 // -------------------------------------------------------------------------------------------
-// Design Decision A (Nestor-confirmed) — machine-user attribution resolution for
-// createExternalShare/revokeShare/supersedeSharesForRotation. Fail closed: throws
-// CredentialSharingNoMachineUserError if the calling extension's org has no mapped, live PV
-// machine-user. The mapping convention: a `machine_users` row in the caller's org whose `name`
-// exactly matches the calling extension's manifest name, with a live (non-revoked, non-expired,
-// non-deactivated-owner) `api_keys` row — the same "is this key usable" predicate
-// `key-validity.ts#isMachineKeyLive` already applies elsewhere in this codebase.
-// -------------------------------------------------------------------------------------------
-
-/**
- * `sharedByUserId` is a real `users.id` (the `credential_shares.shared_by` column's FK target is
- * `users`, not `machine_users` — the two tables are structurally distinct, see
- * `packages/db/src/schema/credential-shares.ts`/`machine-users.ts`). The resolved machine user's
- * own `createdBy` (the human who provisioned it) is what's persisted into that FK'd column, while
- * `machineUserId`/`keyId` are what `writeMachineAuditEntry` attributes the audit write to — these
- * are two independent facts about the same resolved mapping, not a substitution of one for the
- * other. If a machine user somehow has no `createdBy` (its FK is nullable, `onDelete: 'set null'`
- * on the owning human's own deletion), it cannot safely satisfy the NOT NULL `shared_by` FK either
- * — treated the same as "no machine-user mapped" (fail closed).
- */
-type ResolvedMachineUser = { machineUserId: string; keyId: string; sharedByUserId: string }
-
-async function resolveMachineUserForExtension(
-  tx: Tx,
-  organizationId: string,
-  extensionName: string
-): Promise<ResolvedMachineUser | null> {
-  const rows = await tx
-    .select({
-      machineUserId: machineUsers.id,
-      keyId: apiKeys.id,
-      createdBy: machineUsers.createdBy,
-      revokedAt: apiKeys.revokedAt,
-      expiresAt: apiKeys.expiresAt,
-      machineUserDeactivatedAt: machineUsers.deactivatedAt,
-    })
-    .from(machineUsers)
-    .innerJoin(apiKeys, eq(apiKeys.machineUserId, machineUsers.id))
-    .where(
-      and(
-        eq(machineUsers.orgId, organizationId),
-        eq(machineUsers.name, extensionName),
-        isNull(machineUsers.deactivatedAt)
-      )
-    )
-
-  const live = rows.find((row) => isMachineKeyLive(row) && row.createdBy !== null)
-  if (!live?.createdBy) return null
-  return { machineUserId: live.machineUserId, keyId: live.keyId, sharedByUserId: live.createdBy }
-}
-
-async function requireMachineUserForExtension(
-  tx: Tx,
-  organizationId: string,
-  extensionName: string,
-  methodName: string,
-  logger: AuditLogger
-): Promise<ResolvedMachineUser> {
-  const resolved = await resolveMachineUserForExtension(tx, organizationId, extensionName)
-  if (resolved) return resolved
-  operationalLog(
-    logger,
-    'warn',
-    OperationalEvent.CREDENTIAL_SHARING_HOST_NO_MACHINE_USER,
-    `credentialSharing.${methodName}() rejected — no mapped PV machine-user for this extension's org`,
-    { extensionName, organizationId }
-  )
-  throw new CredentialSharingNoMachineUserError(methodName)
-}
-
-// -------------------------------------------------------------------------------------------
 // Story 65.6 (D1) — the acting user. Audit attribution stays the machine user (Design Decision A);
 // this is a separate, validated fact about the human who acted through the extension.
 //
@@ -629,6 +562,26 @@ function clampShareListPagination(params: { limit?: number; offset?: number }): 
 }
 
 /**
+ * `credential_shares.shared_by` (NOT NULL FK users): the provisioning human of an admin-provisioned
+ * machine user, or the validated acting user for a host-managed one (Story 73.9 D2). On the
+ * host-managed contract 72-21's step-up already refused a create with no acting user, so the
+ * fail-closed branch is defensive and runs before any write.
+ */
+function sharedByFor(
+  machineUser: MachineUserAttribution,
+  actingUserId: string | undefined,
+  context: { organizationId: string; extensionName: string; logger: AuditLogger }
+): string {
+  if (machineUser.kind === 'admin-provisioned') return machineUser.sharedByUserId
+  if (actingUserId !== undefined) return actingUserId
+  return failNoMachineUser(context.logger, {
+    organizationId: context.organizationId,
+    extensionName: context.extensionName,
+    methodName: 'createExternalShare',
+  })
+}
+
+/**
  * Story 20.12 — the real `HostServices.credentialSharing` implementation, bound to the loading
  * extension's own manifest by `loader.ts`'s `buildHostServices()`. Every method is a thin closure
  * over PV's real, already-shipped `credential-shares` service-layer functions (AC2/AC3/AC4/AC6) —
@@ -657,18 +610,21 @@ export function buildCredentialSharingHost(
     manifest.apiVersion,
     EXTERNAL_SHARE_STEP_UP_SINCE
   )
+  // Story 73.9 (D4): the conformance helper IS the host's rule, so an extension's CI assertion and
+  // the host can never disagree. An unparsable version is not granted the host-managed principal.
+  const hostManaged = checkCredentialSharingMachineUserMode(manifest).mode === 'host-managed'
+  const machineUserFor = (tx: Tx, organizationId: string, methodName: string) =>
+    requireMachineUserForExtension(
+      tx,
+      { organizationId, extensionName: manifest.name, methodName, hostManaged },
+      logger
+    )
 
   return {
     async createExternalShare(params) {
       return callOutOfRequestMethod('createExternalShare', params.organizationId, hostContext, () =>
         withOrg(params.organizationId, async (tx) => {
-          const machineUser = await requireMachineUserForExtension(
-            tx,
-            params.organizationId,
-            manifest.name,
-            'createExternalShare',
-            logger
-          )
+          const machineUser = await machineUserFor(tx, params.organizationId, 'createExternalShare')
 
           const acting = await requireActingUser(
             tx,
@@ -691,7 +647,11 @@ export function buildCredentialSharingHost(
             orgId: params.organizationId,
             projectId: params.projectId,
             credentialId: params.credentialId,
-            sharedByUserId: machineUser.sharedByUserId,
+            sharedByUserId: sharedByFor(machineUser, acting?.userId, {
+              organizationId: params.organizationId,
+              extensionName: manifest.name,
+              logger,
+            }),
             hostCreated: true,
             actingUserId: acting?.userId ?? null,
             recipientEmail: params.recipientEmail,
@@ -813,13 +773,7 @@ export function buildCredentialSharingHost(
     async revokeShare(params) {
       return callOutOfRequestMethod('revokeShare', params.organizationId, hostContext, () =>
         withOrg(params.organizationId, async (tx) => {
-          const machineUser = await requireMachineUserForExtension(
-            tx,
-            params.organizationId,
-            manifest.name,
-            'revokeShare',
-            logger
-          )
+          const machineUser = await machineUserFor(tx, params.organizationId, 'revokeShare')
 
           if (params.actor) {
             const notFound = await authorizeRevokeAsActor(tx, params, params.actor)
@@ -870,12 +824,10 @@ export function buildCredentialSharingHost(
         hostContext,
         () =>
           withOrg(params.organizationId, async (tx) => {
-            const machineUser = await requireMachineUserForExtension(
+            const machineUser = await machineUserFor(
               tx,
               params.organizationId,
-              manifest.name,
-              'supersedeSharesForRotation',
-              logger
+              'supersedeSharesForRotation'
             )
 
             const superseded = await supersedeOutstandingSharesForRotationService(tx, {
@@ -972,6 +924,24 @@ export function buildCredentialSharingHost(
             return { status: 'ok' as const, items: items.map(serializeShare), total }
           })
       )
+    },
+
+    // Story 73.9 AC-1 — through the same in-flight cap as every other method. Only the id and the
+    // created flag leave the host: a host-managed machine user has no key, hash or token.
+    async provisionMachineUser(params) {
+      const methodName = 'provisionMachineUser'
+      return callOutOfRequestMethod(methodName, params.organizationId, hostContext, async () => {
+        const scope = {
+          organizationId: params.organizationId,
+          extensionName: manifest.name,
+          methodName,
+        }
+        if (!isUuid(params.organizationId)) failNoMachineUser(logger, scope)
+        const provisioned = await withOrg(params.organizationId, (tx) =>
+          provisionHostManagedMachineUser(tx, { ...scope, trigger: 'provision' }, logger)
+        )
+        return { machineUserId: provisioned.machineUserId, created: provisioned.created }
+      })
     },
   }
 }
