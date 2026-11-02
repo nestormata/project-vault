@@ -13,7 +13,10 @@
  *   word) with no DW entry tracking the story: a `source_spec:` naming `<key>.md` /
  *   `spec-<key>.md`, the key in a `### DW-` heading, or a cited `DW-<id>` whose entry names it;
  * - a count ("8 low + 1 medium", N = 9) whose tracking entries itemize fewer than N `(k)` items;
- * - "no deferred-work.md entry needed" in the same text source as a trade-off phrase.
+ * - "no deferred-work.md entry needed" in the same text source as a trade-off phrase;
+ * - a review line whose whole text only points at the pull request ("see the PR body",
+ *   "independent review: see PR body", "see PR #N"). This scan reads the record, not the
+ *   pull request. A section that also records a verdict or a finding is not this failure.
  *
  * Pure, DB-free: a static scan of the private overlay (sprint-status.yaml, story files,
  * deferred-work.md). Unchecked `- [ ] [Review]` deferral bullets stay check-story-review-deferrals'
@@ -23,6 +26,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseDevelopmentStatusComments, SPRINT_STATUS_PATH } from './check-story-status-sync.js'
 import {
+  createFenceTracker,
   type DwEntry,
   extractDwCitations,
   normalizeDwId,
@@ -106,7 +110,12 @@ export type TradeoffHit = {
 export type ReviewSection = { heading: string; lines: BodyLine[] }
 
 export type TradeoffViolationKind =
-  'untracked' | 'under-itemized' | 'no-entry-needed' | 'unledgered-section' | 'unledgered-defer'
+  | 'untracked'
+  | 'under-itemized'
+  | 'no-entry-needed'
+  | 'unledgered-section'
+  | 'unledgered-defer'
+  | 'pr-only-review'
 
 export type TradeoffViolation = {
   kind: TradeoffViolationKind
@@ -503,6 +512,125 @@ function storySources(root: string, storyKey: string, comment: BodyLine): TextSo
   return sources
 }
 
+const FINDING_TEXT =
+  /\b(?:clean|no findings|no issues|verdict|critical|high|medium|lows?|nits?|fixed|unfixed|trade-?offs?|dw-\d+|\d+-\d+[a-z]?-)\b/i
+const SEE_PR_NUMBER = /^(?:see the pr|see pr) #\d+$/
+const SEE_HEADS = ['see the pull request', 'see the pr', 'see pull request', 'see pr'] as const
+const INDEPENDENT_REST = new Set([
+  'pr body',
+  'the pr body',
+  'pr',
+  'the pr',
+  'pull request body',
+  'the pull request body',
+  'pull request',
+  'the pull request',
+])
+
+function pointerBody(text: string): string {
+  let body = text.trim()
+  if (body.startsWith('- ') || body.startsWith('* ')) body = body.slice(2).trim()
+  else if (/^\d+\. /.test(body)) body = body.slice(body.indexOf(' ') + 1).trim()
+  if (body.startsWith('[x] ') || body.startsWith('[X] ') || body.startsWith('[ ] ')) {
+    body = body.slice(4).trim()
+  }
+  return body.replaceAll('*', '').replaceAll('_', '').replaceAll('`', '').trim()
+}
+
+function withoutPeriod(text: string): string {
+  return text.endsWith('.') ? text.slice(0, -1) : text
+}
+
+function restAfterHead(lower: string): string | undefined {
+  for (const head of SEE_HEADS) {
+    if (lower === head) return ''
+    if (lower.startsWith(`${head} `)) return lower.slice(head.length).trim()
+  }
+  return undefined
+}
+
+function quotedTitleRest(rest: string): string | undefined {
+  const close = rest.startsWith('“') ? '”' : '"'
+  if (!rest.startsWith(close === '”' ? '“' : '"')) return undefined
+  const end = rest.indexOf(close, 1)
+  if (end < 0) return undefined
+  return rest.slice(end + 1).trim()
+}
+
+/** `see the PR body`, optionally ` "title" section`. Extra words stay unmatched. */
+function isSeePrSentence(lower: string): boolean {
+  const rest = restAfterHead(lower)
+  if (rest === undefined) return false
+  if (rest === '' || rest === 'body') return true
+  const afterBody = rest.startsWith('body ') ? rest.slice(5).trim() : rest
+  if (afterBody === 'body') return true
+  if (!afterBody.startsWith('"') && !afterBody.startsWith('“')) return false
+  const afterQuote = quotedTitleRest(afterBody)
+  return afterQuote === '' || afterQuote === 'section'
+}
+
+function isIndependentReviewPointer(lower: string): boolean {
+  const prefix = 'independent review: see '
+  return lower.startsWith(prefix) && INDEPENDENT_REST.has(lower.slice(prefix.length))
+}
+
+/** Whether `line` is only a pull-request pointer, with no verdict or finding of its own. */
+export function isPrOnlyReviewPointer(line: string): boolean {
+  const body = pointerBody(line)
+  if (body === '') return false
+  const lower = withoutPeriod(body).toLowerCase()
+  return isSeePrSentence(lower) || isIndependentReviewPointer(lower) || SEE_PR_NUMBER.test(lower)
+}
+
+function pointerViolation(
+  storyKey: string,
+  path: string,
+  line: number,
+  text: string
+): TradeoffViolation {
+  return {
+    kind: 'pr-only-review',
+    path,
+    line,
+    message: `${storyKey}: review text only points at the pull request (${quote(pointerBody(text))})`,
+  }
+}
+
+/**
+ * Pointer lines in a done story. A Guard A section (review or completion notes) that also
+ * records a verdict or a finding keeps its pointer lines: the record is in the file. The same
+ * line outside those sections still fails, which is where a record can hide the review.
+ */
+function pointerViolations(storyKey: string, path: string, content: string): TradeoffViolation[] {
+  const sections = extractReviewSections(content)
+  const covered = new Set<number>()
+  const violations: TradeoffViolation[] = []
+  for (const section of sections) {
+    const hasFinding = section.lines.some((l) => FINDING_TEXT.test(l.text))
+    for (const l of section.lines) {
+      covered.add(l.line)
+      if (!hasFinding && isPrOnlyReviewPointer(l.text)) {
+        violations.push(pointerViolation(storyKey, path, l.line, l.text))
+      }
+    }
+  }
+  const fenced = createFenceTracker()
+  for (const [index, raw] of content.split('\n').entries()) {
+    const text = raw.replace(/\r$/, '')
+    if (fenced(text) || covered.has(index + 1) || !isPrOnlyReviewPointer(text)) continue
+    violations.push(pointerViolation(storyKey, path, index + 1, text))
+  }
+  return violations
+}
+
+function appendPointerViolations(findings: TradeoffFindings, root: string, storyKey: string): void {
+  const storyFile = resolveStoryFile(root, storyKey)
+  if (!storyFile) return
+  findings.violations.push(
+    ...pointerViolations(storyKey, toRepoPath(root, storyFile.path), storyFile.content)
+  )
+}
+
 /** Scans the overlay under `rootDir` (the CLI reports unreadable inputs before calling this). */
 export function scanReviewTradeoffLedger(rootDir = process.cwd()): TradeoffFindings {
   const root = resolve(rootDir)
@@ -531,6 +659,7 @@ export function scanReviewTradeoffLedger(rootDir = process.cwd()): TradeoffFindi
     if (rules.sectionHits > 0) findings.sectionCount++
     if (rules.deferHits > 0) findings.deferCount++
     findings.violations.push(...rules.violations)
+    appendPointerViolations(findings, root, entry.key)
   }
   findings.violations = dedupeViolations(findings.violations)
   findings.violations.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
@@ -585,6 +714,16 @@ const BLOCKS: { kind: TradeoffViolationKind; header: string; fix: string }[] = [
       'Fix: cite the tracking entry on the bullet (`ledgered as DW-<n>`, allocate with ' +
       '`pnpm -s next-dw-id --fetch`, `source_spec: `<story-key>.md``, `status: open — Trigger to ' +
       'revisit: ...`). A ticked box means "decided to defer", not "ledgered".',
+  },
+  {
+    kind: 'pr-only-review',
+    header:
+      'FATAL: done stories point at the pull request as the only copy of a review verdict or ' +
+      'finding (the ledger reads the story file):',
+    fix:
+      'Fix: write the verdict and every leftover finding in the story file. "clean, no findings" ' +
+      'passes. A section that also records the findings passes. Do not leave "see the PR body" ' +
+      'or "independent review: see PR body" as the only text.',
   },
 ]
 

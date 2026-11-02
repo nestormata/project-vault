@@ -502,6 +502,56 @@ describe('scanReviewTradeoffLedger: "no deferred-work.md entry needed" (AC-4)', 
   })
 })
 
+describe('PR-only review pointers', () => {
+  const done = (key: string, content: string) =>
+    messages({
+      sprint: sprint([`${key}: done`]),
+      ledger: '',
+      stories: { [`${key}.md`]: content },
+    })
+
+  it('fails a review section whose only text points at the pull request, naming the story and line', () => {
+    expect(done(KEY, story('See the PR body "Independent review" section.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See the PR body "Independent review" section.")`,
+    ])
+    expect(done(KEY, story('See PR #662.'))).toEqual([
+      `${KEY}: review text only points at the pull request ("See PR #662.")`,
+    ])
+  })
+
+  it('fails the same pointer when it sits outside a review heading', () => {
+    const content = '# Story\n\n## Dev Agent Record\n\n- Independent review: see PR body.\n'
+    expect(done(KEY, content)).toEqual([
+      `${KEY}: review text only points at the pull request ("Independent review: see PR body.")`,
+    ])
+  })
+
+  it('passes a verdict recorded in the file, a section that also lists findings, and a task mention', () => {
+    expect(done(KEY, story('Verdict: clean, no findings.'))).toEqual([])
+    expect(
+      done(KEY, story('See the PR body.\n\n(1) low, fixed in abc. Verdict: findings-addressed.'))
+    ).toEqual([])
+    const tasks =
+      '# Story\n\n## Tasks\n\n- [x] **Task 9: Static checks and tests** (see PR body).\n'
+    expect(done(KEY, tasks)).toEqual([])
+    expect(done(KEY, story('See PR #342 for the line-number resync detail.'))).toEqual([])
+  })
+
+  it('ignores a fenced pointer, an empty review section, and a story that is not done', () => {
+    expect(done(KEY, story('```\nSee the PR body.\n```\n\nVerdict: clean, no findings.'))).toEqual(
+      []
+    )
+    expect(done(KEY, story('\n'))).toEqual([])
+    expect(
+      messages({
+        sprint: sprint([`${KEY}: review`]),
+        ledger: '',
+        stories: { [`${KEY}.md`]: story('See the PR body.') },
+      })
+    ).toEqual([])
+  })
+})
+
 describe('check-review-tradeoff-ledger CLI (AC-6)', () => {
   const clean: Fixture = {
     sprint: sprint([`${KEY}: done`, '2-2-y: done']),
