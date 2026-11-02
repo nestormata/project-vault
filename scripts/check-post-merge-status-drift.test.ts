@@ -1,22 +1,26 @@
-import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { writeFixture } from './lib/fixture-test-helpers.js'
-import { getMergeCommits, scanPostMergeStatusDrift } from './check-post-merge-status-drift.js'
+import { trustedGit } from './lib/trusted-executable.js'
+import {
+  formatPostMergeDriftReport,
+  getMergeCommits,
+  scanPostMergeStatusDrift,
+} from './check-post-merge-status-drift.js'
 
 const SPRINT_STATUS_PATH = '_bmad-output/implementation-artifacts/sprint-status.yaml'
 const BRANCH_1_1_FOO = 'nestormata/feature/1-1-foo'
 const BRANCH_9_3_FOO = 'nestormata/feature/9-3-foo'
 const STATUS_REVIEW = 'review'
+const NO_DRIFT = { drifts: [], ambiguities: [] }
+const KEY_12_3_ALPHA = '12-3-alpha'
+const KEY_12_3_BETA = '12-3-beta'
+const SLUG_12_3_SHORT = '12-3-short'
 
 function git(cwd: string, args: string[]): string {
-  return execFileSync('git', args, {
-    cwd,
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  }).trim()
+  return trustedGit(cwd, args).trim()
 }
 
 /** Builds a throwaway real git repo with an initial commit, returning its root. */
@@ -94,7 +98,8 @@ describe('getMergeCommits', () => {
   })
 })
 
-describe('scanPostMergeStatusDrift', () => {
+// Two-merge fixtures measured about 30s in a full-file run.
+describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
   it('AC-1 happy path: merged PR whose story is already done reports no drift', () => {
     const { root } = makeFixtureRepo()
     writeSprintStatus(
@@ -105,7 +110,7 @@ describe('scanPostMergeStatusDrift', () => {
     )
     mergeCommit(root, 253, 'nestormata/feature/17-2-share-a-credential')
 
-    expect(scanPostMergeStatusDrift(root)).toEqual([])
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 
   it('AC-1 the 14.8 incident shape: merged PR whose story is still "review" reports drift', () => {
@@ -118,9 +123,12 @@ describe('scanPostMergeStatusDrift', () => {
     )
     const sha = mergeCommit(root, 243, 'nestormata/feature/14-8-some-story')
 
-    expect(scanPostMergeStatusDrift(root)).toEqual([
-      { storyKey: '14-8-some-story', status: STATUS_REVIEW, prNumber: 243, mergeCommitSha: sha },
-    ])
+    expect(scanPostMergeStatusDrift(root)).toEqual({
+      drifts: [
+        { storyKey: '14-8-some-story', status: STATUS_REVIEW, prNumber: 243, mergeCommitSha: sha },
+      ],
+      ambiguities: [],
+    })
   })
 
   it('AC-2 dedup: two merge commits for the same slug produce exactly one drift entry', () => {
@@ -136,7 +144,8 @@ describe('scanPostMergeStatusDrift', () => {
 
     // AC-2 only asserts a single drift entry per slug — which of the two duplicate merge commits
     // is cited is deliberately unspecified (Task 1.5: "not which specific commit is cited").
-    const drifts = scanPostMergeStatusDrift(root)
+    const { drifts, ambiguities } = scanPostMergeStatusDrift(root)
+    expect(ambiguities).toEqual([])
     expect(drifts).toHaveLength(1)
     expect(drifts[0]?.storyKey).toBe('9-3-foo')
     expect(drifts[0]?.status).toBe(STATUS_REVIEW)
@@ -154,7 +163,7 @@ describe('scanPostMergeStatusDrift', () => {
     mergeCommit(root, 300, BRANCH_9_3_FOO)
     mergeCommit(root, 301, BRANCH_9_3_FOO)
 
-    expect(scanPostMergeStatusDrift(root)).toEqual([])
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 
   it('AC-3 non-feature branches are ignored entirely, even if a matching key exists', () => {
@@ -167,7 +176,7 @@ describe('scanPostMergeStatusDrift', () => {
     )
     mergeCommit(root, 250, 'nestormata/chore/epic-16-retro')
 
-    expect(scanPostMergeStatusDrift(root)).toEqual([])
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 
   it('AC-3 edge case: an empty slug after feature/ is skipped safely, no throw', () => {
@@ -181,7 +190,7 @@ describe('scanPostMergeStatusDrift', () => {
     mergeCommit(root, 251, 'nestormata/feature/')
 
     expect(() => scanPostMergeStatusDrift(root)).not.toThrow()
-    expect(scanPostMergeStatusDrift(root)).toEqual([])
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 
   it('AC-3 slug-collision safety: feature/1-1-foo never partially matches sibling slug 1-11-foobar', () => {
@@ -195,10 +204,10 @@ describe('scanPostMergeStatusDrift', () => {
     )
     mergeCommit(root, 260, BRANCH_1_1_FOO)
 
-    expect(scanPostMergeStatusDrift(root)).toEqual([])
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 
-  it('AC-4: a slug not present as a tracked key is skipped silently, not flagged as drift', () => {
+  it('AC-4: a story id with no sprint-status key is skipped, not flagged as drift', () => {
     const { root } = makeFixtureRepo()
     writeSprintStatus(
       root,
@@ -206,9 +215,104 @@ describe('scanPostMergeStatusDrift', () => {
   2-1-new-slug-name: review
 `
     )
-    mergeCommit(root, 270, 'nestormata/feature/2-1-old-slug-name')
+    mergeCommit(root, 270, 'nestormata/feature/9-9-no-such-story')
 
-    expect(scanPostMergeStatusDrift(root)).toEqual([])
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
+  })
+
+  it('maps a shortened branch to the one key that starts with that story id', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  63-4-full-unrun-check-destinations: ${STATUS_REVIEW}
+  65-5-full-terminal-share-org-rate-limit: in-progress
+`
+    )
+    const sha63 = mergeCommit(root, 635, 'nestormata/feature/63-4-unrun-check-destinations')
+    const sha65 = mergeCommit(root, 603, 'nestormata/feature/65-5-terminal-share-org-rate-limit')
+
+    expect(scanPostMergeStatusDrift(root)).toEqual({
+      drifts: [
+        {
+          storyKey: '63-4-full-unrun-check-destinations',
+          status: STATUS_REVIEW,
+          prNumber: 635,
+          mergeCommitSha: sha63,
+        },
+        {
+          storyKey: '65-5-full-terminal-share-org-rate-limit',
+          status: 'in-progress',
+          prNumber: 603,
+          mergeCommitSha: sha65,
+        },
+      ],
+      ambiguities: [],
+    })
+  })
+
+  it('does not let a letter-suffixed story id match the id without the letter', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  24-5-plain: done
+  24-5b-letter: ${STATUS_REVIEW}
+`
+    )
+    mergeCommit(root, 240, 'nestormata/feature/24-5-plain-short')
+    const sha = mergeCommit(root, 241, 'nestormata/feature/24-5b-letter-short')
+
+    expect(scanPostMergeStatusDrift(root)).toEqual({
+      drifts: [
+        {
+          storyKey: '24-5b-letter',
+          status: STATUS_REVIEW,
+          prNumber: 241,
+          mergeCommitSha: sha,
+        },
+      ],
+      ambiguities: [],
+    })
+  })
+
+  it('fails closed when two keys share a story id, and does not guess a drift', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  ${KEY_12_3_BETA}: ${STATUS_REVIEW}
+  ${KEY_12_3_ALPHA}: done
+`
+    )
+    const sha = mergeCommit(root, 120, `nestormata/feature/${SLUG_12_3_SHORT}`)
+
+    const scan = scanPostMergeStatusDrift(root)
+    expect(scan.drifts).toEqual([])
+    expect(scan.ambiguities).toEqual([
+      {
+        branchSlug: SLUG_12_3_SHORT,
+        prNumber: 120,
+        mergeCommitSha: sha,
+        candidateKeys: [KEY_12_3_ALPHA, KEY_12_3_BETA],
+      },
+    ])
+  })
+
+  it('fails closed even when the branch slug equals one of the two keys', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  4-2-exact-name: done
+  4-2-other-name: done
+`
+    )
+    mergeCommit(root, 420, 'nestormata/feature/4-2-exact-name')
+
+    const scan = scanPostMergeStatusDrift(root)
+    expect(scan.drifts).toEqual([])
+    expect(scan.ambiguities[0]?.candidateKeys).toEqual(['4-2-exact-name', '4-2-other-name'])
   })
 
   it('AC-4 edge case: missing sprint-status.yaml -> returns [] without throwing', () => {
@@ -216,7 +320,7 @@ describe('scanPostMergeStatusDrift', () => {
     mergeCommit(root, 280, BRANCH_1_1_FOO)
 
     expect(() => scanPostMergeStatusDrift(root)).not.toThrow()
-    expect(scanPostMergeStatusDrift(root)).toEqual([])
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 
   it('AC-9: propagates the error when git log itself fails (not a git repository)', () => {
@@ -226,7 +330,7 @@ describe('scanPostMergeStatusDrift', () => {
   })
 })
 
-describe('scanPostMergeStatusDrift against the real repository', () => {
+describe('scanPostMergeStatusDrift against the real repository', { timeout: 60_000 }, () => {
   // Task 3.3: this check may legitimately need to tolerate the real repo's actual current state
   // rather than asserting [] unconditionally. The 17-2/PR #253 drift this comment used to pin
   // (sprint-status.yaml + the story file's Status header both stuck on "review" after merge) was
@@ -235,7 +339,28 @@ describe('scanPostMergeStatusDrift against the real repository', () => {
   // the 1-17 story's own guidance to update this test once the underlying drift is genuinely
   // resolved.
   it('reports no drift against the real repository (17-2/PR #253 reconciled)', () => {
-    const drifts = scanPostMergeStatusDrift(process.cwd())
-    expect(drifts).toEqual([])
+    expect(scanPostMergeStatusDrift(process.cwd())).toEqual(NO_DRIFT)
+  })
+})
+
+describe('formatPostMergeDriftReport', () => {
+  it('names every candidate key when a story id is ambiguous and exits non-zero', () => {
+    const report = formatPostMergeDriftReport({
+      drifts: [],
+      ambiguities: [
+        {
+          branchSlug: SLUG_12_3_SHORT,
+          prNumber: 12,
+          mergeCommitSha: 'abcdef1234567890',
+          candidateKeys: [KEY_12_3_ALPHA, KEY_12_3_BETA],
+        },
+      ],
+    })
+
+    expect(report.exitCode).toBe(1)
+    expect(report.stdout).toBe('')
+    expect(report.stderr).toContain(KEY_12_3_ALPHA)
+    expect(report.stderr).toContain(KEY_12_3_BETA)
+    expect(report.stderr).toContain(SLUG_12_3_SHORT)
   })
 })
