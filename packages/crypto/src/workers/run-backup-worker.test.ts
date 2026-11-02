@@ -36,7 +36,7 @@ describe('Story 9.1 D5/AC-5: runBackupCrypto (worker_thread offload with sync fa
 })
 
 describe('Story 74.2: runBackupCrypto over the real worker_thread (self-compiled artifact)', () => {
-  let compiled: CompiledSourceSubset
+  let compiled: CompiledSourceSubset | undefined
 
   beforeAll(() => {
     compiled = compileSourceSubset(
@@ -45,10 +45,12 @@ describe('Story 74.2: runBackupCrypto over the real worker_thread (self-compiled
   })
 
   afterAll(() => {
-    compiled.cleanup()
+    compiled?.cleanup()
   })
 
   it('round-trips via the real worker_thread from an artifact the test compiled itself', async () => {
+    expect(compiled, 'helper did not compile the worker').toBeDefined()
+    if (compiled === undefined) return
     const worker = fileURLToPath(new URL('./backup-encrypt.worker.js', compiled.entryUrl))
     expect(existsSync(worker), 'compiled worker artifact missing').toBe(true)
     const mod = (await import(compiled.entryUrl)) as Record<string, unknown>
