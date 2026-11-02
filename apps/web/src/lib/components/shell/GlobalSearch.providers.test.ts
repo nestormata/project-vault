@@ -318,6 +318,39 @@ describe('GlobalSearch results providers (Story 72.18)', () => {
     expect(hasOption('Acme Holdings')).toBe(false)
   })
 
+  it('keeps the arrowed provider row when the next query inserts an action row above it', async () => {
+    mockedPage.data = { user: { orgRole: 'owner', userId: 'u1' } }
+    const releases: Array<(rows: SearchProviderResult[]) => void> = []
+    const search = vi.fn(
+      () =>
+        new Promise<SearchProviderResult[]>((resolve) => {
+          releases.push(resolve)
+        })
+    )
+    mountWith([{ id: 'cm', search }])
+    await typeQuery('acme')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1))
+    releases[0]?.([tenant])
+    await findOption('Acme Holdings')
+    const input = screen.getByLabelText('Search')
+    await fireEvent.keyDown(input, { key: 'ArrowDown' })
+    await fireEvent.keyDown(input, { key: 'ArrowDown' })
+    const providerOption = () =>
+      screen.getAllByRole('option').find((option) => option.textContent?.includes('Acme Holdings'))
+    expect(providerOption()?.getAttribute('aria-selected')).toBe('true')
+
+    // "c" matches "Create project", so an action row appears above the provider row immediately,
+    // before the debounced search asks the provider. The highlight must stay on the same row.
+    await typeQuery('c')
+    await vi.waitFor(() => {
+      expect(screen.getAllByRole('option')[0]?.textContent).toContain('Create project')
+      expect(providerOption()?.getAttribute('aria-selected')).toBe('true')
+    })
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    expect(providerOption()?.getAttribute('aria-selected')).toBe('true')
+    mockedPage.data = { user: { orgRole: 'viewer', userId: 'u1' } }
+  })
+
   it('replaces the previous provider row when the next answer is empty', async () => {
     let calls = 0
     const search = vi.fn(async () => {

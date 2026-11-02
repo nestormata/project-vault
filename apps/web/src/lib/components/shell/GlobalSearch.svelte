@@ -79,10 +79,18 @@
   let providersPending = $state(0)
   let providersFailed = $state(false)
   let providerAbort: AbortController | null = null
-  // The provider row the user has arrowed to. A new keystroke must not drop that row, or move
-  // the highlight off it, while its provider is still answering (the previous rows stay until
-  // the new answer replaces them). Cleared when the user moves the highlight themselves.
+  // The provider row the user last arrowed to, captured while the row list was still the one
+  // they were looking at. A keystroke refilters action rows immediately, before the debounced
+  // search starts, so the highlight index can already point at a different row by then.
+  let arrowedProviderId: string | null = null
+  // Held while a search is in flight so the highlight stays on `arrowedProviderId` until that
+  // search's answer replaces the row. Cleared when the user moves the highlight themselves.
   let pinnedProviderKey = $state<string | null>(null)
+
+  function noteArrowedRow() {
+    const selected = rows[selectedIndex]
+    arrowedProviderId = selected?.group === 'provider' ? selected.id : null
+  }
 
   // The recents notice wins; otherwise a failed provider is mentioned calmly (Story 72.18).
   const shownNotice = $derived(
@@ -224,6 +232,7 @@
     providersPending = 0
     providersFailed = false
     pinnedProviderKey = null
+    arrowedProviderId = null
   }
 
   async function runProvider(provider: SearchProvider, term: string, signal: AbortSignal) {
@@ -246,8 +255,7 @@
    * the row the user has arrowed to.
    */
   function startProviders(term: string) {
-    const selected = rows[selectedIndex]
-    pinnedProviderKey = selected?.group === 'provider' ? selected.id : null
+    pinnedProviderKey = arrowedProviderId
     abortProviderRequests()
     providersFailed = false
     const providers = providerRegistry?.providers ?? []
@@ -255,6 +263,7 @@
       providerResults = {}
       providersPending = 0
       pinnedProviderKey = null
+      arrowedProviderId = null
       return
     }
     providerAbort = new AbortController()
@@ -294,6 +303,9 @@
   }
 
   function handleQueryInput() {
+    // The query has already refiltered action rows. Pin the row the user arrowed to now, not
+    // when the debounced search starts, or the shifted index gets locked in.
+    pinnedProviderKey = arrowedProviderId
     clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => runSearch(query), 200)
   }
@@ -409,12 +421,14 @@
       event.preventDefault()
       pinnedProviderKey = null
       if (rows.length > 0) selectedIndex = (selectedIndex + 1) % rows.length
+      noteArrowedRow()
       return
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault()
       pinnedProviderKey = null
       if (rows.length > 0) selectedIndex = (selectedIndex - 1 + rows.length) % rows.length
+      noteArrowedRow()
       return
     }
     if (event.key === 'Enter') {
@@ -438,6 +452,7 @@
         return
       }
       pinnedProviderKey = null
+      arrowedProviderId = null
       if (selectedIndex !== 0) selectedIndex = 0
       return
     }
