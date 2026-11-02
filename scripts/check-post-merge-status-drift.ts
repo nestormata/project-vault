@@ -88,9 +88,13 @@ function storyIdPrefix(slug: string): string | null {
   return STORY_ID_PREFIX.exec(slug)?.[1] ?? null
 }
 
+function byText(left: string, right: string): number {
+  return left.localeCompare(right)
+}
+
 function keysWithStoryId(prefix: string, statuses: Map<string, string>): string[] {
   const needle = `${prefix}-`
-  return [...statuses.keys()].filter((key) => key.startsWith(needle)).sort()
+  return [...statuses.keys()].filter((key) => key.startsWith(needle)).toSorted(byText)
 }
 
 type ClassifiedSlug =
@@ -159,8 +163,8 @@ export function scanPostMergeStatusDrift(rootDir = process.cwd()): PostMergeDrif
   }))
 
   return {
-    drifts: drifts.sort((a, b) => a.storyKey.localeCompare(b.storyKey)),
-    ambiguities: ambiguities.sort((a, b) => a.branchSlug.localeCompare(b.branchSlug)),
+    drifts: drifts.toSorted((left, right) => byText(left.storyKey, right.storyKey)),
+    ambiguities: ambiguities.toSorted((left, right) => byText(left.branchSlug, right.branchSlug)),
   }
 }
 

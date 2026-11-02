@@ -1,9 +1,9 @@
-import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { writeFixture } from './lib/fixture-test-helpers.js'
+import { trustedGit } from './lib/trusted-executable.js'
 import {
   formatPostMergeDriftReport,
   getMergeCommits,
@@ -20,11 +20,7 @@ const KEY_12_3_BETA = '12-3-beta'
 const SLUG_12_3_SHORT = '12-3-short'
 
 function git(cwd: string, args: string[]): string {
-  return execFileSync('git', args, {
-    cwd,
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  }).trim()
+  return trustedGit(cwd, args).trim()
 }
 
 /** Builds a throwaway real git repo with an initial commit, returning its root. */
