@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import AuditNavigationLinks from '$lib/components/audit/AuditNavigationLinks.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import AuditExportPanel from '$lib/components/audit/AuditExportPanel.svelte'
@@ -20,7 +21,7 @@
 </script>
 
 <svelte:head>
-  <title>Audit Log | Project Vault</title>
+  <title>Audit Log | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.audit.before" data={data?.__inject} />

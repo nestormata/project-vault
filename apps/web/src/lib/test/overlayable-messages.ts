@@ -5,21 +5,40 @@
 import { m } from '$lib/paraglide/messages.js'
 import type { OverlayableMessageKey } from '$lib/i18n/overlayable-message-keys.js'
 
-type MessageFunction = (inputs?: undefined, options?: { locale?: 'en' | 'es' }) => string
+type LocaleOpts = { locale?: 'en' | 'es' }
+
+type MessageFunction = (inputs?: Record<string, string>, options?: LocaleOpts) => string
 
 // One entry per listed key: adding a key to OVERLAYABLE_MESSAGE_KEYS fails type-checking until it is here.
 const MESSAGES: Readonly<Record<OverlayableMessageKey, MessageFunction>> = {
   auth_login_page_description: m.auth_login_page_description,
   auth_login_page_title: m.auth_login_page_title,
   auth_register_page_title: m.auth_register_page_title,
+  brand_name: m.brand_name,
   shell_brand_tagline: m.shell_brand_tagline,
+}
+
+function localeOpts(locale?: 'en' | 'es'): LocaleOpts | undefined {
+  return locale === undefined ? undefined : { locale }
+}
+
+function brandInLocale(locale?: 'en' | 'es'): string {
+  return m.brand_name(undefined, localeOpts(locale))
 }
 
 /** The key's text in the current locale, or in `locale` when given (what the page really renders). */
 export function overlayableMessage(key: OverlayableMessageKey, locale?: 'en' | 'es'): string {
-  const message = new Map(Object.entries(MESSAGES)).get(key)
-  if (message === undefined) throw new Error(`no message function for ${key}`)
-  return message(undefined, locale === undefined ? undefined : { locale })
+  const opts = localeOpts(locale)
+  const brand = brandInLocale(locale)
+  if (key === 'brand_name') return brand
+  if (
+    key === 'auth_login_page_description' ||
+    key === 'auth_login_page_title' ||
+    key === 'auth_register_page_title'
+  ) {
+    return MESSAGES[key]({ brand }, opts)
+  }
+  return MESSAGES[key](undefined, opts)
 }
 
 /** The token a snapshot stores in place of a key's text. Free of `{`, which Svelte's parser reads. */

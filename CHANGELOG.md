@@ -11,10 +11,19 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **Web: the product name is the `brand_name` message** (Story 72.16, CentralizeMe request R1). The ~35
+  hard-coded "Project Vault" strings in `apps/web` (page and tab titles, the auth, home and error headers,
+  the footer, the shell brand link, the error "Back to" link, vault-gate, onboarding, readiness and API-proxy
+  copy, and the 12 catalogue messages that named it) now read `brand_name`, so a host renames the product by
+  overlaying one key in its pack's `messages/<locale>.json`. Messages that named the product take it as the
+  `{brand}` parameter, and `src/app.html`'s fallback title uses the `%brand.name%` placeholder that the server
+  hook fills. The default is "Project Vault" in every locale, so PV's own rendering is unchanged. New guard
+  `pnpm check-brand-name` fails on a new hard-coded occurrence (no exemption list). Ships with the next
+  `web-host` release; see [docs/composition-kit.md](docs/composition-kit.md#brand-name-epic-72-story-72-16).
 - **Web: PV's unit tests no longer write the text of an overlayable message key** (Story 72.19,
   CentralizeMe request R4). A host that overlays `auth_login_page_title`, `auth_login_page_description`,
-  `auth_register_page_title` or `shell_brand_tagline` (in `en`, `es` or any locale) keeps PV's shipped
-  tests green over the composed tree, with no `excludedPvTests` entry. The login, register, shell brand
+  `auth_register_page_title`, `brand_name` or `shell_brand_tagline` (in `en`, `es` or any locale) keeps PV's
+  shipped tests green over the composed tree, with no `excludedPvTests` entry. The login, register, shell brand
   and app shell tests read the message instead of the sentence, and the keys are listed as data in
   `src/lib/i18n/overlayable-message-keys.ts`. The `auth_handoff_confirm_prompt` key CM listed no longer
   exists (the nonce-bound handoff has no Confirm click, Story 73.1). `pnpm check-overlayable-messages`

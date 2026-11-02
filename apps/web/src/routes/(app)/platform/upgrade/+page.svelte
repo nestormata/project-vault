@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import PlatformUpgradeContent from '$lib/components/platform/PlatformUpgradeContent.svelte'
 
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -9,7 +10,7 @@
 </script>
 
 <svelte:head>
-  <title>Version & Upgrade | Platform Admin | Project Vault</title>
+  <title>Version & Upgrade | Platform Admin | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="platform.upgrade.before" data={data?.__inject} />

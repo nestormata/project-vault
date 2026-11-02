@@ -11,6 +11,7 @@ export const OVERLAYABLE_MESSAGE_KEYS = [
   'auth_login_page_description',
   'auth_login_page_title',
   'auth_register_page_title',
+  'brand_name',
   'shell_brand_tagline',
 ] as const
 

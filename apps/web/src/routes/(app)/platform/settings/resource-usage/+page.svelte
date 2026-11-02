@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import PlatformResourceUsageContent from '$lib/components/platform/PlatformResourceUsageContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Resource Usage | Platform Admin | Project Vault</title>
+  <title>Resource Usage | Platform Admin | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="platform.settings-resource-usage.before" data={data?.__inject} />

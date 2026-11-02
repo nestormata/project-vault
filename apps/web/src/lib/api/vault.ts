@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import type {
   VaultInitRequest,
   VaultInitResponse,
@@ -45,7 +46,7 @@ function sealedReadiness(body: ReadyBody): VaultReadiness {
 function unavailableReadiness(body: ReadyBody | null): VaultReadiness {
   return {
     state: 'unavailable',
-    message: 'Project Vault is not ready yet. Try again shortly.',
+    message: `${m.brand_name()} is not ready yet. Try again shortly.`,
     retryAfter: body?.retryAfter,
   }
 }
@@ -67,7 +68,7 @@ export async function getVaultReadiness(fetchFn: typeof fetch): Promise<VaultRea
   } catch {
     return {
       state: 'unavailable',
-      message: 'Project Vault is unavailable. Check the API connection and try again.',
+      message: `${m.brand_name()} is unavailable. Check the API connection and try again.`,
     }
   }
 

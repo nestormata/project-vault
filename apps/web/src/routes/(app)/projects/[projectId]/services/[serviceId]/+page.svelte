@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import ServiceDetailContent from '$lib/components/monitoring/ServiceDetailContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
@@ -6,7 +7,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.service?.name ?? 'Service'} | Project Vault</title>
+  <title>{data.service?.name ?? 'Service'} | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="project.services-detail.before" data={data?.__inject} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import ProjectExportPanel from '$lib/components/projects/ProjectExportPanel.svelte'
   import ProjectNotFound from '$lib/components/projects/ProjectNotFound.svelte'
@@ -9,7 +10,11 @@
 </script>
 
 <svelte:head>
-  <title>{data.project ? `${data.project.name} | Project Vault` : 'Project | Project Vault'}</title>
+  <title
+    >{data.project
+      ? `${data.project.name} | ${m.brand_name()}`
+      : 'Project | ' + m.brand_name()}</title
+  >
 </svelte:head>
 
 <InjectionPoint

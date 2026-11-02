@@ -15,7 +15,7 @@
 </script>
 
 <svelte:head>
-  <title>{m.dashboard_page_title()} | Project Vault</title>
+  <title>{m.dashboard_page_title()} | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="dashboard.home.before" data={data?.__inject} />

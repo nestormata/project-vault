@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import ExtensionsHeader from '$lib/components/settings/ExtensionsHeader.svelte'
   import ExtensionsStatusPanel from '$lib/components/settings/ExtensionsStatusPanel.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -7,7 +8,7 @@
 </script>
 
 <svelte:head>
-  <title>Extensions | Project Vault</title>
+  <title>Extensions | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.extensions.before" data={data?.__inject} />

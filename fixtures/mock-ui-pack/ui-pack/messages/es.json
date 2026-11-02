@@ -1,5 +1,6 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "brand_name": "Mock Product",
   "auth_login_page_description": "mock-ui-pack:m6-message-es",
   "auth_login_page_title": "mock-ui-pack:m6-login-title-es",
   "auth_register_page_title": "mock-ui-pack:m6-register-title-es",

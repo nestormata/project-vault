@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { ApiClientError } from '$lib/api/client.js'
 import {
   FIELD_KEY_PATTERN,
@@ -186,9 +187,14 @@ export function mapCredentialSubmitError(error: unknown): CredentialSubmitError 
 }
 
 export const onboardingCopy = {
-  welcomeHeading: 'Welcome to Project Vault',
-  projectModel:
-    'Everything in Project Vault lives inside a Project. A project is a container for all the secrets, services, and certificates that belong together — like payments-api or mobile-backend. There are no environments; instead, each environment can be its own project, or you can use tags to distinguish them within a project.',
+  // Getters, not values: the product name is read from the message catalogue per render (Story
+  // 72.16), never captured once at import time.
+  get welcomeHeading(): string {
+    return `Welcome to ${m.brand_name()}`
+  },
+  get projectModel(): string {
+    return `Everything in ${m.brand_name()} lives inside a Project. A project is a container for all the secrets, services, and certificates that belong together — like payments-api or mobile-backend. There are no environments; instead, each environment can be its own project, or you can use tags to distinguish them within a project.`
+  },
   step1Cta: "Got it — Let's add a secret",
   vaultSealedMessage:
     'The vault is sealed — secrets cannot be saved right now. Ask your administrator to unseal the vault.',

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import PlatformAuditContent from '$lib/components/platform/PlatformAuditContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Platform Operator Audit Log | Platform Admin | Project Vault</title>
+  <title>Platform Operator Audit Log | Platform Admin | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="platform.audit.before" data={data?.__inject} />

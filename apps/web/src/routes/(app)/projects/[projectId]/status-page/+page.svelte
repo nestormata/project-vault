@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { buildAbsoluteUrl, CapabilityId } from '@project-vault/shared'
   import { ApiClientError } from '$lib/api/client.js'
@@ -236,7 +237,7 @@
 </script>
 
 <svelte:head>
-  <title>Public status page | Project Vault</title>
+  <title>Public status page | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="project.status-page.before" data={data?.__inject} />

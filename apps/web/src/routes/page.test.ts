@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/svelte'
 import RootPage from './+page.svelte'
@@ -12,7 +13,7 @@ describe('root page fallback markup', () => {
   it('renders the app name as both the document title and a visible heading', () => {
     const { container } = render(RootPage)
 
-    expect(document.title).toBe('Project Vault')
-    expect(container.querySelector('h1')?.textContent).toBe('Project Vault')
+    expect(document.title).toBe(m.brand_name())
+    expect(container.querySelector('h1')?.textContent).toBe(m.brand_name())
   })
 })

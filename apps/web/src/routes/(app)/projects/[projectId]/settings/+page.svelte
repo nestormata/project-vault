@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import { PROJECT_DELETE_GRACE_DAYS } from '@project-vault/shared'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import ProjectDeleteZone from '$lib/components/projects/ProjectDeleteZone.svelte'
@@ -18,8 +19,8 @@
 <svelte:head>
   <title
     >{data.project
-      ? `Settings: ${data.project.name} | Project Vault`
-      : 'Project settings | Project Vault'}</title
+      ? `Settings: ${data.project.name} | ${m.brand_name()}`
+      : 'Project settings | ' + m.brand_name()}</title
   >
 </svelte:head>
 

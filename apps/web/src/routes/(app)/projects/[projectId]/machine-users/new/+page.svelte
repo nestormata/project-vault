@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import MachineUsersNewHeader from '$lib/components/machine-users/MachineUsersNewHeader.svelte'
   import MachineUsersNewForm from '$lib/components/machine-users/MachineUsersNewForm.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -7,7 +8,7 @@
 </script>
 
 <svelte:head>
-  <title>New machine user | Project Vault</title>
+  <title>New machine user | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="project.machine-users-new.before" data={data?.__inject} />

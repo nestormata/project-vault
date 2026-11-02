@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import RecoveryHeading from '$lib/components/auth/RecoveryHeading.svelte'
   import RecoveryRequestPanel from '$lib/components/auth/RecoveryRequestPanel.svelte'
   import RecoveryLoginLink from '$lib/components/auth/RecoveryLoginLink.svelte'
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Recover your account | Project Vault</title>
+  <title>Recover your account | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="auth.recovery.before" data={data?.__inject} />

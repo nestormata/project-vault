@@ -68,8 +68,7 @@ describe('/login +page.svelte', () => {
     pageMock.url = new URL('http://localhost/login?reason=registered')
     render(LoginPage)
 
-    // Story 72.19: the overlayable copy is read from the message in the locale under test, never
-    // written out, so a host overlaying it does not turn this red.
+    // Story 72.19: overlayable copy is read from messages in the locale under test, never written out.
     expect(document.title).toBe(overlayableMessage('auth_login_page_title', 'es'))
     expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeTruthy()
     expect(screen.getByText(overlayableMessage('auth_login_page_description', 'es'))).toBeTruthy()

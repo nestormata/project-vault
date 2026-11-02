@@ -1,4 +1,5 @@
 // @pv-not-guard oracle of PV's own un-composed markup, valid only on PV's tree
+import { m } from '$lib/paraglide/messages.js'
 import { cleanup, render } from '@testing-library/svelte'
 import type { Component } from 'svelte'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -55,6 +56,8 @@ afterEach(cleanup)
 
 const mountContent = (pageData: Record<string, unknown>) => render(Content, { props: { pageData } })
 
+// The product name is the `brand_name` message (Story 72.16): the markup is pinned with the name
+// normalised to the recorded default, so a pack that overlays the key still matches byte for byte.
 describe('PlatformUpgradeContent states (Story 69.12 pre-split pin)', () => {
   it('renders every state exactly as before the split', async () => {
     const states: [string, string][] = []
@@ -63,8 +66,11 @@ describe('PlatformUpgradeContent states (Story 69.12 pre-split pin)', () => {
       states.push([name, serializeIgnoringIndent(view.container)])
       cleanup()
     }
-    await expect(`${JSON.stringify(Object.fromEntries(states), null, 2)}\n`).toMatchFileSnapshot(
-      './PlatformUpgradeContent.states.snapshot.json'
-    )
+    await expect(
+      `${JSON.stringify(Object.fromEntries(states), null, 2)}\n`.replaceAll(
+        m.brand_name(),
+        '%%brand_name%%'
+      )
+    ).toMatchFileSnapshot('./PlatformUpgradeContent.states.snapshot.json')
   }, 60_000)
 })

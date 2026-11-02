@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClientError } from './client.js'
 import { getVaultReadiness, initVault, unsealVault } from './vault.js'
@@ -71,12 +72,12 @@ describe('vault API helpers', () => {
 
     await expect(getVaultReadiness(dbFetch)).resolves.toEqual({
       state: 'unavailable',
-      message: 'Project Vault is not ready yet. Try again shortly.',
+      message: `${m.brand_name()} is not ready yet. Try again shortly.`,
       retryAfter: 5,
     })
     await expect(getVaultReadiness(networkFetch)).resolves.toEqual({
       state: 'unavailable',
-      message: 'Project Vault is unavailable. Check the API connection and try again.',
+      message: `${m.brand_name()} is unavailable. Check the API connection and try again.`,
     })
   })
 

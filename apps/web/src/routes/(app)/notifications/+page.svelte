@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import NotificationsHeader from '$lib/components/notifications/NotificationsHeader.svelte'
   import MachineDormancyAlerts from '$lib/components/notifications/MachineDormancyAlerts.svelte'
   import UserDormancyAlerts from '$lib/components/notifications/UserDormancyAlerts.svelte'
@@ -42,7 +43,7 @@
 </script>
 
 <svelte:head>
-  <title>Notifications | Project Vault</title>
+  <title>Notifications | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="notifications.home.before" data={data?.__inject} />

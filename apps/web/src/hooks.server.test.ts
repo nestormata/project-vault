@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const getVaultReadinessMock = vi.hoisted(() => vi.fn())
@@ -263,5 +264,48 @@ describe('hooks.server handle', () => {
     const response = await handle({ event, resolve: echoResolve } as never)
 
     expect(await response.text()).toBe('<html lang="es">')
+  })
+
+  // Story 72.16: app.html's fallback <title> is the brand_name message, not a literal.
+  it('substitutes %brand.name% in the fallback <title> with the brand_name message', async () => {
+    const event = makeEvent('/pricing')
+    const echoResolve = vi.fn(
+      async (
+        _ev: unknown,
+        opts?: {
+          transformPageChunk?: (c: { html: string }) => string | Promise<string | undefined>
+        }
+      ) =>
+        new Response(
+          await opts?.transformPageChunk?.({ html: '<title>%brand.name%</title>' })
+        ) as Response
+    )
+
+    const response = await handle({ event, resolve: echoResolve } as never)
+
+    expect(await response.text()).toBe(`<title>${m.brand_name()}</title>`)
+  })
+
+  it('escapes HTML and keeps `$` sequences of a host brand name in the fallback <title>', async () => {
+    const event = makeEvent('/pricing')
+    const echoResolve = vi.fn(
+      async (
+        _ev: unknown,
+        opts?: {
+          transformPageChunk?: (c: { html: string }) => string | Promise<string | undefined>
+        }
+      ) =>
+        new Response(
+          await opts?.transformPageChunk?.({ html: '<title>%brand.name%</title>' })
+        ) as Response
+    )
+    const spy = vi
+      .spyOn(m, 'brand_name')
+      .mockReturnValue('A&B <i> $& $$ Safe' as ReturnType<typeof m.brand_name>)
+
+    const response = await handle({ event, resolve: echoResolve } as never)
+
+    expect(await response.text()).toBe('<title>A&amp;B &lt;i&gt; $&amp; $$ Safe</title>')
+    spy.mockRestore()
   })
 })
