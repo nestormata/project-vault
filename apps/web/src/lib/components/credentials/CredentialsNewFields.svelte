@@ -14,7 +14,7 @@
     data,
   }: {
     fields: FieldDraft[]
-    errors: Record<number, string>
+    errors: Map<number, string>
     multilineValue: boolean
     onAdd: () => void
     onRemove: (index: number) => void

@@ -167,6 +167,17 @@ describe('CredentialsNewForm state (interaction)', () => {
     expect(byId('credential-value').value).toBe('')
   })
 
+  it('shows the inline alert when a template field name is blank', async () => {
+    mount()
+    await type('credential-name', 'Prod DB')
+    await choose('custom')
+    await fireEvent.click(screen.getByRole('button', { name: '+ Add field' }))
+    await fireEvent.input(screen.getByLabelText('Field 1 value'), { target: { value: 'x' } })
+    await fireEvent.submit(document.querySelector('form') as HTMLFormElement)
+    expect(api.createCredential).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toBe('Field name is required')
+  })
+
   it('blocks a submit without a name or a value and shows the field errors in place', async () => {
     mount()
     await fireEvent.submit(document.querySelector('form') as HTMLFormElement)
