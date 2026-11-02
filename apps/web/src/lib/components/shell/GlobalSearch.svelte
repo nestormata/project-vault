@@ -79,6 +79,10 @@
   let providersPending = $state(0)
   let providersFailed = $state(false)
   let providerAbort: AbortController | null = null
+  // The provider row the user has arrowed to. A new keystroke must not drop that row, or move
+  // the highlight off it, while its provider is still answering (the previous rows stay until
+  // the new answer replaces them). Cleared when the user moves the highlight themselves.
+  let pinnedProviderKey = $state<string | null>(null)
 
   // The recents notice wins; otherwise a failed provider is mentioned calmly (Story 72.18).
   const shownNotice = $derived(
@@ -209,31 +213,50 @@
     }
   }
 
-  function resetProviders() {
+  function abortProviderRequests() {
     providerAbort?.abort()
     providerAbort = null
+  }
+
+  function resetProviders() {
+    abortProviderRequests()
     providerResults = {}
     providersPending = 0
     providersFailed = false
+    pinnedProviderKey = null
   }
 
   async function runProvider(provider: SearchProvider, term: string, signal: AbortSignal) {
     const outcome = await runSearchProvider(provider, term, signal)
-    // A superseded query (or a closed palette) drops the answer; its counters were already reset.
+    // A superseded query (or a closed palette) drops the answer and does not touch the counters.
     if (outcome.status === 'aborted' || signal.aborted) return
     providersPending -= 1
     if (outcome.status === 'ok') {
       providerResults = { ...providerResults, [provider.id]: outcome.results }
     } else {
+      const remaining = Object.entries(providerResults).filter(([id]) => id !== provider.id)
+      providerResults = Object.fromEntries(remaining)
       providersFailed = true
     }
   }
 
-  /** Starts every provider for `term` beside the native search; each answer lands on its own. */
+  /**
+   * Starts every provider for `term` beside the native search. The previous provider rows stay
+   * on screen until each provider's new answer replaces them, so a slow answer does not blank
+   * the row the user has arrowed to.
+   */
   function startProviders(term: string) {
-    resetProviders()
+    const selected = rows[selectedIndex]
+    pinnedProviderKey = selected?.group === 'provider' ? selected.id : null
+    abortProviderRequests()
+    providersFailed = false
     const providers = providerRegistry?.providers ?? []
-    if (providers.length === 0) return
+    if (providers.length === 0) {
+      providerResults = {}
+      providersPending = 0
+      pinnedProviderKey = null
+      return
+    }
     providerAbort = new AbortController()
     providersPending = providers.length
     for (const provider of providers) void runProvider(provider, term, providerAbort.signal)
@@ -384,11 +407,13 @@
     }
     if (event.key === 'ArrowDown') {
       event.preventDefault()
+      pinnedProviderKey = null
       if (rows.length > 0) selectedIndex = (selectedIndex + 1) % rows.length
       return
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault()
+      pinnedProviderKey = null
       if (rows.length > 0) selectedIndex = (selectedIndex - 1 + rows.length) % rows.length
       return
     }
@@ -403,7 +428,19 @@
   }
 
   // Rows can shrink while results and checks arrive; keep the highlight on a row that exists.
+  // A pinned provider row keeps its highlight when native results change length underneath it.
   $effect(() => {
+    const key = pinnedProviderKey
+    if (key) {
+      const index = rows.findIndex((row) => row.group === 'provider' && row.id === key)
+      if (index >= 0) {
+        if (selectedIndex !== index) selectedIndex = index
+        return
+      }
+      pinnedProviderKey = null
+      if (selectedIndex !== 0) selectedIndex = 0
+      return
+    }
     if (selectedIndex >= rows.length) selectedIndex = 0
   })
 
