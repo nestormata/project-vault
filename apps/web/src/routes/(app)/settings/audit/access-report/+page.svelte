@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import AccessReportHeader from '$lib/components/settings/AccessReportHeader.svelte'
   import AccessReportPanel from '$lib/components/settings/AccessReportPanel.svelte'
   import NavLinkRegion from '$lib/components/shell/NavLinkRegion.svelte'
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Access Report | Project Vault</title>
+  <title>Access Report | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.audit-access-report.before" data={data?.__inject} />

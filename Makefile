@@ -245,6 +245,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-route-regions.test.ts
 	@# Story 68.10: the mechanism e2e job wiring, its path filter and the mechanism specs cannot pass vacuously
 	pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts scripts/mock-ui-pack-seed.test.ts scripts/check-pv-nav-snapshot.test.ts scripts/check-mock-ui-pack-not-in-production.test.ts scripts/check-runtime-route-audit-shipped.test.ts scripts/lib/shipped-route-audit.test.ts
+	@# Story 72.16: the product name is read from the brand_name message, never hard-coded
+	pnpm check-brand-name
+	pnpm vitest run scripts/check-brand-name.test.ts
 	@# Story 68.7: every PV nav item has a stable id; every nav surface is rendered from nav data
 	pnpm check-nav-ids
 	pnpm vitest run scripts/check-nav-ids.test.ts

@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
 import { createRawSnippet } from 'svelte'
@@ -57,14 +58,14 @@ describe('/(app) +layout.svelte', () => {
       },
     })
 
-    expect(screen.getByText(/Welcome to Project Vault/i)).toBeTruthy()
+    expect(screen.getByText(`Welcome to ${m.brand_name()}`, { exact: false })).toBeTruthy()
     expect(screen.queryByText('protected app content')).toBeNull()
   })
 
   // Story 63.2 AC-4: the dashboard page (owner of the Dashboard title) is not mounted while the
   // wizard is open, so the shell must supply the title instead of leaving the previous page's.
-  it('titles the tab "Dashboard | Project Vault" while the onboarding wizard is open', () => {
-    document.title = 'Sign in | Project Vault'
+  it(`titles the tab "Dashboard | ${m.brand_name()}" while the onboarding wizard is open`, () => {
+    document.title = `Sign in | ${m.brand_name()}`
     render(Layout, {
       props: {
         data: appLayoutData({
@@ -78,12 +79,12 @@ describe('/(app) +layout.svelte', () => {
       },
     })
 
-    expect(document.title).toBe('Dashboard | Project Vault')
+    expect(document.title).toBe(`Dashboard | ${m.brand_name()}`)
     expect(document.head.querySelectorAll('title')).toHaveLength(1)
   })
 
   it('adds no title of its own once onboarding is completed', () => {
-    document.title = 'Credentials | Project Vault'
+    document.title = `Credentials | ${m.brand_name()}`
     render(Layout, {
       props: {
         data: appLayoutData({
@@ -97,7 +98,7 @@ describe('/(app) +layout.svelte', () => {
       },
     })
 
-    expect(document.title).toBe('Credentials | Project Vault')
+    expect(document.title).toBe(`Credentials | ${m.brand_name()}`)
   })
 
   it('renders the page children (not the wizard) when onboarding is completed', () => {
@@ -115,7 +116,7 @@ describe('/(app) +layout.svelte', () => {
     })
 
     expect(screen.getByText('protected app content')).toBeTruthy()
-    expect(screen.queryByText(/Welcome to Project Vault/i)).toBeNull()
+    expect(screen.queryByText(`Welcome to ${m.brand_name()}`, { exact: false })).toBeNull()
   })
 
   it('defaults the initial unread count to 0 when data.unreadCount is undefined', () => {
@@ -339,12 +340,12 @@ describe('/(app) +layout.svelte', () => {
     const { rerender } = render(Layout, {
       props: { data: pending, children: childrenSnippet() },
     })
-    expect(screen.getByText(/Welcome to Project Vault/i)).toBeTruthy()
+    expect(screen.getByText(`Welcome to ${m.brand_name()}`, { exact: false })).toBeTruthy()
 
     await rerender({ data: appLayoutData({ ...pending, onboardingCompleted: true }) })
 
     expect(screen.getByText('protected app content')).toBeTruthy()
-    expect(screen.queryByText(/Welcome to Project Vault/i)).toBeNull()
+    expect(screen.queryByText(`Welcome to ${m.brand_name()}`, { exact: false })).toBeNull()
   })
 
   // Code review 68-1: `onboardingDone` is a writable $derived of the layout data. A later load

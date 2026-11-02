@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { describe, expect, it, vi } from 'vitest'
 import { proxyApiRequest, proxyHealthRequest, proxyReadyRequest } from './api-proxy.js'
 import { jsonResponse } from '$lib/test/json-response.js'
@@ -81,7 +82,7 @@ describe('server API proxy', () => {
     await expect(response.json()).resolves.toEqual({
       status: 'unavailable',
       reason: 'api_unreachable',
-      message: 'Project Vault API is unavailable.',
+      message: `${m.brand_name()} API is unavailable.`,
     })
   })
 

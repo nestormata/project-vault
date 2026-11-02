@@ -9,6 +9,18 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Changed
+
+- **Web: the product name is the `brand_name` message** (Story 72.16, CentralizeMe request R1). The ~35
+  hard-coded "Project Vault" strings in `apps/web` (page and tab titles, the auth, home and error headers,
+  the footer, the shell brand link, the error "Back to" link, vault-gate, onboarding, readiness and API-proxy
+  copy, and the 12 catalogue messages that named it) now read `brand_name`, so a host renames the product by
+  overlaying one key in its pack's `messages/<locale>.json`. Messages that named the product take it as the
+  `{brand}` parameter, and `src/app.html`'s fallback title uses the `%brand.name%` placeholder that the server
+  hook fills. The default is "Project Vault" in every locale, so PV's own rendering is unchanged. New guard
+  `pnpm check-brand-name` fails on a new hard-coded occurrence (no exemption list). Ships with the next
+  `web-host` release; see [docs/composition-kit.md](docs/composition-kit.md#brand-name-epic-72-story-72-16).
+
 ### Added
 
 - **Web: the shell header tagline is the `shell_brand_tagline` message** (Story 72.17, CentralizeMe

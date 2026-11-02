@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import InvitationAcceptContent from '$lib/components/auth/InvitationAcceptContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   let { data } = $props()
 </script>
 
 <svelte:head>
-  <title>Accept invitation | Project Vault</title>
+  <title>Accept invitation | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="auth.invitations-accept.before" data={data?.__inject} />

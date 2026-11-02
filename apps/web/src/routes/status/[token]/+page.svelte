@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import PublicStatusHeader from '$lib/components/public-status/PublicStatusHeader.svelte'
   import PublicStatusServices from '$lib/components/public-status/PublicStatusServices.svelte'
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Status | Project Vault</title>
+  <title>Status | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="status.detail.before" data={data?.__inject} />

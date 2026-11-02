@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte'
 import { createRawSnippet } from 'svelte'
@@ -60,8 +61,8 @@ describe('AppShell.svelte', () => {
       },
     })
 
-    expect(screen.queryByRole('link', { name: 'Project Vault' })).toBeNull()
-    expect(screen.getByText('Project Vault')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: m.brand_name() })).toBeNull()
+    expect(screen.getByText(m.brand_name())).toBeTruthy()
     expect(screen.queryByTestId('primary-nav')).toBeNull()
     expect(screen.queryByRole('link', { name: /notifications/i })).toBeNull()
   })
@@ -75,7 +76,7 @@ describe('AppShell.svelte', () => {
       },
     })
 
-    const titleLink = screen.getByRole('link', { name: 'Project Vault' })
+    const titleLink = screen.getByRole('link', { name: m.brand_name() })
     expect(titleLink.getAttribute('href')).toBe('/dashboard')
     expect(screen.getByTestId('primary-nav')).toBeTruthy()
     // AC-24: the primary nav item and the header's notification-bell link now share the same

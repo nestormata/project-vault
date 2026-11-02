@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import { ApiClientError } from '$lib/api/client.js'
   import { updateAuditRetention } from '$lib/api/audit.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -59,7 +60,7 @@
 <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
   <h2 class="text-lg font-semibold text-slate-950">Retention</h2>
   <p class="mt-2 text-sm font-medium text-amber-800">
-    Project Vault does not currently display your saved retention configuration — this form always
+    {m.brand_name()} does not currently display your saved retention configuration — this form always
     sets a new value.
   </p>
 

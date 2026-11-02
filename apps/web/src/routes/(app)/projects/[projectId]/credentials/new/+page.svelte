@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import CredentialsNewHeader from '$lib/components/credentials/CredentialsNewHeader.svelte'
   import CredentialsNewForm from '$lib/components/credentials/CredentialsNewForm.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -7,7 +8,7 @@
 </script>
 
 <svelte:head>
-  <title>New secret | Project Vault</title>
+  <title>New secret | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="project.credentials-new.before" data={data?.__inject} />

@@ -7,6 +7,6 @@
 
 <div class="space-y-2">
   <h1 class="text-3xl font-bold">{m.auth_login_page_heading()}</h1>
-  <p class="text-slate-600">{m.auth_login_page_description()}</p>
+  <p class="text-slate-600">{m.auth_login_page_description({ brand: m.brand_name() })}</p>
 </div>
 {@render children?.()}

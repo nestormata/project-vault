@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import CredentialRotateHeader from '$lib/components/credentials/CredentialRotateHeader.svelte'
   import CredentialRotateForm from '$lib/components/credentials/CredentialRotateForm.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -7,7 +8,7 @@
 </script>
 
 <svelte:head>
-  <title>Start rotation | Project Vault</title>
+  <title>Start rotation | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="project.credentials-rotate.before" data={data?.__inject} />

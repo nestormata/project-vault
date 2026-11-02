@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import RotationDetailContent from '$lib/components/rotations/RotationDetailContent.svelte'
 
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -10,7 +11,7 @@
 <InjectionPoint name="project.credentials-rotations-detail.header.actions" data={data?.__inject} />
 
 <svelte:head>
-  <title>Rotation | Project Vault</title>
+  <title>Rotation | {m.brand_name()}</title>
 </svelte:head>
 
 <!-- @region project.credentials-rotations-detail.content -->

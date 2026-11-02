@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import AuthBrandHeader from './AuthBrandHeader.svelte'
@@ -11,6 +12,6 @@ describe('AuthBrandHeader.svelte', () => {
     const { container } = render(AuthBrandHeader)
 
     expect(container.querySelector('img')?.getAttribute('src')).toBe('/logo-mark.png')
-    expect(screen.getByText('Project Vault')).toBeTruthy()
+    expect(screen.getByText(m.brand_name())).toBeTruthy()
   })
 })

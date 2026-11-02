@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { trustedApiBase } from './server-api-fetch.js'
 
 const HOP_BY_HOP_HEADERS = new Set([
@@ -66,7 +67,7 @@ function apiUnavailableResponse() {
     {
       status: 'unavailable',
       reason: 'api_unreachable',
-      message: 'Project Vault API is unavailable.',
+      message: `${m.brand_name()} API is unavailable.`,
     },
     { status: 503 }
   )

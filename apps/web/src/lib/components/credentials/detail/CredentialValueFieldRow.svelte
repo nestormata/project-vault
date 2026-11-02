@@ -57,7 +57,7 @@
       >
     {/if}
     {#if controller.canReveal && meta.kind === 'totp'}
-      <FormHelpText id={copyHelpId} text={m.credential_totp_help()} />
+      <FormHelpText id={copyHelpId} text={m.credential_totp_help({ brand: m.brand_name() })} />
     {:else if controller.canReveal}
       <FormHelpText id={copyHelpId} text={m.credential_copy_field_help({ field: meta.key })} />
     {/if}

@@ -60,7 +60,7 @@ export const backItems: SurfaceBuilder<'back'> = () => [
 export const errorNavItems: SurfaceBuilder<'error.nav'> = () => [
   {
     id: 'error.nav.back',
-    label: (ctx) => (ctx.authenticated ? 'Back to Dashboard' : 'Back to Project Vault'),
+    label: (ctx) => (ctx.authenticated ? 'Back to Dashboard' : `Back to ${m.brand_name()}`),
     href: (ctx) => (ctx.authenticated ? resolve('/dashboard') : resolve('/')),
   },
 ]

@@ -91,7 +91,7 @@
       <FormHelpText id={`credential-field-name-help-${index}`} kind="text" />
       <FormHelpText
         id={`credential-field-kind-help-${index}`}
-        text={m.credential_field_kind_help()}
+        text={m.credential_field_kind_help({ brand: m.brand_name() })}
       />
       <FormHelpText
         id={`credential-field-value-help-${index}`}

@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import type { VaultReadiness } from '$lib/api/vault.js'
 
 export type VaultGateModel = {
@@ -44,10 +45,9 @@ export function getVaultGateModel(readiness: VaultReadiness): VaultGateModel {
   if (readiness.state === 'unavailable') {
     return {
       eyebrow: 'Vault unavailable',
-      title: 'Project Vault is not ready',
+      title: `${m.brand_name()} is not ready`,
       message: readiness.message,
-      explanation:
-        'Project Vault could not reach its backing vault store just now. This is usually transient — the vault host may be starting up or briefly unreachable. Try again in a moment; if it persists, contact your administrator.',
+      explanation: `${m.brand_name()} could not reach its backing vault store just now. This is usually transient — the vault host may be starting up or briefly unreachable. Try again in a moment; if it persists, contact your administrator.`,
       primaryAction: 'Retry readiness',
       showInit: false,
       showUnseal: false,
@@ -56,7 +56,7 @@ export function getVaultGateModel(readiness: VaultReadiness): VaultGateModel {
 
   return {
     eyebrow: 'Vault ready',
-    title: 'Project Vault is ready',
+    title: `${m.brand_name()} is ready`,
     message: 'Continue to sign in or register.',
     explanation: '',
     primaryAction: null,

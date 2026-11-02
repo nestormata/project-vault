@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
@@ -125,7 +126,7 @@
 </script>
 
 <svelte:head>
-  <title>Members | Project Vault</title>
+  <title>Members | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="project.members.before" data={data?.__inject} />

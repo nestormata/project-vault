@@ -9,7 +9,7 @@ import { m } from '$lib/paraglide/messages.js'
 export function getDashboardEmptyStateCopy() {
   return {
     projectModel: m.dashboard_project_model(),
-    organizingPrinciple: m.dashboard_organizing_principle(),
+    organizingPrinciple: m.dashboard_organizing_principle({ brand: m.brand_name() }),
     previewAction: m.dashboard_preview_action(),
     previewWarning: m.dashboard_preview_warning(),
     noProjects: m.dashboard_no_projects(),

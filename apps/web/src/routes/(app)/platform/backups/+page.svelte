@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import PlatformBackupsContent from '$lib/components/platform/PlatformBackupsContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Backups | Platform Admin | Project Vault</title>
+  <title>Backups | Platform Admin | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="platform.backups.before" data={data?.__inject} />

@@ -1,12 +1,12 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import RootHomeContent from '$lib/components/public/RootHomeContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   let { data } = $props()
-  const title = 'Project Vault'
 </script>
 
 <svelte:head>
-  <title>{title}</title>
+  <title>{m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="root.home.before" data={data?.__inject} />

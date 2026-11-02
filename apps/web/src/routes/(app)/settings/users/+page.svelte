@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import UsersHeader from '$lib/components/settings/UsersHeader.svelte'
   import UsersManagementPanel from '$lib/components/settings/UsersManagementPanel.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -10,7 +11,7 @@
 <InjectionPoint name="settings.users.header.actions" data={data?.__inject} />
 
 <svelte:head>
-  <title>Users | Project Vault</title>
+  <title>Users | {m.brand_name()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-5xl px-4 py-8">
