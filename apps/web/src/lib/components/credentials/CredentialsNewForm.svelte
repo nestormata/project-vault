@@ -1,11 +1,13 @@
 <script lang="ts">
   import type { PageData } from '../../../routes/(app)/projects/[projectId]/credentials/new/$types.js'
   import type { Snippet } from 'svelte'
+  import { SvelteMap } from 'svelte/reactivity'
   import {
     buildTemplateFieldDrafts,
     mapCredentialSubmitError,
     parseTagsInput,
     validateCredentialForm,
+    replaceFieldErrors,
     validateFieldSet,
     fieldDraftToRequest,
     type FieldDraft,
@@ -45,7 +47,7 @@
   let submitting = $state(false)
   let errorMessage = $state<string | null>(null)
   let fieldErrors = $state<{ name?: string; value?: string }>({})
-  let fieldSetErrors = $state<Record<number, string>>({})
+  const fieldSetErrors = new SvelteMap<number, string>()
   const canCreate = $derived(canCreateCredentialInProject(pageData.orgRole, pageData.project))
   const useFieldSet = $derived(template !== '')
   function hasFieldEdits(): boolean {
@@ -57,13 +59,13 @@
       return
     }
     template = next
-    fieldSetErrors = {}
+    replaceFieldErrors(fieldSetErrors)
     fields = next === '' ? [] : buildTemplateFieldDrafts(next)
   }
   // Story 72.10: the single value becomes the first field of a custom field list.
   function addCustomFields(): void {
     template = 'custom'
-    fieldSetErrors = {}
+    replaceFieldErrors(fieldSetErrors)
     fields = [
       { key: 'value', value, sensitive: true },
       { key: '', value: '', sensitive: false },
@@ -75,7 +77,7 @@
   }
   function removeField(index: number): void {
     fields = fields.filter((_, i) => i !== index)
-    fieldSetErrors = {}
+    replaceFieldErrors(fieldSetErrors)
   }
   async function submitForm() {
     if (submitting || !canCreate) return
@@ -84,7 +86,7 @@
 
     if (useFieldSet) {
       const result = validateFieldSet(fields)
-      fieldSetErrors = result.fieldErrors
+      replaceFieldErrors(fieldSetErrors, result.fieldErrors)
       if (!result.ok) {
         errorMessage = result.formError ?? null
         return
@@ -122,7 +124,7 @@
         const idx = fields.findIndex(
           (f) => f.key.trim().toLowerCase() === mapped.fieldKeyConflict?.toLowerCase()
         )
-        if (idx >= 0) fieldSetErrors = { ...fieldSetErrors, [idx]: mapped.errorMessage }
+        if (idx >= 0) fieldSetErrors.set(idx, mapped.errorMessage)
       }
     } finally {
       submitting = false

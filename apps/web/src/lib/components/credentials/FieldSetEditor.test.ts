@@ -11,11 +11,28 @@ import FieldSetEditor from './FieldSetEditor.svelte'
 
 afterEach(() => cleanup())
 
-function mount(fields: FieldDraft[], multilineValue = false) {
+function mount(fields: FieldDraft[], multilineValue = false, errors?: Map<number, string>) {
   return render(FieldSetEditor, {
-    props: { fields, multilineValue, onAdd: vi.fn(), onRemove: vi.fn() },
+    props: {
+      fields,
+      multilineValue,
+      onAdd: vi.fn(),
+      onRemove: vi.fn(),
+      ...(errors ? { errors } : {}),
+    },
   })
 }
+
+describe('FieldSetEditor field errors', () => {
+  it('shows the alert for the row named by the error map', () => {
+    mount(
+      [{ key: '', value: 'x', sensitive: false }],
+      false,
+      new Map([[0, 'Field name is required']])
+    )
+    expect(screen.getByRole('alert').textContent).toBe('Field name is required')
+  })
+})
 
 describe('FieldSetEditor kinds (72-10)', () => {
   it('shows a textarea for a multiline field and a masked input for a sensitive text field', () => {

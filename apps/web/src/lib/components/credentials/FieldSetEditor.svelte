@@ -10,13 +10,13 @@
 
   let {
     fields = $bindable(),
-    errors = {},
+    errors = new Map<number, string>(),
     multilineValue = false,
     onAdd,
     onRemove,
   }: {
     fields: FieldDraft[]
-    errors?: Record<number, string>
+    errors?: Map<number, string>
     multilineValue?: boolean
     onAdd: () => void
     onRemove: (index: number) => void
@@ -108,8 +108,8 @@
         Remove
       </button>
     </div>
-    {#if errors[index]}
-      <p class="text-sm text-red-700" role="alert">{errors[index]}</p>
+    {#if errors.get(index)}
+      <p class="text-sm text-red-700" role="alert">{errors.get(index)}</p>
     {/if}
   </div>
 {/each}
