@@ -69,7 +69,7 @@ describe('PlatformUpgradeContent states (Story 69.12 pre-split pin)', () => {
     await expect(
       `${JSON.stringify(Object.fromEntries(states), null, 2)}\n`.replaceAll(
         m.brand_name(),
-        'Project Vault'
+        '%%brand_name%%'
       )
     ).toMatchFileSnapshot('./PlatformUpgradeContent.states.snapshot.json')
   }, 60_000)

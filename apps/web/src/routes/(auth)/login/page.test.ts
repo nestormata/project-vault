@@ -1,7 +1,7 @@
-import { m } from '$lib/paraglide/messages.js'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
+import { overlayableMessage } from '$lib/test/overlayable-messages.js'
 
 const loginMock = vi.hoisted(() => vi.fn())
 const getCurrentUserMock = vi.hoisted(() => vi.fn())
@@ -68,9 +68,10 @@ describe('/login +page.svelte', () => {
     pageMock.url = new URL('http://localhost/login?reason=registered')
     render(LoginPage)
 
-    expect(document.title).toBe(`Iniciar sesión | ${m.brand_name()}`)
+    // Story 72.19: overlayable copy is read from messages in the locale under test, never written out.
+    expect(document.title).toBe(overlayableMessage('auth_login_page_title', 'es'))
     expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeTruthy()
-    expect(screen.getByText(`Usa tu cuenta de ${m.brand_name()} para continuar.`)).toBeTruthy()
+    expect(screen.getByText(overlayableMessage('auth_login_page_description', 'es'))).toBeTruthy()
     expect(screen.getByText('Cuenta creada. Inicia sesión para continuar.')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Registrarse' })).toBeTruthy()
     expect(screen.getByRole('link', { name: '¿No puedes acceder a tu cuenta?' })).toBeTruthy()

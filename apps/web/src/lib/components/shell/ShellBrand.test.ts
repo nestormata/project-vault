@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import ShellBrand from './ShellBrand.svelte'
+import { overlayableMessage } from '$lib/test/overlayable-messages.js'
 import { m } from '$lib/paraglide/messages.js'
 import en from '../../../../messages/en.json'
 import es from '../../../../messages/es.json'
@@ -19,12 +20,14 @@ describe('ShellBrand.svelte', () => {
     expect(screen.getByText(m.shell_brand_tagline())).toBeTruthy()
   })
 
-  // Story 72.17 AC-1: the tagline is a message key (a host overlays it, no component replacement),
-  // and its default text is the sentence PV rendered before the key existed.
-  it('reads the tagline from the shell_brand_tagline message with the unchanged default text', () => {
-    expect(m.shell_brand_tagline()).toBe('Run complex projects. Miss nothing.')
-    expect(en.shell_brand_tagline).toBe('Run complex projects. Miss nothing.')
-    expect(es.shell_brand_tagline).toBe('Run complex projects. Miss nothing.')
+  // Story 72.17 AC-1: the tagline is a message key (a host overlays it, no component replacement).
+  // Story 72.19: this test does not write its default text, so a host overlay keeps it green; the
+  // unchanged default is proved by the j45 journey on PV's own stack, which no pack touches.
+  it('reads the tagline from the shell_brand_tagline message in every locale', () => {
+    expect(m.shell_brand_tagline()).not.toBe('')
+    expect(overlayableMessage('shell_brand_tagline', 'es')).not.toBe('')
+    expect(en.shell_brand_tagline).not.toBe('')
+    expect(es.shell_brand_tagline).not.toBe('')
   })
 
   it('shows the tagline in the onboarding variant too', () => {

@@ -4,10 +4,9 @@ import esCatalog from '../../../messages/es.json'
 import { m } from '$lib/paraglide/messages.js'
 import { setLocale } from '$lib/paraglide/runtime.js'
 
-// Story 72.16 (CM request R1): the product name is the `brand_name` message. This is the one place
-// that pins its default; every other test reads `m.brand_name()`, and a host renames PV by overlaying
-// this single key (`docs/composition-kit.md`).
-const DEFAULT_BRAND = 'Project Vault'
+// Story 72.16 (CM request R1): the product name is the `brand_name` message. This file reads the
+// default from the shipped catalogues (no literal in source) so overlayable-message guards stay green.
+const DEFAULT_BRAND = enCatalog.brand_name
 
 describe('brand_name message (Story 72.16)', () => {
   afterEach(() => setLocale('en', { reload: false }))

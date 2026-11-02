@@ -493,7 +493,7 @@ describe('monitoring region extraction oracle (Story 69.3 AC-2)', () => {
       ...(await statusAdminStates()),
     }
     await expect(
-      `${JSON.stringify(result, null, 2)}\n`.replaceAll(m.brand_name(), 'Project Vault')
+      `${JSON.stringify(result, null, 2)}\n`.replaceAll(m.brand_name(), '%%brand_name%%')
     ).toMatchFileSnapshot('./monitoring-extraction.snapshot.json')
     expect(Object.keys(result).length).toBeGreaterThanOrEqual(40)
   })
