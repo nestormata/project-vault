@@ -512,9 +512,7 @@ function storySources(root: string, storyKey: string, comment: BodyLine): TextSo
   return sources
 }
 
-const FINDING_TEXT =
-  /\b(?:clean|no findings|no issues|verdict|critical|high|medium|lows?|nits?|fixed|unfixed|trade-?offs?|dw-\d+|\d+-\d+[a-z]?-)\b/i
-const SEE_PR_NUMBER = /^(?:see the pr|see pr) #\d+$/
+const SEE_PR_NUMBER = /^(?:see the pull request|see pull request|see the pr|see pr) #\d+$/
 const SEE_HEADS = ['see the pull request', 'see the pr', 'see pull request', 'see pr'] as const
 const INDEPENDENT_REST = new Set([
   'pr body',
@@ -527,14 +525,50 @@ const INDEPENDENT_REST = new Set([
   'the pull request',
 ])
 
+function replaceMarkdownLinks(text: string): string {
+  let out = ''
+  let index = 0
+  while (index < text.length) {
+    const open = text.indexOf('[', index)
+    if (open < 0 || text.indexOf(']', open + 1) < 0) return out + text.slice(index)
+    const close = text.indexOf(']', open + 1)
+    if (text.charAt(close + 1) !== '(') {
+      out += text.slice(index, open + 1)
+      index = open + 1
+      continue
+    }
+    const end = text.indexOf(')', close + 2)
+    if (end < 0) return out + text.slice(index)
+    out += text.slice(index, open) + text.slice(open + 1, close)
+    index = end + 1
+  }
+  return out
+}
+
+function unwrapQuotes(text: string): string {
+  const pairs: readonly (readonly [string, string])[] = [
+    ['"', '"'],
+    ['“', '”'],
+  ]
+  for (const [open, close] of pairs) {
+    if (text.startsWith(open) && text.endsWith(close) && text.length > open.length + close.length) {
+      return text.slice(open.length, -close.length).trim()
+    }
+  }
+  return text
+}
+
 function pointerBody(text: string): string {
   let body = text.trim()
+  while (body.startsWith('>')) body = body.slice(1).trim()
   if (body.startsWith('- ') || body.startsWith('* ')) body = body.slice(2).trim()
   else if (/^\d+\. /.test(body)) body = body.slice(body.indexOf(' ') + 1).trim()
   if (body.startsWith('[x] ') || body.startsWith('[X] ') || body.startsWith('[ ] ')) {
     body = body.slice(4).trim()
   }
-  return body.replaceAll('*', '').replaceAll('_', '').replaceAll('`', '').trim()
+  body = unwrapQuotes(body.replaceAll('*', '').replaceAll('_', '').replaceAll('`', '').trim())
+  if (body.endsWith(':')) body = body.slice(0, -1).trim()
+  return replaceMarkdownLinks(body).trim()
 }
 
 function withoutPeriod(text: string): string {
@@ -571,7 +605,48 @@ function isSeePrSentence(lower: string): boolean {
 
 function isIndependentReviewPointer(lower: string): boolean {
   const prefix = 'independent review: see '
-  return lower.startsWith(prefix) && INDEPENDENT_REST.has(lower.slice(prefix.length))
+  if (!lower.startsWith(prefix)) return false
+  const rest = lower.slice(prefix.length)
+  return INDEPENDENT_REST.has(rest) || /^(?:the )?(?:pr|pull request) #\d+$/.test(rest)
+}
+
+function hasSeverityWord(text: string): boolean {
+  const pattern = /\b(?:critical|high|medium|low|nit)s?\b/gi
+  for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
+    if (text.charAt(match.index + match[0].length) !== '-') return true
+  }
+  return false
+}
+
+const FINDING_PHRASES: readonly RegExp[] = [
+  /\bverdict\s*:/i,
+  /\bno findings\b/i,
+  /\bno issues\b/i,
+  /\bfindings-addressed\b/i,
+  /\bfixed in\b/i,
+  /\(\d{1,2}\)/,
+]
+
+/** A non-pointer line that actually records a verdict or a finding, not a date or a hyphenated word. */
+function lineHasFindingText(text: string): boolean {
+  const trimmed = text.trim()
+  if (trimmed === '' || trimmed.startsWith('#')) return false
+  if (isPrOnlyReviewPointer(trimmed)) return false
+  if (FINDING_PHRASES.some((pattern) => pattern.test(trimmed))) return true
+  if (hasSeverityWord(trimmed)) return true
+  const cited = /\bDW-\d+\b/i.exec(trimmed)
+  return cited !== null && !isNegated(trimmed, cited.index)
+}
+
+function recordsCleanVerdict(content: string): boolean {
+  const fenced = createFenceTracker()
+  let text = ''
+  for (const raw of content.split('\n')) {
+    const line = raw.replace(/\r$/, '')
+    if (!fenced(line)) text += `${line}\n`
+  }
+  const match = /\bclean, no findings\b/i.exec(text)
+  return match !== null && !isNegated(text, match.index)
 }
 
 /** Whether `line` is only a pull-request pointer, with no verdict or finding of its own. */
@@ -606,7 +681,7 @@ function pointerViolations(storyKey: string, path: string, content: string): Tra
   const covered = new Set<number>()
   const violations: TradeoffViolation[] = []
   for (const section of sections) {
-    const hasFinding = section.lines.some((l) => FINDING_TEXT.test(l.text))
+    const hasFinding = section.lines.some((l) => lineHasFindingText(l.text))
     for (const l of section.lines) {
       covered.add(l.line)
       if (!hasFinding && isPrOnlyReviewPointer(l.text)) {
@@ -623,12 +698,25 @@ function pointerViolations(storyKey: string, path: string, content: string): Tra
   return violations
 }
 
-function appendPointerViolations(findings: TradeoffFindings, root: string, storyKey: string): void {
+function appendPointerViolations(
+  findings: TradeoffFindings,
+  root: string,
+  storyKey: string,
+  comment: BodyLine
+): void {
   const storyFile = resolveStoryFile(root, storyKey)
-  if (!storyFile) return
-  findings.violations.push(
-    ...pointerViolations(storyKey, toRepoPath(root, storyFile.path), storyFile.content)
-  )
+  const content = storyFile?.content ?? ''
+  if (recordsCleanVerdict(content)) return
+  if (storyFile) {
+    findings.violations.push(
+      ...pointerViolations(storyKey, toRepoPath(root, storyFile.path), content)
+    )
+  }
+  if (isPrOnlyReviewPointer(comment.text)) {
+    findings.violations.push(
+      pointerViolation(storyKey, SPRINT_STATUS_PATH, comment.line, comment.text)
+    )
+  }
 }
 
 /** Scans the overlay under `rootDir` (the CLI reports unreadable inputs before calling this). */
@@ -659,7 +747,7 @@ export function scanReviewTradeoffLedger(rootDir = process.cwd()): TradeoffFindi
     if (rules.sectionHits > 0) findings.sectionCount++
     if (rules.deferHits > 0) findings.deferCount++
     findings.violations.push(...rules.violations)
-    appendPointerViolations(findings, root, entry.key)
+    appendPointerViolations(findings, root, entry.key, comment)
   }
   findings.violations = dedupeViolations(findings.violations)
   findings.violations.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
