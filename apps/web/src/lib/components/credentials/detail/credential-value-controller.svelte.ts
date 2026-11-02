@@ -11,6 +11,7 @@ import {
 import {
   fieldDraftToRequest,
   mapCredentialSubmitError,
+  replaceFieldErrors,
   validateFieldSet,
   type FieldDraft,
 } from '$lib/components/onboarding/onboarding-logic.js'
@@ -413,7 +414,7 @@ export class CredentialValueController extends CredentialSectionController<Crede
   // so it closes and clears when the record changes (never sourced from `data`).
   editingFieldSet = $derived(resetOn(this.credentialKey, false))
   editFields = $derived(resetOn<FieldDraft[]>(this.credentialKey, []))
-  fieldSetErrors = $state<Record<number, string>>({})
+  readonly fieldSetErrors = new SvelteMap<number, string>()
   fieldSetFormError = $state<string | null>(null)
   loadingFieldSet = $state(false)
 
@@ -429,7 +430,7 @@ export class CredentialValueController extends CredentialSectionController<Crede
       const revealed = await revealCredentialValue(fetch, this.projectId, this.credentialId)
       if (!this.#isCurrentCredential(requestKey)) return
       this.editFields = parseRevealedFields(this.fieldMeta, revealed).map((f) => ({ ...f }))
-      this.fieldSetErrors = {}
+      replaceFieldErrors(this.fieldSetErrors)
       this.editingFieldSet = true
     } catch (error) {
       if (!this.#isCurrentCredential(requestKey)) return
@@ -451,13 +452,13 @@ export class CredentialValueController extends CredentialSectionController<Crede
 
   removeEditField(index: number): void {
     this.editFields = this.editFields.filter((_, i) => i !== index)
-    this.fieldSetErrors = {}
+    replaceFieldErrors(this.fieldSetErrors)
   }
 
   async saveFieldSet(): Promise<void> {
     if (this.addingVersion) return
     const result = validateFieldSet(this.editFields)
-    this.fieldSetErrors = result.fieldErrors
+    replaceFieldErrors(this.fieldSetErrors, result.fieldErrors)
     if (!result.ok) {
       this.fieldSetFormError = result.formError ?? null
       return
@@ -490,7 +491,7 @@ export class CredentialValueController extends CredentialSectionController<Crede
       const idx = this.editFields.findIndex(
         (f) => f.key.trim().toLowerCase() === mapped.fieldKeyConflict?.toLowerCase()
       )
-      if (idx >= 0) this.fieldSetErrors = { ...this.fieldSetErrors, [idx]: mapped.errorMessage }
+      if (idx >= 0) this.fieldSetErrors.set(idx, mapped.errorMessage)
     }
   }
 

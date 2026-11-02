@@ -9,6 +9,7 @@ import {
   mapCredentialSubmitError,
   onboardingCopy,
   parseTagsInput,
+  replaceFieldErrors,
   validateCredentialForm,
   validateFieldSet,
 } from './onboarding-logic.js'
@@ -226,6 +227,8 @@ describe('field-set form logic (Story 13.2)', () => {
     const res = validateFieldSet([])
     expect(res.ok).toBe(false)
     expect(res.formError).toMatch(/at least one field/i)
+    expect(res.fieldErrors).toBeInstanceOf(Map)
+    expect(res.fieldErrors.size).toBe(0)
   })
 
   it('validateFieldSet flags empty and invalid keys', () => {
@@ -234,8 +237,8 @@ describe('field-set form logic (Story 13.2)', () => {
       { key: 'bad/key', value: 'y', sensitive: false },
     ])
     expect(res.ok).toBe(false)
-    expect(res.fieldErrors[0]).toMatch(/required/i)
-    expect(res.fieldErrors[1]).toMatch(/letters/i)
+    expect(res.fieldErrors.get(0)).toMatch(/required/i)
+    expect(res.fieldErrors.get(1)).toMatch(/letters/i)
   })
 
   it('validateFieldSet flags a duplicate key on the colliding row', () => {
@@ -244,16 +247,40 @@ describe('field-set form logic (Story 13.2)', () => {
       { key: 'Token', value: 'b', sensitive: true },
     ])
     expect(res.ok).toBe(false)
-    expect(res.fieldErrors[1]).toMatch(/duplicate/i)
+    expect(res.fieldErrors.get(1)).toMatch(/duplicate/i)
+    expect(res.fieldErrors.has(0)).toBe(false)
+  })
+
+  it('validateFieldSet lets a duplicate message replace an earlier key error on that row', () => {
+    const res = validateFieldSet([
+      { key: 'bad/key', value: 'a', sensitive: true },
+      { key: 'Bad/Key', value: 'b', sensitive: true },
+    ])
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors.get(0)).toMatch(/letters/i)
+    expect(res.fieldErrors.get(1)).toMatch(/duplicate/i)
+  })
+
+  it('replaceFieldErrors copies into the caller map and clears when omitted', () => {
+    const target = new Map<number, string>([[3, 'old']])
+    const source = validateFieldSet([
+      { key: '', value: 'x', sensitive: false },
+      { key: 'ok', value: 'y', sensitive: false },
+    ])
+    replaceFieldErrors(target, source.fieldErrors)
+    expect(target.get(0)).toMatch(/required/i)
+    expect(target.has(3)).toBe(false)
+    replaceFieldErrors(target)
+    expect(target.size).toBe(0)
   })
 
   it('validateFieldSet passes a clean field set', () => {
-    expect(
-      validateFieldSet([
-        { key: 'username', value: 'a', sensitive: false },
-        { key: 'password', value: 'b', sensitive: true },
-      ]).ok
-    ).toBe(true)
+    const res = validateFieldSet([
+      { key: 'username', value: 'a', sensitive: false },
+      { key: 'password', value: 'b', sensitive: true },
+    ])
+    expect(res.ok).toBe(true)
+    expect(res.fieldErrors.size).toBe(0)
   })
 
   it('mapCredentialSubmitError surfaces the conflicting key on a 409 field_key_conflict (AC-3)', () => {
