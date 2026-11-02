@@ -76,19 +76,24 @@ jobs:
         id: source
         run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-  build-publish:
-    name: Publish ${{ matrix.name }} image
+  # Story 75.1: each platform builds on a NATIVE runner and pushes by digest only, so no `:X.Y.Z` or
+  # `sha-` tag exists until `build-publish` merges both platform digests. v2.0.1 (run 41269218945)
+  # was lost because the QEMU-emulated arm64 `pnpm install` crashed (exit 132) after the sibling
+  # jobs had already pushed their immutable tags; v1.4.0 hit the same crash. With this split a
+  # failed platform leaves no tag at all, so "re-run failed jobs" always recovers the run. The
+  # matrix keeps `fail-fast: false` (a contract test asserts it) so one failed leg never cancels
+  # the other legs; never cancel the run by hand either (docs/releasing.md, section 4).
+  build-platform:
+    name: Build ${{ matrix.image.name }} (linux/${{ matrix.platform.arch }})
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
       packages: write
-      attestations: write
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
-        include:
+        image:
           - name: api
             file: apps/api/Dockerfile
             target: runner
@@ -102,14 +107,111 @@ jobs:
           - name: web
             file: apps/web/Dockerfile
             target: runner
+        platform:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Check out release source
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.ref }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver: docker-container
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Only the labels are used here: the tags are applied by `build-publish` after the merge.
+      - name: Extract image labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          context: git
+          images: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+
+      # `push-by-digest` publishes the platform image under no tag; `build-publish` reads the digest
+      # from the artifact below.
+      - name: Build and push platform image by digest
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.image.file }}
+          target: ${{ matrix.image.target }}
+          platforms: linux/${{ matrix.platform.arch }}
+          outputs: type=image,name=${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            RELEASE_VERSION=${{ needs.prepare.outputs.version }}
+          cache-from: type=gha,scope=container-publish-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=max,scope=container-publish-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+
+      - name: Export platform digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST_DIR: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Build did not report a sha256 digest: '$DIGEST'" >&2
+            exit 1
+          fi
+          mkdir -p "$DIGEST_DIR"
+          touch "${DIGEST_DIR}/${DIGEST#sha256:}"
+
+      - name: Upload platform digest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+  # Merges the per-platform digests of one image into a manifest list and only then creates the
+  # immutable `:X.Y.Z` and `sha-` tags. `needs: build-platform` (default `success()`) means a failed
+  # platform build skips this job, so no tag exists and "re-run failed jobs" re-runs only the failed
+  # leg(s) plus this job. The scans, attestation and verification below act on the merged digest.
+  build-publish:
+    name: Publish ${{ matrix.name }} image
+    needs: [prepare, build-platform]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [api, migrate, web]
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - name: Download platform digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-${{ matrix.name }}-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -143,28 +245,54 @@ jobs:
           tags: |
             type=raw,value=${{ needs.prepare.outputs.version }}
             type=sha,format=long,prefix=sha-
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
-            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
 
-      - name: Build and push image
+      - name: Create multi-platform manifest and push immutable tags
         id: push
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: ${{ matrix.file }}
-          target: ${{ matrix.target }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          provenance: mode=max
-          sbom: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            RELEASE_VERSION=${{ needs.prepare.outputs.version }}
-          cache-from: type=gha,scope=container-publish-${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=container-publish-${{ matrix.name }}
+        env:
+          IMAGE: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST_DIR: ${{ runner.temp }}/digests
+          # One digest per published platform (linux/amd64 and linux/arm64): a contract test ties
+          # this number to the build-platform matrix.
+          EXPECTED_DIGESTS: '2'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          FILES=("${DIGEST_DIR}"/*)
+          if [[ "${#FILES[@]}" -ne "$EXPECTED_DIGESTS" ]]; then
+            echo "Expected $EXPECTED_DIGESTS platform digests for ${IMAGE}, found ${#FILES[@]}; refusing to create any tag" >&2
+            exit 1
+          fi
+
+          SOURCES=()
+          for FILE in "${FILES[@]}"; do
+            HEX="$(basename "$FILE")"
+            if [[ ! "$HEX" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "Unexpected platform digest file name: '$HEX'" >&2
+              exit 1
+            fi
+            SOURCES+=("${IMAGE}@sha256:${HEX}")
+          done
+
+          TAG_ARGS=()
+          while IFS= read -r TAG; do
+            [[ -n "$TAG" ]] && TAG_ARGS+=(--tag "$TAG")
+          done <<<"$TAGS"
+          if [[ "${#TAG_ARGS[@]}" -eq 0 ]]; then
+            echo "metadata-action produced no tags" >&2
+            exit 1
+          fi
+
+          docker buildx imagetools create "${TAG_ARGS[@]}" "${SOURCES[@]}"
+
+          INSPECT_JSON=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{json .}}')
+          DIGEST=$(jq -r '.manifest.digest // ""' <<<"$INSPECT_JSON")
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Cannot read the manifest-list digest of ${IMAGE}:${VERSION}: '$DIGEST'" >&2
+            exit 1
+          fi
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest image provenance
         uses: actions/attest-build-provenance@v4
