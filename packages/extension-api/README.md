@@ -136,6 +136,17 @@ throws `CredentialSharingStepUpRequiredError`. A user with no confirmed TOTP enr
 behaviour. See [docs/extensions/authoring.md](../../docs/extensions/authoring.md) "External shares
 need a step-up".
 
+### Host-managed machine user (since 3.39.0)
+
+With `apiVersion` 3.39.0 or later, `createExternalShare`, `revokeShare` and
+`supersedeSharesForRotation` no longer need an admin to create a keyed machine user named after the
+extension. An admin-provisioned one with a live key still wins; otherwise the host creates a
+keyless, org-scoped machine user for the extension in the same transaction (or up front through
+`credentialSharing.provisionMachineUser({ organizationId })`), attributes the share to the acting
+user, and audits with `keyId: null`. No key is ever issued for it. `checkCredentialSharingMachineUserMode(manifest)`
+tells you which rule the host applies. See [docs/extensions/authoring.md](../../docs/extensions/authoring.md)
+"Host-managed machine user".
+
 ### Delegated routes (`apiRoutes` `security.delegation`)
 
 A route can declare `security.delegation` to accept a service-delegated actor assertion

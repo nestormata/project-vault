@@ -30,7 +30,11 @@
  * `machine_user` actor (`writeMachineAuditEntry`) — never a caller-supplied PV user id, never a
  * new `actorType: 'extension'` category, never a silent fallback to system-actor. The host fails
  * closed (`CredentialSharingNoMachineUserError`) if the calling extension's org has no mapped PV
- * machine-user. `findShareByToken`/`revealShare` are unaffected — their underlying functions
+ * machine-user. Since 3.39.0 (Story 73.9) a manifest declaring `apiVersion` 3.39.0 or later also
+ * gets a host-managed machine user: keyless, org-scoped, created by the host through
+ * `provisionMachineUser` or lazily on the first write that needs one, and used only when no
+ * admin-provisioned machine user with a live key exists. `findShareByToken`/`revealShare` are
+ * unaffected — their underlying functions
  * already use system-actor audit unchanged (no PV-authenticated human OR machine caller exists for
  * an anonymous token redemption).
  *
@@ -87,7 +91,9 @@ export class CredentialSharingOrgRateLimitedError extends Error {
  * Design Decision A (Nestor-confirmed) — thrown by `createExternalShare`/`revokeShare`/
  * `supersedeSharesForRotation` when the calling extension's org has no mapped PV machine-user to
  * attribute the audit write to. Fail closed: never falls back to an unattributed or system-actor
- * write.
+ * write. Story 73.9 (since 3.39.0) — also thrown by `provisionMachineUser`, and by the lazy path of
+ * the three write methods, for an unknown organization or a deactivated host-managed machine user
+ * (one is never re-created).
  */
 export class CredentialSharingNoMachineUserError extends Error {
   readonly code = 'credential_sharing_no_machine_user'
@@ -330,6 +336,24 @@ export type CredentialSharingSupersedeSharesForRotationResult = {
 }
 
 // ---------------------------------------------------------------------------------------------
+// provisionMachineUser (Story 73.9, since 3.39.0) — out-of-request, explicit organizationId.
+// ---------------------------------------------------------------------------------------------
+
+export type CredentialSharingProvisionMachineUserParams = {
+  organizationId: string
+}
+
+/**
+ * Story 73.9 — `created` is `true` only for the call that inserted the row; every later call, and
+ * the loser of a concurrent first call, gets the same `machineUserId` with `created: false`. No key,
+ * key hash or token exists for a host-managed machine user, so none is ever returned.
+ */
+export type CredentialSharingProvisionMachineUserResult = {
+  machineUserId: string
+  created: boolean
+}
+
+// ---------------------------------------------------------------------------------------------
 // listSharesForCredential / listSharesForOrganization (AC8/AC9/AC10) — thin, out-of-request,
 // explicit-organizationId read/list methods, mirroring createExternalShare/revokeShare/
 // supersedeSharesForRotation's own out-of-request directionality split (never
@@ -404,14 +428,23 @@ export type CredentialSharingListResult = {
  * produces no attributed write, so it has no equivalent requirement).
  */
 export type CredentialSharingHost = {
+  /**
+   * Story 73.9 (since 3.39.0) — with `apiVersion` 3.39.0 or later, when the org has no
+   * admin-provisioned machine user with a live key, the host provisions the host-managed one in the
+   * same transaction (as `provisionMachineUser` would) and proceeds. The share's `sharedBy` is then
+   * the validated acting user, and the audit row carries the host-managed `machineUserId` with
+   * `keyId: null`. An older contract keeps throwing `CredentialSharingNoMachineUserError`.
+   */
   createExternalShare(
     params: CredentialSharingCreateExternalShareParams
   ): Promise<CredentialSharingCreateExternalShareResult>
   findShareByToken(rawToken: string): Promise<CredentialSharingFindShareByTokenResult>
   revealShare(rawToken: string): Promise<CredentialSharingRevealResult>
+  /** Story 73.9 (since 3.39.0) — lazy host-managed machine user, as on `createExternalShare`. */
   revokeShare(
     params: CredentialSharingRevokeShareParams
   ): Promise<CredentialSharingRevokeShareResult>
+  /** Story 73.9 (since 3.39.0) — lazy host-managed machine user, as on `createExternalShare`. */
   supersedeSharesForRotation(
     params: CredentialSharingSupersedeSharesForRotationParams
   ): Promise<CredentialSharingSupersedeSharesForRotationResult>
@@ -419,4 +452,15 @@ export type CredentialSharingHost = {
   listSharesForOrganization(
     params: CredentialSharingOrgListParams
   ): Promise<CredentialSharingListResult>
+  /**
+   * Story 73.9 (since 3.39.0) — idempotently creates the org's host-managed machine user for this
+   * extension: keyless, no project, no human creator, role `viewer`, named after the manifest. It can
+   * never authenticate, and PV's machine-user routes treat its id as unknown. Audited once, as
+   * `machine_user.created` with actor type `extension`. Throws `CredentialSharingNoMachineUserError`
+   * for an unknown organization or a deactivated host-managed machine user. Callable on any
+   * contract version, but only a manifest declaring 3.39.0 or later is attributed to it.
+   */
+  provisionMachineUser(
+    params: CredentialSharingProvisionMachineUserParams
+  ): Promise<CredentialSharingProvisionMachineUserResult>
 }

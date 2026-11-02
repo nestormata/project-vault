@@ -30,6 +30,14 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   with no `ShellBrand` replacement. Only the shell header is covered: the auth pages and the public
   home still carry the same sentence as fixed text. A host that still replaces `ShellBrand.svelte` sees its
   `hostSha256` change with this release and runs `--accept-host` until it drops the replacement.
+- **Web: the global search palette accepts results providers** (Story 72.18, CentralizeMe request R3).
+  A fill of the `app.layout.search` injection point calls `registerSearchProvider(...)` (from
+  `$lib/components/shell/search-providers.svelte.js`) with an async provider returning
+  `{ id, label, hint?, group, href | action }` rows. They are appended after PV's native results (native
+  order and keyboard behaviour unchanged), a failing or timed-out provider shows one calm notice and
+  never breaks the palette, and with no provider the markup is byte-identical. A host that replaces
+  `GlobalSearch.svelte` sees its `hostSha256` change with this release and can drop the replacement
+  for a provider. See [docs/composition-kit.md](docs/composition-kit.md).
 
 ## [2.0.2] - 2026-10-31
 

@@ -600,6 +600,10 @@ export const OperationalEvent = {
   // machine-user to attribute the audit write to — fail-closed, never an unattributed or
   // system-actor write.
   CREDENTIAL_SHARING_HOST_NO_MACHINE_USER: 'credential_sharing_host.no_machine_user',
+  // Story 73.9 AC-7: the host created an extension's keyless, host-managed machine user
+  // (`trigger` = `provision` or `lazy:<method>`). Ids only, never any secret.
+  CREDENTIAL_SHARING_HOST_MACHINE_USER_PROVISIONED:
+    'credential_sharing_host.machine_user_provisioned',
   // Story 20.13 AC5: an anonymous `publicRoute.onPublicRouteRequest()` dispatch degraded (threw,
   // timed out, or returned a malformed `PublicRouteResult`/`ActionResult`). Never carries the
   // hook's raw exception message/stack — fixed-enum `subReason` only, same never-leak-
