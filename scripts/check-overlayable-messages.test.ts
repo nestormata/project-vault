@@ -119,6 +119,7 @@ describe('check-overlayable-messages: the real tree and its wiring', () => {
       'auth_login_page_description',
       'auth_login_page_title',
       'auth_register_page_title',
+      'brand_name',
       'shell_brand_tagline',
     ])
     const result = checkOverlayableMessagesGuard(WEB)
