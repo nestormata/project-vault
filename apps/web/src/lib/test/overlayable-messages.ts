@@ -7,17 +7,6 @@ import type { OverlayableMessageKey } from '$lib/i18n/overlayable-message-keys.j
 
 type LocaleOpts = { locale?: 'en' | 'es' }
 
-type MessageFunction = (inputs?: Record<string, string>, options?: LocaleOpts) => string
-
-// One entry per listed key: adding a key to OVERLAYABLE_MESSAGE_KEYS fails type-checking until it is here.
-const MESSAGES: Readonly<Record<OverlayableMessageKey, MessageFunction>> = {
-  auth_login_page_description: m.auth_login_page_description,
-  auth_login_page_title: m.auth_login_page_title,
-  auth_register_page_title: m.auth_register_page_title,
-  brand_name: m.brand_name,
-  shell_brand_tagline: m.shell_brand_tagline,
-}
-
 function localeOpts(locale?: 'en' | 'es'): LocaleOpts | undefined {
   return locale === undefined ? undefined : { locale }
 }
@@ -31,14 +20,10 @@ export function overlayableMessage(key: OverlayableMessageKey, locale?: 'en' | '
   const opts = localeOpts(locale)
   const brand = brandInLocale(locale)
   if (key === 'brand_name') return brand
-  if (
-    key === 'auth_login_page_description' ||
-    key === 'auth_login_page_title' ||
-    key === 'auth_register_page_title'
-  ) {
-    return MESSAGES[key]({ brand }, opts)
-  }
-  return MESSAGES[key](undefined, opts)
+  if (key === 'auth_login_page_description') return m.auth_login_page_description({ brand }, opts)
+  if (key === 'auth_login_page_title') return m.auth_login_page_title({ brand }, opts)
+  if (key === 'auth_register_page_title') return m.auth_register_page_title({ brand }, opts)
+  return m.shell_brand_tagline(undefined, opts)
 }
 
 /** The token a snapshot stores in place of a key's text. Free of `{`, which Svelte's parser reads. */
