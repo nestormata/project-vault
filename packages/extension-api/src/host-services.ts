@@ -6,6 +6,7 @@ import type { NotificationOriginatorHost } from './hooks/notification-originator
 import type { ProjectAuthorizationHost } from './hooks/project-authorization.js'
 import type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
 import type { CredentialSharingHost } from './hooks/credential-sharing.js'
+import type { OrgMembershipHost } from './hooks/org-membership.js'
 
 /**
  * Story 23.8 AC-4 — the new injected-context channel `hooksFactory()` receives at load time.
@@ -61,4 +62,12 @@ export type HostServices = {
    * 17.2's anonymous-redemption boundary. See `hooks/credential-sharing.ts`'s doc comment for the
    * full directionality/attribution/rate-limiting rationale. */
   credentialSharing: CredentialSharingHost
+  /**
+   * Story 43.30 — bound once at extension-load time. `isOrgMember({ organizationId, userId })`
+   * answers one pair with no ambient request, so a scheduled task can use it. `userId` is the
+   * stored user id, not a session id. The result is `{ status: 'allowed' | 'denied' | 'unavailable' }`.
+   * A host or database failure is `unavailable` and is never `denied`. It does not list members
+   * or return a role. `orgAuthorization.checkMembership` stays request-scoped.
+   */
+  membership: OrgMembershipHost
 }

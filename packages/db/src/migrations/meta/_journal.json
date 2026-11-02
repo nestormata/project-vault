@@ -778,6 +778,20 @@
       "when": 1793493006305,
       "tag": "0110_host_managed_machine_users",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1793633365861,
+      "tag": "0111_cli_device_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1793634000000,
+      "tag": "0112_cli_user_sessions",
+      "breakpoints": true
     }
   ]
 }

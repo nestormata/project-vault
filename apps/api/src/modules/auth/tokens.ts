@@ -43,6 +43,34 @@ export function parseAccessTokenClaims(payload: unknown): AccessTokenClaims | nu
   }
 }
 
+export function parseUserAccessClaims(payload: unknown): {
+  sub: string
+  scope: 'user'
+  sessionVersion: number
+  jti: string
+  iat?: number
+  exp?: number
+} | null {
+  if (!payload || typeof payload !== 'object') return null
+  const claims = payload as Record<string, unknown>
+  if (claims['scope'] !== 'user' || typeof claims['orgId'] === 'string') return null
+  if (
+    typeof claims['sub'] !== 'string' ||
+    typeof claims['jti'] !== 'string' ||
+    typeof claims['sessionVersion'] !== 'number'
+  ) {
+    return null
+  }
+  return {
+    sub: claims['sub'],
+    scope: 'user',
+    jti: claims['jti'],
+    sessionVersion: claims['sessionVersion'],
+    iat: typeof claims['iat'] === 'number' ? claims['iat'] : undefined,
+    exp: typeof claims['exp'] === 'number' ? claims['exp'] : undefined,
+  }
+}
+
 export function generateRefreshToken(): string {
   return randomBytes(32).toString('base64url')
 }

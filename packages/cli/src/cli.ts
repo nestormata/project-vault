@@ -11,6 +11,8 @@ import { CliUsageError, EXIT_CODES } from './exit-codes.js'
 import { resolveConfig, resolveLoginConfig } from './config.js'
 import { runGet, type GetStreams, type WritableLike } from './get-command.js'
 import type { ChildProcessLike, ParentProcessLike, SpawnFn } from './inject-and-run.js'
+import { runBrowserLogin } from './browser-login-command.js'
+import { runUseOrganization } from './organization-command.js'
 import { runLogin } from './login-command.js'
 import { runLogout } from './logout-command.js'
 import { createRealPrompt, type PromptFn } from './prompt.js'
@@ -253,19 +255,41 @@ export function buildProgram(runtime: CliRuntime): Command {
   program
     .command('login')
     .description(
-      'Authenticate as a human user (email + password, plus TOTP if enrolled). WebAuthn-only ' +
-        'accounts fail closed — see Epic 46 for CLI WebAuthn support.'
+      'Authenticate as a human user. The default asks for email and password (plus TOTP if ' +
+        'enrolled). --browser approves the sign-in in a browser where you are already signed in.'
     )
     .option(URL_FLAG, URL_DESCRIPTION)
-    .action(async (options: { url?: string }) => {
+    .option('--browser', 'approve the sign-in in a browser instead of typing a password')
+    .action(async (options: { url?: string; browser?: boolean }) => {
       await runCommandAction(runtime, async () => {
         const config = resolveLoginConfig({ url: options.url }, runtime.env)
+        if (options.browser) {
+          return runBrowserLogin(config, runtime.streams, {
+            fetchFn: runtime.fetchFn,
+            env: runtime.env,
+          })
+        }
         return runLogin(config, runtime.streams, {
           fetchFn: runtime.fetchFn,
           prompt: runtime.prompt,
           env: runtime.env,
         })
       })
+    })
+
+  program
+    .command('organization')
+    .description(
+      'Mint a short-lived credential for one organization from a browser-approved sign-in.'
+    )
+    .command('use')
+    .argument('<organizationId>', 'organization id')
+    .action(async (organizationId: string) => {
+      const exitCode = await runUseOrganization(organizationId, runtime.streams, {
+        fetchFn: runtime.fetchFn,
+        env: runtime.env,
+      })
+      runtime.setExitCode(exitCode)
     })
 
   program

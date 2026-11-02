@@ -68,9 +68,9 @@ function normalizeTotp(raw: string): string {
   return raw.replace(/\s+/g, '')
 }
 
-type PostJsonResult = { status: number; json: unknown; retryAfterSeconds: number | null }
+export type PostJsonResult = { status: number; json: unknown; retryAfterSeconds: number | null }
 
-async function postJson(
+export async function postJson(
   fetchFn: typeof fetch,
   baseUrl: string,
   path: string,

@@ -18,7 +18,18 @@ export type SessionData = {
   /** ISO-8601 — the access JWT's own expiry, used for the silent-refresh decision (AC-4). */
   accessExpiresAt: string
   userId: string
-  orgId: string
+  /**
+   * Set for a password login. Absent on a browser-approved user session (`scope: 'user'`),
+   * which is not bound to an organization.
+   */
+  orgId?: string
+  /** `user` after browser-approved login. Older files omit it and are organization sessions. */
+  scope?: 'user' | 'org'
+  /** Organization credentials minted from a user session, keyed by organization id. */
+  orgCredentials?: Record<
+    string,
+    { accessToken: string; accessExpiresAt: string; orgId: string; sessionId: string }
+  >
   baseUrl: string
 }
 
@@ -56,6 +67,15 @@ export function sessionFilePath(env: EnvLike = process.env): string {
   return join(sessionDir(env), 'session.json')
 }
 
+function sessionIdentityOk(value: Record<string, unknown>): boolean {
+  const scope = value['scope']
+  const orgId = value['orgId']
+  const scopeOk = scope === undefined || scope === 'user' || scope === 'org'
+  const orgOk =
+    scope === 'user' ? orgId === undefined || typeof orgId === 'string' : typeof orgId === 'string'
+  return scopeOk && orgOk
+}
+
 function isSessionData(value: unknown): value is SessionData {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
@@ -64,8 +84,8 @@ function isSessionData(value: unknown): value is SessionData {
     typeof v['refreshToken'] === 'string' &&
     typeof v['accessExpiresAt'] === 'string' &&
     typeof v['userId'] === 'string' &&
-    typeof v['orgId'] === 'string' &&
-    typeof v['baseUrl'] === 'string'
+    typeof v['baseUrl'] === 'string' &&
+    sessionIdentityOk(v)
   )
 }
 

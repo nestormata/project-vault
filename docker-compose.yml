@@ -125,6 +125,9 @@ services:
       # Required in production the same way the secrets above are — same "distinct, non-placeholder"
       # strict validation applies here too, so `make docker-up` fails fast at boot without it.
       OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: ${OPERATIONAL_STATUS_TOKEN_HMAC_SECRET:-llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll}
+      # Story 43.30: HMAC for browser-approved CLI sign-in codes. Required in production, and it
+      # must differ from every other auth secret.
+      CLI_DEVICE_CODE_HMAC_SECRET: ${CLI_DEVICE_CODE_HMAC_SECRET:-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq}
       VAULT_KEY_DIR: /run/secrets
       # First-init protection: set in .env or shell. Generate: openssl rand -base64 32
       VAULT_BOOTSTRAP_TOKEN: ${VAULT_BOOTSTRAP_TOKEN:-}

@@ -386,5 +386,20 @@
   "dashboard_attention_link_share": "Ver secreto",
   "dashboard_attention_link_certificate": "Ver certificados",
   "dashboard_attention_link_invitation": "Ver miembros",
-  "dashboard_attention_more": "y {count} más"
+  "dashboard_attention_more": "y {count} más",
+  "cli_device_page_title": "Aprobar un inicio de sesión de línea de comandos",
+  "cli_device_heading": "Aprobar un inicio de sesión de línea de comandos",
+  "cli_device_description": "Aprobar permite que ese programa inicie sesión como usted, con su organización y su rol actuales, hasta que cierre esa sesión.",
+  "cli_device_code_label": "Código de inicio de sesión",
+  "cli_device_code_hint": "Escriba el código que imprimió el programa, o revise el que ya está escrito. Se ve como ABCD-EFGH.",
+  "cli_device_totp_label": "Código del autenticador",
+  "cli_device_totp_hint": "Esta cuenta es operadora de la plataforma, así que aprobar requiere el código actual de su aplicación autenticadora.",
+  "cli_device_approve": "Aprobar",
+  "cli_device_deny": "Rechazar",
+  "cli_device_approved": "Aprobado. Puede volver al programa.",
+  "cli_device_denied": "Rechazado. El programa no iniciará sesión.",
+  "cli_device_invalid_code": "Ese código no está esperando aprobación. Revise el programa e inténtelo de nuevo.",
+  "cli_device_step_up_required": "Escriba el código actual del autenticador para aprobar.",
+  "cli_device_enrollment_required": "Inscriba un autenticador en Seguridad antes de aprobar.",
+  "cli_device_error": "No se pudo actualizar el inicio de sesión. Inténtelo de nuevo."
 }

@@ -720,10 +720,15 @@ function failedLoginAuditSubject(
   }
 }
 
-function buildTokenMaterial(userId: string, orgId: string, jti: string): RotatedTokenMaterial {
+function buildTokenMaterial(
+  userId: string,
+  orgId: string,
+  jti: string,
+  accessTtlSeconds = env.JWT_ACCESS_TTL_SECONDS
+): RotatedTokenMaterial {
   return {
     accessClaims: { sub: userId, orgId, jti, sessionVersion: 1 },
-    accessMaxAgeSec: env.JWT_ACCESS_TTL_SECONDS,
+    accessMaxAgeSec: accessTtlSeconds,
     refreshOpaque: generateRefreshToken(),
     refreshMaxAgeSec: env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
   }
@@ -748,11 +753,18 @@ async function verifyLoginPassword(
   }
 }
 
+export type LoginSessionOptions = {
+  accessTtlSeconds?: number
+  /** When false, no refresh token is stored or returned. The access token dies with the session. */
+  issueRefresh?: boolean
+}
+
 export async function createLoginSessionInTx(
   tx: Tx,
   user: LoginSessionUser,
   orgId: string,
-  meta: RequestMeta
+  meta: RequestMeta,
+  options: LoginSessionOptions = {}
 ): Promise<LoginResult> {
   // Story 31.1 Decision 4/AC11.37-38: acquires the identical
   // pg_advisory_xact_lock(hashtext(orgId)) that revokeAllSessionsForOrg()
@@ -766,8 +778,10 @@ export async function createLoginSessionInTx(
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`)
   await enforceMaxSessionsForUser(tx, user.id, orgId)
   const jti = randomUUID()
-  const expiresAt = new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000)
-  const tokens = buildTokenMaterial(user.id, orgId, jti)
+  const accessTtlSeconds = options.accessTtlSeconds ?? env.JWT_ACCESS_TTL_SECONDS
+  const issueRefresh = options.issueRefresh !== false
+  const expiresAt = new Date(Date.now() + accessTtlSeconds * 1000)
+  const tokens = buildTokenMaterial(user.id, orgId, jti, accessTtlSeconds)
   const sessionRows = await tx
     .insert(sessions)
     .values({
@@ -783,12 +797,14 @@ export async function createLoginSessionInTx(
   const session = sessionRows[0]
   if (!session) throw new Error('loginUser: session insert returned no row')
 
-  await tx.insert(refreshTokens).values({
-    sessionId: session.id,
-    orgId,
-    tokenHash: hashRefreshToken(tokens.refreshOpaque),
-    expiresAt: new Date(Date.now() + tokens.refreshMaxAgeSec * 1000),
-  })
+  if (issueRefresh) {
+    await tx.insert(refreshTokens).values({
+      sessionId: session.id,
+      orgId,
+      tokenHash: hashRefreshToken(tokens.refreshOpaque),
+      expiresAt: new Date(Date.now() + tokens.refreshMaxAgeSec * 1000),
+    })
+  }
 
   await insertAuditEntry(tx, {
     orgId,
@@ -804,7 +820,7 @@ export async function createLoginSessionInTx(
     userId: user.id,
     orgId,
     expiresAt: expiresAt.toISOString(),
-    tokens,
+    tokens: issueRefresh ? tokens : { ...tokens, refreshOpaque: undefined },
   }
 }
 

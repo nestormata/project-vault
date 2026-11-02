@@ -98,6 +98,7 @@ describe('HostServices — Story 20.12 AC widening to include credentialSharing'
       notificationOriginator: notificationOriginatorFixture,
       extensionRequestState: extensionRequestStateFixture,
       credentialSharing: credentialSharingFixture,
+      membership: { isOrgMember: async () => ({ status: 'denied' }) },
     }
     expect(new Set(Object.keys(fixture))).toEqual(
       new Set([
@@ -109,6 +110,7 @@ describe('HostServices — Story 20.12 AC widening to include credentialSharing'
         'notificationOriginator',
         'extensionRequestState',
         'credentialSharing',
+        'membership',
       ])
     )
   })
@@ -134,6 +136,7 @@ describe('HostServices — Story 20.12 AC widening to include credentialSharing'
       notificationOriginator: notificationOriginatorFixture,
       extensionRequestState: extensionRequestStateFixture,
       credentialSharing: credentialSharingFixture,
+      membership: { isOrgMember: async () => ({ status: 'denied' }) },
     }
     legacyHooksFactory(host)
   })

@@ -614,6 +614,8 @@ export const OperationalEvent = {
   // window) by lib/ip-rate-limit.ts — never per 429, since request logging is off and a per-429
   // line would be attacker-driven log amplification. Carries only the normalized IP key.
   AUTH_CLI_RATE_LIMITED: 'auth.cli_rate_limited',
+  // Story 43.30: a CLI device sign-in was created. No code, token, or client name.
+  AUTH_CLI_DEVICE_CREATED: 'auth.cli_device_created',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

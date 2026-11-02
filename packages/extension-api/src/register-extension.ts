@@ -377,6 +377,14 @@ const DEFAULT_HOST_SERVICES: HostServices = {
         )
       ),
   },
+  membership: {
+    isOrgMember: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — membership.isOrgMember is unavailable'
+        )
+      ),
+  },
 }
 
 /**

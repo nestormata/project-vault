@@ -21,6 +21,16 @@ export const EXCLUDED_TABLES = new Set([
   // known. Same reasoning as sso_login_states/platform_security_events above.
   'handoff_token_jti',
   'handoff_nonces',
+  // Story 43.30: CLI device-login grants. No tenant is known when the CLI creates the row, and
+  // the poller is unauthenticated, so org RLS cannot apply. user_id/org_id are filled only at
+  // approval and are not a tenant boundary (same class as handoff_nonces).
+  'cli_device_grants',
+  // Story 43.30: browser-approved CLI user sessions and the organization credentials minted
+  // from them. No tenant is known when the user session is issued. The organization session
+  // row itself stays on `sessions` and keeps org RLS; these tables only record the link.
+  'user_sessions',
+  'user_refresh_tokens',
+  'cli_org_credentials',
   // Story 39.1 — extension OAuth start/callback pending-state: no tenant is known/trusted at
   // insert (the start route's caller is authenticated but the row itself carries no org context)
   // or at lookup time (the callback is hit by an external OAuth provider, not PV's own

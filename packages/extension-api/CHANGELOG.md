@@ -2,6 +2,24 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.40.0 — 2026-11-02
+
+contract-hash: sha256:5daea89bf00d181eb13ecf266775242154dbcc12aa3570074ac99d914c2d62c1
+
+Story 43.30. Additive. Existing extensions keep working. `orgAuthorization.checkMembership` is unchanged and still uses the ambient request.
+
+### Added
+
+- `HostServices.membership.isOrgMember({ organizationId, userId })`. `userId` is the stored user id (`users.id`), not a session id. The promise resolves to `{ status: 'allowed' }`, `{ status: 'denied' }`, or `{ status: 'unavailable', reason?: string }`. A host or database failure is `unavailable` and is never `denied`. `reason`, when set, is the fixed word `membership_check_failed` and never driver text. A missing organization and a user who is not an active member are both `denied`. The method does not list members and does not return a role. It does not need a request, so `onScheduledTask` can call it. Types: `OrgMembershipHost`, `OrgMembershipCheck`, `OrgMembershipResult`.
+
+### Deprecated
+
+No new deprecation. The 3.30.0 notice is restated for the marker check. Types still marked: `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionContext`, `ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`, `ModuleDataResult`, `ModuleDataRouteHandler`, `ModuleDataRouteDeclaration`, `ExtensionNavItem`. Fields still marked: `uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`. Hooks still marked: `uiPanel`, `moduleAction`, `moduleData`, and the `'ui-panel'` capability. Prefer `ExtensionRequestContext`, `ExtensionActionResult`, composed UI, and M7 `apiRoutes`.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.40.0 adds no deprecation).
+
 ## 3.39.0 — 2026-10-31
 
 contract-hash: sha256:ee526d92240335534006697d521e6d45cc4b9d52a1a2944eee39aa24b0f416ea

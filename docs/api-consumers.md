@@ -281,8 +281,14 @@ These clients ship in this repository. The machine-user clients use the schemes 
   - `get`, `run` and `write-env` use `apiKey` → `machineBearer`, like the agent they wrap.
   - `pvault login` uses the CLI's JSON bearer-token routes `POST /api/v1/auth/cli-login`,
     `/api/v1/auth/cli/mfa/verify-login`, `/api/v1/auth/cli/refresh` and `/api/v1/auth/cli/logout`
-    (per-IP limits in [`configuration.md`](configuration.md)). No data route accepts that session
-    yet.
+    (per-IP limits in [`configuration.md`](configuration.md)). `pvault login --browser` uses
+    `POST /api/v1/auth/cli/device` and `POST /api/v1/auth/cli/device/token` instead of a password:
+    a signed-in browser approves the code at `/cli/device`. The token endpoint returns a user
+    session with no organization. `POST /api/v1/auth/cli/org` then exchanges that user session and
+    an organization id for a 15-minute organization access token. Send the organization token as
+    `Authorization: Bearer` when there is no `access-token` cookie. A cookie, when present, is the
+    session that is used. The user session itself is rejected by organization routes with
+    `org_scope_required`.
   - Before `get`, `run`, `write-env` and `login` make any other call, the CLI reads the public,
     unauthenticated `GET /api/v1/client-version-policy` with no credential. A successful answer is
     cached for up to 1 hour per server. `logout`, `--version`, `--help` and a `dev` build never

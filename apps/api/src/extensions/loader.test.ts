@@ -555,7 +555,7 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     // above whatever EXTENSION_API_VERSION currently is — a future bump must move this value
     // forward again the same way this story just did, or this test silently stops exercising the
     // above-host path once EXTENSION_API_VERSION catches up to a stale hardcoded value.
-    const aboveHostApiVersion = '3.40.0'
+    const aboveHostApiVersion = '3.41.0'
     const importFn = vi.fn().mockResolvedValue({
       default: {
         manifest: { ...VALID_MANIFEST, apiVersion: aboveHostApiVersion },
