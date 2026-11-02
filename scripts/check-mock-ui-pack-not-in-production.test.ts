@@ -96,6 +96,9 @@ describe('mock-ui-pack stays out of production (Story 68.10 AC-8.1)', () => {
     for (const line of declared) expect(line, line).toMatch(/INCLUDE_MOCK_UI_PACK_MODULE=false$/)
   })
 
+  // Checks run 41477715647 finished this raw scan of every apps/packages/scripts
+  // source at 5023ms, and the 5s default failed it. The read is the work, not a
+  // hang. 30s is six times that measurement.
   it('the boot-fault knob appears only in the compose override and the pack own source', async () => {
     const sources = Object.entries(SCANNED_SOURCES)
       .map(([key, load]) => [repoPath(key), load] as const)
@@ -116,5 +119,5 @@ describe('mock-ui-pack stays out of production (Story 68.10 AC-8.1)', () => {
       textOf(file).includes(MOCK_UI_PACK_FAULT_KEY)
     )
     expect([...holders, ...deployHolders]).toEqual([])
-  })
+  }, 30_000)
 })
