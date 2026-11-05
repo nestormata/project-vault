@@ -303,6 +303,7 @@
   }
 
   function handleQueryInput() {
+    abortProviderRequests()
     // The query has already refiltered action rows. Pin the row the user arrowed to now, not
     // when the debounced search starts, or the shifted index gets locked in.
     pinnedProviderKey = arrowedProviderId

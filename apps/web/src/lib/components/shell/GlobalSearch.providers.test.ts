@@ -262,6 +262,29 @@ describe('GlobalSearch results providers (Story 72.18)', () => {
   // Story 72.26: the previous provider rows stay until the new answer replaces them. The
   // proof is the held promises, not a clock: the second search has been asked, and the
   // first row is still in the list (and still the arrowed row) until that promise resolves.
+  it('ignores a superseded answer while the next query is waiting to start', async () => {
+    const releases: Array<(rows: SearchProviderResult[]) => void> = []
+    const search = vi.fn(
+      () =>
+        new Promise<SearchProviderResult[]>((resolve) => {
+          releases.push(resolve)
+        })
+    )
+    mountWith([{ id: 'cm', search }])
+    await typeQuery('acme')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1))
+    releases[0]?.([tenant])
+    await findOption('Acme Holdings')
+
+    await typeQuery('beta')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    await typeQuery('gamma')
+    releases[1]?.([{ ...tenant, id: 't2', label: 'Beta Tenant' }])
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(3))
+    expect(hasOption('Acme Holdings')).toBe(true)
+    expect(hasOption('Beta Tenant')).toBe(false)
+  })
+
   it('keeps the arrowed provider row until the next answer replaces it', async () => {
     const releases: Array<(rows: SearchProviderResult[]) => void> = []
     const search = vi.fn(
