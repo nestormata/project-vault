@@ -98,6 +98,25 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
     expect(rejected.statusCode).toBe(422)
   })
 
+  it('slows down an immediate second poll and increases the server poll interval', async () => {
+    const started = await start()
+    const firstPoll = await app.inject({
+      method: 'POST',
+      url: TOKEN_URL,
+      payload: { deviceCode: started.deviceCode },
+    })
+    expect(firstPoll.statusCode).toBe(400)
+    expect(firstPoll.json()).toMatchObject({ code: 'authorization_pending' })
+
+    const tooSoon = await app.inject({
+      method: 'POST',
+      url: TOKEN_URL,
+      payload: { deviceCode: started.deviceCode },
+    })
+    expect(tooSoon.statusCode).toBe(400)
+    expect(tooSoon.json()).toMatchObject({ code: 'slow_down' })
+  })
+
   it('lets a non-operator approve and then call APIs with the bearer token', async () => {
     const member = await registerAndLoginViaApi(app, {
       email: `device-member-${randomUUID()}@example.com`,
