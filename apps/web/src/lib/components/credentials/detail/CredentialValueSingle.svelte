@@ -36,7 +36,10 @@
           : m.credential_copy_legacy_label()}
       </button>
     </div>
-    <FormHelpText id="credential-copy-help" text={m.credential_copy_legacy_help()} />
+    <FormHelpText
+      id="credential-copy-help"
+      text={m.credential_copy_legacy_help({ brand: m.brand_name() })}
+    />
   {:else}
     <pre
       class="mt-4 overflow-x-auto rounded-xl bg-slate-950 p-4 font-mono text-sm text-white">{controller.revealedValue}</pre>
@@ -48,7 +51,10 @@
     {#if controller.revealVersion !== null}
       <p class="mt-2 text-sm text-slate-600">Version {controller.revealVersion}</p>
     {/if}
-    <FormHelpText id="credential-copy-revealed-help" text={m.credential_copy_revealed_help()} />
+    <FormHelpText
+      id="credential-copy-revealed-help"
+      text={m.credential_copy_revealed_help({ brand: m.brand_name() })}
+    />
   {/if}
   {#if controller.revealError}
     <p class="mt-3 text-sm text-red-700" role="alert">{controller.revealError}</p>

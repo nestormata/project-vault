@@ -9,6 +9,27 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Changed
+
+- **Web: the product name is the `brand_name` message** (Story 72.16, CentralizeMe request R1). The ~35
+  hard-coded "Project Vault" strings in `apps/web` (page and tab titles, the auth, home and error headers,
+  the footer, the shell brand link, the error "Back to" link, vault-gate, onboarding, readiness and API-proxy
+  copy, and the 12 catalogue messages that named it) now read `brand_name`, so a host renames the product by
+  overlaying one key in its pack's `messages/<locale>.json`. Messages that named the product take it as the
+  `{brand}` parameter, and `src/app.html`'s fallback title uses the `%brand.name%` placeholder that the server
+  hook fills. The default is "Project Vault" in every locale, so PV's own rendering is unchanged. New guard
+  `pnpm check-brand-name` fails on a new hard-coded occurrence (no exemption list). Ships with the next
+  `web-host` release; see [docs/composition-kit.md](docs/composition-kit.md#brand-name-epic-72-story-72-16).
+- **Web: PV's unit tests no longer write the text of an overlayable message key** (Story 72.19,
+  CentralizeMe request R4). A host that overlays `auth_login_page_title`, `auth_login_page_description`,
+  `auth_register_page_title`, `brand_name` or `shell_brand_tagline` (in `en`, `es` or any locale) keeps PV's
+  shipped tests green over the composed tree, with no `excludedPvTests` entry. The login, register, shell brand
+  and app shell tests read the message instead of the sentence, and the keys are listed as data in
+  `src/lib/i18n/overlayable-message-keys.ts`. The `auth_handoff_confirm_prompt` key CM listed no longer
+  exists (the nonce-bound handoff has no Confirm click, Story 73.1). `pnpm check-overlayable-messages`
+  guards the rule, and the mock UI pack overlays every listed key in `en` or `es`. No runtime or API change; a host that
+  overrides one of those test files sees its `hostSha256` change with this release.
+
 ### Added
 
 - **Web: the shell header tagline is the `shell_brand_tagline` message** (Story 72.17, CentralizeMe
@@ -18,6 +39,24 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   with no `ShellBrand` replacement. Only the shell header is covered: the auth pages and the public
   home still carry the same sentence as fixed text. A host that still replaces `ShellBrand.svelte` sees its
   `hostSha256` change with this release and runs `--accept-host` until it drops the replacement.
+- **Web: the global search palette accepts results providers** (Story 72.18, CentralizeMe request R3).
+  A fill of the `app.layout.search` injection point calls `registerSearchProvider(...)` (from
+  `$lib/components/shell/search-providers.svelte.js`) with an async provider returning
+  `{ id, label, hint?, group, href | action }` rows. They are appended after PV's native results (native
+  order and keyboard behaviour unchanged), a failing or timed-out provider shows one calm notice and
+  never breaks the palette, and with no provider the markup is byte-identical. A host that replaces
+  `GlobalSearch.svelte` sees its `hostSha256` change with this release and can drop the replacement
+  for a provider. See [docs/composition-kit.md](docs/composition-kit.md).
+
+### Changed
+
+- **Release: container images build each platform on a native runner and tag only after both exist**
+  (Story 75.1). `container-publish.yml` builds `linux/amd64` on `ubuntu-24.04` and `linux/arm64` on
+  `ubuntu-24.04-arm` instead of emulating arm64 under QEMU, pushes each platform by digest only, and
+  creates `:X.Y.Z` and `:sha-<commit>` from the merged manifest list after every platform build
+  succeeded. A failed platform build therefore leaves no version tag and "re-run failed jobs"
+  recovers the run. `docs/releasing.md` now says to never cancel a release `container-publish` run.
+  No change to the published images or to a consumer.
 
 ## [2.0.2] - 2026-10-31
 

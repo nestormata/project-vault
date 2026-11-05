@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { ApiClientError } from '$lib/api/client.js'
 import {
   FIELD_KEY_PATTERN,
@@ -49,11 +50,11 @@ export function buildTemplateFieldDrafts(template: CredentialTemplate): FieldDra
  *  A client-side affordance layered on top of — never replacing — the server's authoritative 409. */
 export function duplicateFieldKeyIndex(fields: Pick<FieldDraft, 'key'>[]): number {
   const seen = new Set<string>()
-  for (let i = 0; i < fields.length; i++) {
-    const key = fields[i]?.key ?? ''
+  for (const [index, field] of fields.entries()) {
+    const key = field?.key ?? ''
     if (!key.trim()) continue
     const norm = normalizeFieldKey(key)
-    if (seen.has(norm)) return i
+    if (seen.has(norm)) return index
     seen.add(norm)
   }
   return -1
@@ -61,7 +62,7 @@ export function duplicateFieldKeyIndex(fields: Pick<FieldDraft, 'key'>[]): numbe
 
 export type FieldSetValidation = {
   ok: boolean
-  fieldErrors: Record<number, string>
+  fieldErrors: Map<number, string>
   formError?: string
 }
 
@@ -69,7 +70,7 @@ export type FieldSetValidation = {
  *  duplicate keys, within the field cap. Mirrors the shared Zod/service constraints so the user
  *  gets immediate feedback (the server re-validates authoritatively). */
 export function validateFieldSet(fields: FieldDraft[]): FieldSetValidation {
-  const fieldErrors: Record<number, string> = {}
+  const fieldErrors = new Map<number, string>()
   if (fields.length === 0) {
     return { ok: false, fieldErrors, formError: 'Add at least one field before saving.' }
   }
@@ -80,19 +81,29 @@ export function validateFieldSet(fields: FieldDraft[]): FieldSetValidation {
       formError: `A secret may have at most ${MAX_FIELDS_PER_SECRET} fields.`,
     }
   }
-  fields.forEach((field, index) => {
+  for (const [index, field] of fields.entries()) {
     const key = field.key.trim()
     if (!key) {
-      fieldErrors[index] = 'Field name is required'
+      fieldErrors.set(index, 'Field name is required')
     } else if (!FIELD_KEY_PATTERN.test(key)) {
-      fieldErrors[index] = 'Only letters, numbers, spaces, and _ . - are allowed'
+      fieldErrors.set(index, 'Only letters, numbers, spaces, and _ . - are allowed')
     }
-  })
+  }
   const dupIndex = duplicateFieldKeyIndex(fields)
   if (dupIndex >= 0) {
-    fieldErrors[dupIndex] = 'Duplicate field name'
+    fieldErrors.set(dupIndex, 'Duplicate field name')
   }
-  return { ok: Object.keys(fieldErrors).length === 0, fieldErrors }
+  return { ok: fieldErrors.size === 0, fieldErrors }
+}
+
+/** Copies `next` into `target`, or clears `target` when `next` is omitted. Callers keep one map. */
+export function replaceFieldErrors(
+  target: Map<number, string>,
+  next?: ReadonlyMap<number, string>
+): void {
+  target.clear()
+  if (next === undefined) return
+  for (const [index, message] of next) target.set(index, message)
 }
 
 export const CREDENTIAL_CREATOR_ROLES = ['member', 'admin', 'owner'] as const
@@ -186,9 +197,14 @@ export function mapCredentialSubmitError(error: unknown): CredentialSubmitError 
 }
 
 export const onboardingCopy = {
-  welcomeHeading: 'Welcome to Project Vault',
-  projectModel:
-    'Everything in Project Vault lives inside a Project. A project is a container for all the secrets, services, and certificates that belong together — like payments-api or mobile-backend. There are no environments; instead, each environment can be its own project, or you can use tags to distinguish them within a project.',
+  // Getters, not values: the product name is read from the message catalogue per render (Story
+  // 72.16), never captured once at import time.
+  get welcomeHeading(): string {
+    return `Welcome to ${m.brand_name()}`
+  },
+  get projectModel(): string {
+    return `Everything in ${m.brand_name()} lives inside a Project. A project is a container for all the secrets, services, and certificates that belong together — like payments-api or mobile-backend. There are no environments; instead, each environment can be its own project, or you can use tags to distinguish them within a project.`
+  },
   step1Cta: "Got it — Let's add a secret",
   vaultSealedMessage:
     'The vault is sealed — secrets cannot be saved right now. Ask your administrator to unseal the vault.',

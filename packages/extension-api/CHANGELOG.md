@@ -2,6 +2,58 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.39.0 — 2026-10-31
+
+contract-hash: sha256:ee526d92240335534006697d521e6d45cc4b9d52a1a2944eee39aa24b0f416ea
+
+Story 73.9. Additive for every existing extension: the host-managed machine user is used only for
+a manifest that declares `apiVersion` 3.39.0 or later. A pack declaring 3.38.0 or older keeps
+today's attribution rule and keeps getting `CredentialSharingNoMachineUserError` when no admin
+created a keyed machine user for it. An unparsable declared version is never granted the new mode.
+
+### Added
+
+- `CredentialSharingHost.provisionMachineUser({ organizationId })`, returning
+  `{ machineUserId, created }` (types `CredentialSharingProvisionMachineUserParams`,
+  `CredentialSharingProvisionMachineUserResult`). Idempotent: the first call creates the org's
+  host-managed machine user for this extension (keyless, no project, no human creator, role
+  `viewer`, named after the manifest) and audits it once as `machine_user.created` with actor type
+  `extension`; later and concurrent calls return the same id with `created: false`. No key, key
+  hash or token exists, so none is returned. Throws `CredentialSharingNoMachineUserError` for an
+  unknown organization or a deactivated host-managed machine user, which is never re-created.
+- Lazy provisioning on `createExternalShare`, `revokeShare` and `supersedeSharesForRotation` for a
+  manifest declaring 3.39.0 or later: an admin-provisioned machine user with a live key still wins;
+  without one the host provisions the host-managed one in the same transaction and proceeds. The
+  share's `sharedBy` is then the validated acting user, and the audit row names the host-managed
+  `machineUserId` with `keyId: null`. A refused call (for example a failed step-up) rolls the new
+  machine user back; a call that returns a non-ok result keeps it.
+- `checkCredentialSharingMachineUserMode(manifest)` conformance helper (types
+  `CredentialSharingMachineUserModeResult`, `CredentialSharingMachineUserMode`,
+  `CredentialSharingMachineUserModeReason`): returns the mode the host applies,
+  `host-managed` or `admin-provisioned-only`, and why. Assert it in the extension's CI.
+
+### Migration
+
+CentralizeMe moves its pinned tuple to this release to stop the 503 on composed share create,
+revoke and rotate in orgs where nobody issued a machine-user key (CM DW-740). Nothing else changes
+for a pack: the method is optional to call, because the write methods provision lazily. To stop
+the host-managed principal from acting, disable the extension.
+
+### Deprecated
+
+This release deprecates nothing. Still pending removal under the 3.30.0 notice, listed again so
+the newest entry carries it: the types `UIPanel`, `UIPanelContext`, `UIPanelResult`,
+`ModuleAction`, `ModuleActionContext`, `ModuleActionRequest`, `ActionResult`,
+`ModuleDataRequestContext`, `ModuleDataResult`, `ModuleDataRouteHandler`,
+`ModuleDataRouteDeclaration` and `ExtensionNavItem`; the manifest fields `uiPanelSlots`,
+`moduleActions`, `navItems` and `moduleDataRoutes`; the hooks `uiPanel`, `moduleAction` and
+`moduleData`; and the `'ui-panel'` capability member. Replacements: `ExtensionRequestContext`,
+`ExtensionActionResult`, composed UI and M7 `apiRoutes`.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, CentralizeMe maintainer (3.30.0 notice; this release adds nothing to it).
+
 ## 3.38.0 — 2026-10-30
 
 contract-hash: sha256:8740a713ce7734b648c736551124acbd090c7847979a66bfa57fea5cb7cbeeab

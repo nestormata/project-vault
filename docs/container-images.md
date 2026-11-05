@@ -12,7 +12,9 @@ These are the canonical repository paths. A fork or renamed copy is published un
 `ghcr.io/<owner>/<repository>` namespace; replace the examples accordingly.
 
 Each image is built for `linux/amd64` and `linux/arm64`, so the same tag runs on x86 servers and
-Apple Silicon / ARM hosts.
+Apple Silicon / ARM hosts. The release workflow builds each platform on a native runner and
+publishes the version tag only after both platform images exist (see
+[releasing.md](releasing.md)).
 
 The `migrate` image is a one-shot job, not a server. It holds only the compiled migration runner,
 its production dependencies, the SQL migrations and `pnpm`, and runs as the non-root `node` user.

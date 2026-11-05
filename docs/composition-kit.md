@@ -52,6 +52,24 @@ pv-compose  ->  paraglide compile  ->  svelte-kit sync  ->  pv-verify --only tsc
    the shell header, `ShellBrand.svelte`; Story 72.17). The default is PV's own sentence in `en` and
    `es`; overlaying the key replaces the text with no component replacement. It covers the shell
    header only; the auth pages and the public home keep the fixed sentence.
+
+   **Overlayable message keys (Story 72.19, CentralizeMe request R4).** PV's list is
+   `OVERLAYABLE_MESSAGE_KEYS` in `src/lib/i18n/overlayable-message-keys.ts` (shipped in `web-host`):
+   `auth_login_page_title`, `auth_login_page_description`, `auth_register_page_title`, `brand_name` and
+   `shell_brand_tagline`. Overlaying any of them, in any locale, leaves PV's shipped unit tests that
+   run over the composed tree green, with no entry in `excludedPvTests` and no pack-side exclusion:
+   a PV test never writes the default text of one of these keys. It reads the message
+   (`m.<key>()`, or `overlayableMessage(key, locale)` from `$lib/test/overlayable-messages` for a
+   given locale), and a markup oracle that has to keep the sentence masks it (`maskOverlayable`,
+   which stores the token `%%<key>%%`). `pnpm check-overlayable-messages` fails a unit test that
+   writes the text of a listed key (raw or as a regular-expression literal) and fails when the mock UI
+   pack stops overlaying a listed key; the pack's `messages/es.json` and `messages/en.json` overlay all
+   of them between them, so the composed run in CI is the proof. The oracles valid only on PV's own
+   tree (`PV_TREE_ONLY_TESTS`) are not shipped and are the one place the default text may still appear
+   in a stored snapshot. A key outside the list is not a contract: overlaying it may turn a PV test
+   red, so add it to the list (a minor change, with its tests moved off the literal) before relying
+   on it.
+
 7. **Lock.** `composition.lock.json` is written atomically.
 
 `compose()` is a pure `plan()` (reads, computes, writes nothing) plus an `apply()` that builds the tree
@@ -360,21 +378,21 @@ resolved path like any other (M4), and each carries `@pv-stable` in its first co
 a change to them is a minor bump of `@project-vault/web-host`. No existing component is retro-stamped. The
 `component-index.json` of the pack lists them with `stability: "stable"` (generated, never typed here).
 
-| Component                             | Props                                                                                                                                                                        | Events / bindings                    | Status |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------ |
-| `ui/Button.svelte`                    | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`                    | `onclick`                            | stable |
-| `ui/Field.svelte`                     | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                                      | none                                 | stable |
-| `ui/TextField.svelte`                 | `id`, `label`, `value`, `name`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                                    | `bind:value`                         | stable |
-| `ui/Textarea.svelte`                  | `id`, `label`, `value`, `name`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                                    | `bind:value`                         | stable |
-| `ui/Select.svelte`                    | `id`, `label`, `value`, `name`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                                | `bind:value`                         | stable |
-| `ui/ChoiceGroup.svelte`               | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled`               | `bind:value`                         | stable |
-| `ui/FieldMessages.svelte`             | `id`, `hint`, `helpId`, `error`                                                                                                                                              | none                                 | stable |
-| `ui/field-ids.ts`                     | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                               | none                                 | stable |
-| `ui/control-classes.ts`               | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                              | none                                 | stable |
-| `ui/Dialog.svelte`                    | `open` (bindable), `id` (required), `title`, `description`, `dismissible` (default true), `onclose`, `children`, `footer`                                                    | `bind:open`, `onclose`               | stable |
-| `ui/ConfirmDialog.svelte`             | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
-| `ui/ConfirmDialogHost.svelte`         | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                                      | none                                 | stable |
-| `shell/ShortcutsDialogHost.svelte`    | none (mounted once in the `(app)` layout; the keyboard shortcuts dialog the account menu opens; renders a closed `<dialog>` until asked)                                     |
+| Component                          | Props                                                                                                                                                                        | Events / bindings                    | Status |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------ |
+| `ui/Button.svelte`                 | `size` (`sm` / `md` / `lg`, default `md`), `variant` (`primary` / `secondary` / `danger`), `type` (default `button`), `disabled`, `fullWidth`, `children`                    | `onclick`                            | stable |
+| `ui/Field.svelte`                  | `id` (required), `label`, `hint`, `helpId` (default `<id>-help`), `error`, `children(wiring)` where `wiring = { describedBy, invalid }`                                      | none                                 | stable |
+| `ui/TextField.svelte`              | `id`, `label`, `value`, `name`, `type`, `hint`, `helpId`, `error`, `required`, `autocomplete`, `disabled`                                                                    | `bind:value`                         | stable |
+| `ui/Textarea.svelte`               | `id`, `label`, `value`, `name`, `rows`, `hint`, `helpId`, `error`, `required`, `disabled`                                                                                    | `bind:value`                         | stable |
+| `ui/Select.svelte`                 | `id`, `label`, `value`, `name`, `options` (`{ value, label, disabled? }[]`), `placeholder`, `hint`, `helpId`, `error`, `required`, `disabled`                                | `bind:value`                         | stable |
+| `ui/ChoiceGroup.svelte`            | `id`, `legend`, `type` (`checkbox` / `radio`), `name`, `options`, `value` (string for radio, string array for checkbox), `hint`, `helpId`, `error`, `disabled`               | `bind:value`                         | stable |
+| `ui/FieldMessages.svelte`          | `id`, `hint`, `helpId`, `error`                                                                                                                                              | none                                 | stable |
+| `ui/field-ids.ts`                  | `helpIdOf()`, `errorIdOf()`, `describedByOf()`                                                                                                                               | none                                 | stable |
+| `ui/control-classes.ts`            | `CONTROL_BORDER`, `CONTROL_BORDER_FALLBACK`, `TEXT_CONTROL_CLASS`, `CHOICE_CONTROL_CLASS`, `buttonClass()`, types `ButtonSize`, `ButtonVariant`                              | none                                 | stable |
+| `ui/Dialog.svelte`                 | `open` (bindable), `id` (required), `title`, `description`, `dismissible` (default true), `onclose`, `children`, `footer`                                                    | `bind:open`, `onclose`               | stable |
+| `ui/ConfirmDialog.svelte`          | `open` (bindable), `id`, `title`, `message`, `confirmLabel`, `cancelLabel`, `variant` (`primary` / `danger`), `typedValue`, `typedLabel`, `pending`, `onconfirm`, `oncancel` | `bind:open`, `onconfirm`, `oncancel` | stable |
+| `ui/ConfirmDialogHost.svelte`      | none (mounted once in the `(app)` layout; shows the pending `requestConfirm()` request)                                                                                      | none                                 | stable |
+| `shell/ShortcutsDialogHost.svelte` | none (mounted once in the `(app)` layout; the keyboard shortcuts dialog the account menu opens; renders a closed `<dialog>` until asked)                                     |
 
 Contract rules: `id` is required and explicit (no generated ids, so the server and the browser cannot disagree); the
 control is named by its `<label for>` (or the fieldset `legend`); `aria-describedby` (on each input of a group) lists the error id first and the
@@ -416,6 +434,62 @@ hides it and does not open it. **CM impact:** `GlobalSearch.svelte` is a CM repl
 with the web-host release carrying this story; CM can drop its replacement to get the actions and recents, or keep it
 and reconcile with `pv-compose --accept-host`. The new `GlobalSearch.palette.test.ts` is about `GlobalSearch.svelte`
 (a direct import), so it is excluded from a composed tree that replaces it.
+
+### Palette results providers (Epic 72, Story 72-18, CentralizeMe request R3)
+
+A host that searches its own data (CentralizeMe: tenants, groups, billing) adds results to PV's palette with a
+**provider** instead of replacing `GlobalSearch`. A fill of the existing `app.layout.search` injection point (rendered
+inside `AppLayoutSearch`, on every signed-in page) calls `registerSearchProvider(provider)` from its `<script>`:
+
+```svelte
+<script lang="ts">
+  import { resolve } from '$app/paths'
+  import { registerSearchProvider } from '$lib/components/shell/search-providers.svelte.js'
+
+  registerSearchProvider({
+    id: 'cm-tenants',
+    timeoutMs: 2000, // optional, default 3000
+    search: async (query, { signal }) => {
+      const tenants = await findTenants(query, signal)
+      return tenants.map((t) => ({
+        id: t.id,
+        label: t.name,
+        hint: 'Tenant', // optional second line
+        group: 'Tenants', // the heading the rows sit under
+        href: resolve('/tenants/[id]', { id: t.id }), // or `action: () => switchTenant(t.id)`
+      }))
+    },
+  })
+</script>
+```
+
+A result carries `{ id, label, hint?, group }` and exactly one of `href` (an app path produced by `resolve()`, typed
+`ResolvedPathname`; anything else, such as an external URL, goes through `action`) and `action` (a callback, sync or
+async). Behaviour, all pinned by `GlobalSearch.providers.test.ts`, `search-providers.test.ts` and the composed
+`m3-search-provider.spec.ts`:
+
+- **Order and keyboard.** Provider rows come after every native row (actions, then recents or results), providers in
+  registration order and results in the order returned; the keyboard walks the native rows exactly as before and then
+  continues into the provider rows. Providers run only for a non-empty query, beside PV's own search; native results
+  render first and provider results append as each provider answers. Providers never feed recents.
+- **Failure and time.** A provider that rejects, throws, returns a non-array or does not answer within `timeoutMs`
+  (its `signal` is aborted) shows one calm status line, "Some results could not be loaded.", and never an unhandled
+  rejection or console output; other providers and the native results are unaffected. Malformed results (no `id`,
+  `label` or `group`, or neither or both of `href` and `action`, an `href` that is not an app path starting with a single `/`, a repeated `id`) are dropped. An `action` that throws keeps the palette
+  open with "That action could not be completed. Try again." A superseded query or a closed palette drops late answers.
+- **Where the registry lives.** `AppLayoutSearch` creates one registry per mounted layout and provides it by Svelte
+  context; `registerSearchProvider` registers in `onMount` (never during SSR, never in module state shared between
+  requests) and unregisters when the fill is destroyed. Called with no palette around it, it does nothing.
+- **Trust.** A provider is trusted first-party code (ADR 0007): no sanitizer, allowlist or capability boundary is added.
+  Labels and hints render as text, as PV's own results do.
+
+With no provider registered the palette renders byte-identical markup (the route render oracles are unchanged).
+`GlobalSearch.svelte` is added to the type-aware lint list (`NAV_RENDERER_FILES`) so `href` is checked by type.
+**CM impact:** `GlobalSearch.svelte` is a CM replacement, so its `hostSha256` drifts with the web-host release carrying
+this story. CM can replace its whole-palette replacement by a fill of `app.layout.search` that registers its provider
+(its own merge limits live in the provider), or keep the replacement and reconcile with `pv-compose --accept-host`.
+`GlobalSearch.providers.test.ts` imports `GlobalSearch.svelte` directly, so, like `GlobalSearch.palette.test.ts`, it is
+excluded from a composed tree that replaces it. Not done here: the CM change itself.
 
 ### Region points of the remaining top-level uses (Epic 69, Story 69-6)
 
@@ -1053,6 +1127,31 @@ CM compatibility tuple: adding keys is a minor change to the M6 contract. A host
 should note the Project Vault release that first carries these keys (the next release after this change) in
 its compatibility tuple; no extension-api version changes, because theme tokens are not part of the
 extension-api package.
+
+## Brand name (Epic 72, Story 72-16)
+
+The product name is ONE message, `brand_name` (`apps/web/messages/<locale>.json`, default `Project Vault` in
+every locale). Every user-visible place that named the product reads it, so a host renames PV everywhere by
+overlaying that single key in its pack's `messages/<locale>.json`, with no copy of a PV file:
+
+- page and tab titles (`<title>Secrets | {m.brand_name()}</title>` on every route; the messages that carry a
+  title, such as `auth_login_page_title`, take it as the `{brand}` parameter);
+- the auth page header (`AuthBrandHeader`), the public home and error headers, the footer copyright, the
+  shell's brand link (`shell.brand.home` nav item, which the M5 delta can still relabel or replace), the
+  "Back to ..." error link, the dashboard, onboarding, vault-gate, API-proxy and readiness copy;
+- help and description messages (for example `credential_totp_help`), which now take `{brand}`: a pack that
+  overlays one of them keeps the parameter or writes its own text;
+- `src/app.html`'s fallback `<title>`: the file carries the placeholder `%brand.name%`, which PV's server
+  hook (`createPvHandle`) replaces with the escaped `brand_name` of the request's locale. A pack that
+  overrides `app.html` keeps the placeholder.
+
+`pnpm check-brand-name` (in `make ci-inner` and the CI Checks job) fails on any user-visible string in
+`apps/web/src` (markup text, attribute values, script and `.ts` string literals; comments and test files are
+not product copy) or any catalogue message other than `brand_name` that hard-codes `Project Vault`. It has no
+exemption list: a new occurrence is fixed by reading the key. Tests that assert copy read `m.brand_name()`.
+The mechanism spec `e2e/mechanism/m6-brand-name.spec.ts` overlays the key in the mock pack and checks the
+composed auth pages, tab titles and error page. The CM follow-up (overlay `brand_name` and delete its copies of
+these files) is a CM story, not part of this change. The next `web-host` release carries the key.
 
 ## The version tuple
 

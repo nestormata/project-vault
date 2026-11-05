@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import ThemesHeader from '$lib/components/settings/ThemesHeader.svelte'
   import ThemesSelectionError from '$lib/components/settings/ThemesSelectionError.svelte'
   import ThemesList from '$lib/components/settings/ThemesList.svelte'
@@ -49,7 +50,7 @@
 </script>
 
 <svelte:head>
-  <title>Themes | Project Vault</title>
+  <title>Themes | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.themes.before" data={data?.__inject} />

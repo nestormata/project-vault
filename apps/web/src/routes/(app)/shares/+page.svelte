@@ -8,7 +8,7 @@
 </script>
 
 <svelte:head>
-  <title>{m.shares_index_page_title()}</title>
+  <title>{m.shares_index_page_title({ brand: m.brand_name() })}</title>
 </svelte:head>
 
 <InjectionPoint name="shares.home.before" data={data?.__inject} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import PlatformOrgsContent from '$lib/components/platform/PlatformOrgsContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Organizations | Platform Admin | Project Vault</title>
+  <title>Organizations | Platform Admin | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="platform.settings-orgs.before" data={data?.__inject} />

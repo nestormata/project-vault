@@ -78,6 +78,7 @@ const credentialSharingFixture: CredentialSharingHost = {
   supersedeSharesForRotation: async () => ({ supersededShares: [] }),
   listSharesForCredential: async () => ({ status: 'ok', items: [], total: 0 }),
   listSharesForOrganization: async () => ({ status: 'ok', items: [], total: 0 }),
+  provisionMachineUser: async () => ({ machineUserId: 'machine-user-1', created: false }),
 }
 
 describe('HostServices — Story 20.12 AC widening to include credentialSharing', () => {

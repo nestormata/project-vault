@@ -143,6 +143,21 @@ via `workflow_dispatch`. The second option repairs the images only: the web-host
 (§9.2) does not count a `workflow_dispatch` run, so web-host `X.Y.Z` is then never published.
 Choose `X.Y.Z+1` whenever web-host must ship for this release.
 
+How `container-publish` is built (story 75-1): each image is built once per platform, `linux/amd64`
+on `ubuntu-24.04` and `linux/arm64` on the native `ubuntu-24.04-arm` runner (no QEMU), and each
+platform build pushes by digest only, with no tag. The `Publish <image> image` job runs only after
+both platform builds of every image succeeded, merges their digests into one manifest list, and only
+then creates `:X.Y.Z` and `:sha-<commit>`. So a failed platform build (for example a flaky
+dependency install) leaves no `:X.Y.Z` tag, and **re-running the failed jobs** recovers the run.
+
+**Never cancel a release `container-publish` run because one job failed.** A cancel kills sibling
+jobs part-way, and a job that already created its immutable tag then makes every re-run die at
+"Reject existing immutable release tag" (v2.0.1: the run was cancelled after `migrate` and `web` had
+pushed `:2.0.1`, and the release was abandoned for v2.0.2). `gh run rerun --failed` is refused while
+the run is still `in_progress`, so wait until every job has finished, then run
+`gh run rerun <run-id> --failed`. Do not use "re-run all jobs": it repeats the jobs that already
+succeeded.
+
 Post-publish verification:
 
 ```bash
@@ -386,8 +401,10 @@ but the gate does not trust a run name (DW-508 records the stronger design to re
 
 Recovery depends on where the Release-triggered `container-publish` run failed:
 
-- **Before any image was pushed**, for a transient reason (a cancelled or flaky job), and within
-  GitHub's re-run window: **re-run its failed jobs** (that keeps the `release` event). Once it is
+- **Before any `:X.Y.Z` tag was created**, for a transient reason (a flaky platform build, a
+  runner that never started), and within GitHub's re-run window: **let the other jobs finish, never
+  cancel the run**, then **re-run its failed jobs** (that keeps the `release` event). Platform
+  builds push by digest only, so a failed platform build always falls in this case. Once the run is
   green, **re-run failed jobs** on the waiting web-host run.
 - **Anything else**: a failure after the push (version verification, or a vulnerability scan that
   left `X.Y.Z` published but not promoted), a workflow bug fixed after the tag, or a run older than

@@ -13,7 +13,9 @@
   let prefillEmail = $derived(page.url.searchParams.get('email') ?? '')
   let localeRevision = $state(0)
   let pageTitle = $derived(
-    localeRevision === 0 ? m.auth_register_page_title() : m.auth_register_page_title()
+    localeRevision === 0
+      ? m.auth_register_page_title({ brand: m.brand_name() })
+      : m.auth_register_page_title({ brand: m.brand_name() })
   )
 
   function handleLocaleChange() {

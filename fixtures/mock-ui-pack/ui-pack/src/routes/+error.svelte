@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RootErrorContent from '$lib/components/public/RootErrorContent.svelte'
   import RootErrorHeader from '$lib/components/public/RootErrorHeader.svelte'
@@ -18,7 +19,7 @@
 <!-- Story 69.13: the pack page also renders PV's own error regions, so the `root.error.*` points
   (render-only: an error page has no load) are proven end to end in a product that overrides it. -->
 <svelte:head>
-  <title>{heading} | Project Vault</title>
+  <title>{heading} | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="root.error.before" data={page.data?.__inject} />

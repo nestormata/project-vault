@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/svelte'
 import OnboardingWizard from './OnboardingWizard.svelte'
@@ -33,7 +34,7 @@ describe('OnboardingWizard', () => {
   it('renders step 1 educational content without environment layer text', () => {
     renderWizard()
     expect(screen.getByRole('dialog')).toBeTruthy()
-    expect(screen.getByText(/Welcome to Project Vault/i)).toBeTruthy()
+    expect(screen.getByText(`Welcome to ${m.brand_name()}`, { exact: false })).toBeTruthy()
     expect(screen.getByText(/no environments/i)).toBeTruthy()
     expect(screen.queryByText(/^environment$/i)).toBeNull()
   })

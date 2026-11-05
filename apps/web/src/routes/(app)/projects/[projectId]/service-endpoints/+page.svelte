@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteServiceEndpoint, updateServiceEndpoint } from '$lib/api/service-endpoints.js'
@@ -61,7 +62,7 @@
 </script>
 
 <svelte:head>
-  <title>Service endpoints | Project Vault</title>
+  <title>Service endpoints | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="project.service-endpoints.before" data={data?.__inject} />

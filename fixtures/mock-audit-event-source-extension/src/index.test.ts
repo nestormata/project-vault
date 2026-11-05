@@ -43,6 +43,7 @@ const credentialSharingStub = {
   supersedeSharesForRotation: rejectUnused,
   listSharesForCredential: rejectUnused,
   listSharesForOrganization: rejectUnused,
+  provisionMachineUser: rejectUnused,
 }
 
 describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {

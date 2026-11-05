@@ -661,7 +661,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // `CredentialSharingCreateExternalShareParams.totpCode` and two new error classes (policy row 1).
 // The step-up on `createExternalShare` applies only to a manifest declaring 3.38.0 or later, so a
 // manifest declaring 3.37.0 or older behaves exactly as before.
-export const EXTENSION_API_VERSION = '3.38.0'
+// Story 73.9 — bumped as a minor (3.38.0 -> 3.39.0): `CredentialSharingHost.provisionMachineUser`,
+// its two types and the `checkCredentialSharingMachineUserMode` conformance helper (policy rows 1
+// and 2). The lazy host-managed machine user applies only to a manifest declaring 3.39.0 or later,
+// so a manifest declaring 3.38.0 or older behaves exactly as before.
+export const EXTENSION_API_VERSION = '3.39.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

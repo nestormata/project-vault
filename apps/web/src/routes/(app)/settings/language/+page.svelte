@@ -38,7 +38,7 @@
 </script>
 
 <svelte:head>
-  <title>{m.settings_language_page_title()} | Project Vault</title>
+  <title>{m.settings_language_page_title()} | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.language.before" data={data?.__inject} />

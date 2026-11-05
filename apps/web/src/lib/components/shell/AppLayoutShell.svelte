@@ -48,7 +48,7 @@
 <!-- Story 63.2 A4: while the wizard replaces the page body, no page owns the tab title. -->
 <svelte:head>
   {#if !onboardingDone}
-    <title>{m.dashboard_page_title()} | Project Vault</title>
+    <title>{m.dashboard_page_title()} | {m.brand_name()}</title>
   {/if}
 </svelte:head>
 

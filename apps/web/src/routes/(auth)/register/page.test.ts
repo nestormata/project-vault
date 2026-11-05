@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
+import { overlayableMessage } from '$lib/test/overlayable-messages.js'
 
 const registerMock = vi.hoisted(() => vi.fn())
 const pageMock = vi.hoisted(() => ({ url: new URL('http://localhost/register') }))
@@ -32,7 +33,8 @@ describe('/register +page.svelte', () => {
     setLocale('es', { reload: false })
     render(RegisterPage)
 
-    expect(document.title).toBe('Registrarse | Project Vault')
+    // Story 72.19: read from the message in the locale under test, never written out (see login).
+    expect(document.title).toBe(overlayableMessage('auth_register_page_title', 'es'))
     expect(screen.getByRole('heading', { name: 'Registrarse' })).toBeTruthy()
     expect(
       screen.getByText('Crea una organización independiente nueva en este vault.')

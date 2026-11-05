@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import SettingsHomeHeader from '$lib/components/settings/SettingsHomeHeader.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   let { data } = $props()
@@ -6,7 +7,7 @@
 </script>
 
 <svelte:head>
-  <title>Settings | Project Vault</title>
+  <title>Settings | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.home.before" data={data?.__inject} />

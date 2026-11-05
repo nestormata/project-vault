@@ -257,12 +257,22 @@ jobs:
       - name: Check the mock UI pack mechanism wiring (Story 68.10)
         run: pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts scripts/mock-ui-pack-seed.test.ts scripts/check-pv-nav-snapshot.test.ts scripts/check-mock-ui-pack-not-in-production.test.ts scripts/check-runtime-route-audit-shipped.test.ts scripts/lib/shipped-route-audit.test.ts
 
+      - name: Check the product name is not hard-coded (Story 72.16)
+        run: |
+          pnpm check-brand-name &&
+          pnpm vitest run scripts/check-brand-name.test.ts
+
       - name: Check nav ids and nav surfaces (Story 68.7)
         run: |
           pnpm check-nav-ids &&
           pnpm vitest run scripts/check-nav-ids.test.ts &&
           pnpm check-nav-surfaces &&
           pnpm vitest run scripts/check-nav-surfaces.test.ts
+
+      - name: Check overlayable messages are not pinned by unit tests (Story 72.19)
+        run: |
+          pnpm check-overlayable-messages &&
+          pnpm vitest run scripts/check-overlayable-messages.test.ts
 
       - name: Check native-credential surface (Story 23.2 AC19)
         run: pnpm check-native-credential-surface
@@ -710,7 +720,7 @@ jobs:
       # stale on the last passing run.
       - name: SonarCloud Scan
         if: ${{ !cancelled() }}
-        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304 # v8.4.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import HealthHeader from '$lib/components/monitoring/HealthHeader.svelte'
   import HealthProjects from '$lib/components/monitoring/HealthProjects.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -9,7 +10,7 @@
 </script>
 
 <svelte:head>
-  <title>Health | Project Vault</title>
+  <title>Health | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="health.home.before" data={data?.__inject} />

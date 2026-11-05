@@ -193,3 +193,57 @@ export function checkProjectWriteRoles(manifest: {
     )
   return { ok: routes.every((route) => route.ungated === null), routes }
 }
+
+/** How the host attributes this extension's credential-sharing writes (Story 73.9). */
+export type CredentialSharingMachineUserMode = 'host-managed' | 'admin-provisioned-only'
+
+export type CredentialSharingMachineUserModeReason =
+  'declared_since' | 'legacy_contract' | 'unparsable_version'
+
+export interface CredentialSharingMachineUserModeResult {
+  readonly mode: CredentialSharingMachineUserMode
+  readonly reason: CredentialSharingMachineUserModeReason
+}
+
+const CANONICAL_VERSION = /^(\d+)\.(\d+)\.(\d+)$/
+
+type VersionTuple = readonly [number, number, number]
+
+/** `MAJOR.MINOR.PATCH` as numbers, or null when it is not exactly three numbers. */
+function parseCanonicalVersion(version: string): VersionTuple | null {
+  const match = CANONICAL_VERSION.exec(version)
+  if (!match) return null
+  const [, major = '0', minor = '0', patch = '0'] = match
+  return [Number(major), Number(minor), Number(patch)]
+}
+
+function isAtLeast(
+  [major, minor, patch]: VersionTuple,
+  [floorMajor, floorMinor, floorPatch]: VersionTuple
+): boolean {
+  if (major !== floorMajor) return major > floorMajor
+  if (minor !== floorMinor) return minor > floorMinor
+  return patch >= floorPatch
+}
+
+/** The first contract version whose credential-sharing writes get a host-managed machine user. */
+const HOST_MANAGED_MACHINE_USER_SINCE: VersionTuple = [3, 39, 0]
+
+/**
+ * Story 73.9 — answers the host's own rule for the manifest's declared `apiVersion`. `host-managed`
+ * (3.39.0 or later): when no admin-provisioned machine user with a live key exists, the host
+ * provisions a keyless, org-scoped one and `createExternalShare` / `revokeShare` /
+ * `supersedeSharesForRotation` proceed. `admin-provisioned-only`: those methods throw
+ * `CredentialSharingNoMachineUserError` until an admin creates a machine user named after the
+ * extension and issues it a key. An unparsable version is never granted the new mode. Assert the
+ * mode you expect in the extension's CI.
+ */
+export function checkCredentialSharingMachineUserMode(manifest: {
+  apiVersion: string
+}): CredentialSharingMachineUserModeResult {
+  const version = parseCanonicalVersion(manifest.apiVersion)
+  if (version === null) return { mode: 'admin-provisioned-only', reason: 'unparsable_version' }
+  return isAtLeast(version, HOST_MANAGED_MACHINE_USER_SINCE)
+    ? { mode: 'host-managed', reason: 'declared_since' }
+    : { mode: 'admin-provisioned-only', reason: 'legacy_contract' }
+}

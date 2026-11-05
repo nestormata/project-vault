@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import NotificationSettingsHeader from '$lib/components/notifications/NotificationSettingsHeader.svelte'
   import NotificationPreferencesPanel from '$lib/components/notifications/NotificationPreferencesPanel.svelte'
@@ -15,7 +16,7 @@
 </script>
 
 <svelte:head>
-  <title>Notification Preferences | Project Vault</title>
+  <title>Notification Preferences | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.notifications.before" data={data?.__inject} />

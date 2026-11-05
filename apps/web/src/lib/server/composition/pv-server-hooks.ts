@@ -8,6 +8,7 @@ import type { Handle } from '@sveltejs/kit'
 import { isAuthPath, resolveAuthContext, type AuthGuardResult } from '$lib/server/auth-guard.js'
 import { getVaultReadiness } from '$lib/api/vault.js'
 import { createServerApiFetch } from '$lib/server/server-api-fetch.js'
+import { m } from '$lib/paraglide/messages.js'
 import { paraglideMiddleware } from '$lib/paraglide/server.js'
 import {
   isBackendAuthenticatedRoute,
@@ -20,6 +21,17 @@ export interface PvHandleOptions {
   /** Read per request (hooks.server.ts passes `() => env.API_BASE_URL`). */
   apiBaseUrl: () => string | undefined
   protectedPaths: ProtectedPaths
+}
+
+/** The brand name goes into app.html's fallback `<title>`, so it is escaped as HTML text. */
+function escapeHtml(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+function substituteHtmlPlaceholders(html: string, locale: string): string {
+  return html
+    .replace('%paraglide.lang%', locale)
+    .replace('%brand.name%', () => escapeHtml(m.brand_name()))
 }
 
 function withMutableHeaders(response: Response): Response {
@@ -172,7 +184,7 @@ export function createPvHandle({ apiBaseUrl, protectedPaths }: PvHandleOptions):
             ...opts,
             transformPageChunk: async (chunk) => {
               const html = (await opts?.transformPageChunk?.(chunk)) ?? chunk.html
-              return html.replace('%paraglide.lang%', locale)
+              return substituteHtmlPlaceholders(html, locale)
             },
           }),
       })

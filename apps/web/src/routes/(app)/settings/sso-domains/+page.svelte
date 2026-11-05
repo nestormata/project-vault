@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
   import SsoDomainsHeader from '$lib/components/settings/SsoDomainsHeader.svelte'
   import SsoDomainsPanel from '$lib/components/settings/SsoDomainsPanel.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
@@ -7,7 +8,7 @@
 </script>
 
 <svelte:head>
-  <title>SSO Domains | Project Vault</title>
+  <title>SSO Domains | {m.brand_name()}</title>
 </svelte:head>
 
 <InjectionPoint name="settings.sso-domains.before" data={data?.__inject} />

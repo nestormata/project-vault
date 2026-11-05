@@ -28,6 +28,12 @@
     removeRecent,
     type RecentItem,
   } from './palette-recents.js'
+  import {
+    runSearchProvider,
+    useSearchProviders,
+    type SearchProvider,
+    type SearchProviderResult,
+  } from './search-providers.svelte.js'
 
   let {
     open = $bindable(false),
@@ -38,6 +44,7 @@
   let query = $state('')
   let results = $state<SearchResultItem[]>([])
   let loading = $state(false)
+  let settledQuery = $state<string | null>(null)
   let selectedIndex = $state(0)
   let dialogRef = $state<HTMLElement | null>(null)
   let inputRef = $state<HTMLInputElement | null>(null)
@@ -52,13 +59,50 @@
     | { group: 'actions'; id: string; action: PaletteAction }
     | { group: 'recent'; id: string; recent: RecentItem }
     | { group: 'results'; id: string; item: SearchResultItem }
+    | { group: 'provider'; id: string; heading: string; result: SearchProviderResult }
 
   const GROUP_LABEL = { actions: 'Actions', recent: 'Recent', results: 'Results' } as const
+
+  /** The heading a row sits under; provider rows carry their own (Story 72.18). */
+  function headingOf(row: PaletteRow): string {
+    return row.group === 'provider' ? row.heading : GROUP_LABEL[row.group]
+  }
+
+  /** Stable DOM id for one palette row. The hash keeps sanitized ids unique; a repeated
+   * identity gets a numeric suffix so two rows never share an id. */
+  function optionDomIds(list: PaletteRow[]): string[] {
+    return list.map((row, index) => {
+      const occurrence = list
+        .slice(0, index)
+        .filter((earlier) => earlier.group === row.group && earlier.id === row.id).length
+      let hash = 2166136261
+      for (let charIndex = 0; charIndex < row.id.length; charIndex += 1) {
+        hash ^= row.id.charCodeAt(charIndex)
+        hash = Math.imul(hash, 16777619)
+      }
+      const safe = Array.from(row.id, (ch) => (/[A-Za-z0-9_-]/.test(ch) ? ch : '_')).join('')
+      const base = `global-search-option-${row.group}-${(hash >>> 0).toString(36)}-${safe || 'row'}`
+      return occurrence === 0 ? base : `${base}-${occurrence}`
+    })
+  }
 
   let recentItems = $state<RecentItem[]>([])
   let notice = $state<string | null>(null)
   let projectInfo = $state<Record<string, KnownProject>>({})
   let generation = 0
+
+  // Story 72.18: results providers contributed by the host (none in PV's own build). Their rows
+  // are appended after every native row, so native ordering and keyboard behaviour do not move.
+  const providerRegistry = useSearchProviders()
+  let providerResults = $state<Record<string, SearchProviderResult[]>>({})
+  let providersPending = $state(0)
+  let providersFailed = $state(false)
+  let providerAbort: AbortController | null = null
+
+  // The recents notice wins; otherwise a failed provider is mentioned calmly (Story 72.18).
+  const shownNotice = $derived(
+    notice ?? (providersFailed ? 'Some results could not be loaded.' : null)
+  )
 
   const orgRole = $derived(asOrgRole(page.data?.user?.orgRole))
   const userId = $derived(page.data?.user?.userId ?? null)
@@ -73,6 +117,18 @@
       .flatMap((id) => (projectInfo[id] ? [projectInfo[id]] : []))
   })
 
+  const providerRows = $derived.by((): PaletteRow[] => {
+    if (!query.trim()) return []
+    return (providerRegistry?.providers ?? []).flatMap((provider) =>
+      (providerResults[provider.id] ?? []).map((result): PaletteRow => ({
+        group: 'provider',
+        id: `${provider.id.length}:${provider.id}:${result.id}`,
+        heading: result.group,
+        result,
+      }))
+    )
+  })
+
   const rows = $derived.by((): PaletteRow[] => {
     // The query filters the static actions by label; "New secret in X" is already tied to a project
     // the query (or the recents) brought in, so it is not filtered again by its own label.
@@ -83,7 +139,17 @@
     const rest: PaletteRow[] = query.trim()
       ? results.map((item) => ({ group: 'results', id: item.type + item.id, item }))
       : recentItems.map((recent) => ({ group: 'recent', id: recent.type + recent.id, recent }))
-    return [...actions, ...rest]
+    return [...actions, ...rest, ...providerRows]
+  })
+
+  const optionIds = $derived(optionDomIds(rows))
+  const activeOptionId = $derived(rows.length > 0 ? optionIds[selectedIndex] : undefined)
+  const resultAnnouncement = $derived.by(() => {
+    if (rows.length === 1) return '1 result'
+    if (rows.length > 1) return `${rows.length} results`
+    const term = query.trim()
+    const settled = term.length > 0 && settledQuery === term && !loading && providersPending === 0
+    return settled ? 'No results' : ''
   })
 
   function closeSearch() {
@@ -92,7 +158,9 @@
     results = []
     selectedIndex = 0
     loading = false
+    settledQuery = null
     if (abortController) abortController.abort()
+    resetProviders()
     generation += 1
     recentItems = []
     notice = null
@@ -171,12 +239,46 @@
     }
   }
 
+  function resetProviders() {
+    providerAbort?.abort()
+    providerAbort = null
+    providerResults = {}
+    providersPending = 0
+    providersFailed = false
+  }
+
+  async function runProvider(provider: SearchProvider, term: string, signal: AbortSignal) {
+    const outcome = await runSearchProvider(provider, term, signal)
+    // A superseded query (or a closed palette) drops the answer; its counters were already reset.
+    if (outcome.status === 'aborted' || signal.aborted) return
+    providersPending -= 1
+    if (outcome.status === 'ok') {
+      providerResults = { ...providerResults, [provider.id]: outcome.results }
+    } else {
+      providersFailed = true
+    }
+  }
+
+  /** Starts every provider for `term` beside the native search; each answer lands on its own. */
+  function startProviders(term: string) {
+    resetProviders()
+    const providers = providerRegistry?.providers ?? []
+    if (providers.length === 0) return
+    providerAbort = new AbortController()
+    providersPending = providers.length
+    for (const provider of providers) void runProvider(provider, term, providerAbort.signal)
+  }
+
   async function runSearch(term: string) {
-    if (!term.trim()) {
+    const needle = term.trim()
+    if (!needle) {
       results = []
       loading = false
+      settledQuery = null
+      resetProviders()
       return
     }
+    startProviders(needle)
     if (abortController) abortController.abort()
     abortController = new AbortController()
     loading = true
@@ -184,17 +286,21 @@
       // The signal scopes to the search request only; it must never reach the shared session
       // refresh apiFetch may issue on a 401 (Story 61.3).
       const data = await globalSearch(fetch, {
-        q: term.trim(),
+        q: needle,
         limit: 10,
         signal: abortController.signal,
       })
       results = data.results
       selectedIndex = 0
+      settledQuery = needle
       void ensureProjectInfo(
         data.results.flatMap((item) => (item.type === 'project' ? [item.id] : [])).slice(0, 3)
       )
     } catch (error) {
-      if ((error as Error).name !== 'AbortError') results = []
+      if ((error as Error).name !== 'AbortError') {
+        results = []
+        settledQuery = needle
+      }
     } finally {
       loading = false
     }
@@ -275,9 +381,29 @@
     }
   }
 
+  /** A provider result either navigates or runs its own action; a failing action keeps the
+   * palette open and says so. */
+  async function openProviderResult(result: SearchProviderResult) {
+    notice = null
+    if (typeof result.href === 'string') {
+      const href = result.href
+      closeSearch()
+      await goto(href)
+      return
+    }
+    try {
+      await result.action?.()
+    } catch {
+      notice = 'That action could not be completed. Try again.'
+      return
+    }
+    closeSearch()
+  }
+
   async function selectRow(row: PaletteRow) {
     if (row.group === 'actions') await goToTarget(row.action.target)
     else if (row.group === 'recent') await openRecent(row.recent)
+    else if (row.group === 'provider') await openProviderResult(row.result)
     else await navigate(row.item)
   }
 
@@ -345,6 +471,7 @@
     if (typeof window !== 'undefined') window.removeEventListener('keydown', handleGlobalKeydown)
     clearTimeout(debounceTimer)
     if (abortController) abortController.abort()
+    providerAbort?.abort()
     cleanupFocusTrap?.()
   })
 </script>
@@ -375,10 +502,13 @@
           bind:value={query}
           class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-4 py-3 text-base"
           type="search"
+          role="combobox"
           placeholder="Search secrets, projects…"
           aria-label="Search"
           aria-autocomplete="list"
+          aria-expanded={rows.length > 0}
           aria-controls="global-search-results"
+          aria-activedescendant={activeOptionId}
           autocomplete="off"
           oninput={handleQueryInput}
           aria-describedby="global-search-help"
@@ -386,19 +516,23 @@
         <FormHelpText id="global-search-help" kind="search" />
       </div>
 
-      <p class={notice ? 'px-4 pt-3 text-sm text-amber-900' : 'sr-only'} role="status">
-        {notice ?? ''}
+      <p class={shownNotice ? 'px-4 pt-3 text-sm text-amber-900' : 'sr-only'} role="status">
+        {shownNotice ?? ''}
+      </p>
+      <p id="global-search-result-count" class="sr-only" aria-live="polite" aria-atomic="true">
+        {resultAnnouncement}
       </p>
 
       {#if rows.length > 0}
         <ul id="global-search-results" class="max-h-[50vh] overflow-y-auto p-2" role="listbox">
           {#each rows as row, index (row.group + row.id)}
-            {#if index === 0 || rows[index - 1]?.group !== row.group}
+            {#if index === 0 || rows[index - 1]?.group !== row.group || (row.group === 'provider' && headingOf(rows[index - 1] as PaletteRow) !== row.heading)}
               <li role="presentation" class="px-3 pb-1 pt-2 text-xs font-semibold text-slate-600">
-                {GROUP_LABEL[row.group]}
+                {headingOf(row)}
               </li>
             {/if}
             <li
+              id={optionIds[index]}
               role="option"
               aria-selected={index === selectedIndex}
               class={`rounded-xl ${index === selectedIndex ? 'bg-slate-100' : ''}`}
@@ -410,6 +544,13 @@
               >
                 {#if row.group === 'actions'}
                   <span class="font-medium text-slate-950">{row.action.label}</span>
+                {:else if row.group === 'provider'}
+                  <span class="font-medium text-slate-950">
+                    {@render highlighted(row.result.label)}
+                  </span>
+                  {#if row.result.hint}
+                    <p class="mt-1 text-sm text-slate-600">{row.result.hint}</p>
+                  {/if}
                 {:else if row.group === 'recent'}
                   {#if row.recent.type === 'credential'}
                     <span class="text-sm font-semibold text-slate-500">
@@ -466,7 +607,7 @@
             aria-hidden="true"
           ></div>
         </div>
-      {:else if query.trim() && results.length === 0}
+      {:else if query.trim() && results.length === 0 && providersPending === 0 && providerRows.length === 0}
         <p class="p-6 text-slate-700">No results for "{query}"</p>
       {/if}
 

@@ -25,10 +25,32 @@ export type PostMergeDrift = {
   mergeCommitSha: string
 }
 
-/** Matches `Merge pull request #<N> from <owner>/feature/<slug>` exactly, anchored end-of-string
- * so `feature/1-1-foo` can never partially match a longer sibling slug like `1-11-foobar` (AC-3).
- * Branches that aren't `feature/<slug>` (chore/, fix/, retro/, ...) simply don't match at all. */
+export type PostMergePrefixAmbiguity = {
+  branchSlug: string
+  prNumber: number
+  mergeCommitSha: string
+  candidateKeys: string[]
+}
+
+export type PostMergeDriftScan = {
+  drifts: PostMergeDrift[]
+  ambiguities: PostMergePrefixAmbiguity[]
+}
+
+export type PostMergeDriftReport = {
+  stdout: string
+  stderr: string
+  exitCode: number
+}
+
+/** Matches `Merge pull request #<N> from <owner>/feature/<slug>` exactly, anchored end-of-string.
+ * Branches that aren't `feature/<slug>` (chore/, fix/, retro/, ...) simply don't match at all.
+ * The story id inside the slug is `<digits>-<digits>` plus one optional trailing letter
+ * (`24-5b`). The id is followed by a hyphen, so `1-1-foo` cannot match `1-11-foobar` and
+ * `24-5-...` cannot match `24-5b-...`. */
 const MERGE_SUBJECT_PATTERN = /^Merge pull request #(\d+) from [^/]+\/feature\/(.+)$/
+const STORY_ID_PREFIX = /^(\d+-\d+[a-z]?)-/
+const OK_LINE = 'check-post-merge-status-drift: no merged-PR / sprint-status drift found — OK\n'
 
 // `git log --merges` over the full history (AC-5's fetch-depth: 0) keeps growing with every
 // merged story PR, which is why trustedGit() raises the child-process maxBuffer to 64MB.
@@ -62,68 +84,126 @@ export function getMergeCommits(repoRoot: string): Array<{ sha: string; subject:
     })
 }
 
-/**
- * Cross-references merge commits' source-branch story slugs against sprint-status.yaml's
- * development_status block at HEAD, flagging any tracked slug whose status is not yet `done`.
- */
-export function scanPostMergeStatusDrift(rootDir = process.cwd()): PostMergeDrift[] {
-  const commits = getMergeCommits(rootDir)
+function storyIdPrefix(slug: string): string | null {
+  return STORY_ID_PREFIX.exec(slug)?.[1] ?? null
+}
 
-  // Build a Map<slug, {prNumber, sha}>, keeping one entry per slug (AC-2 dedup) — simplest
-  // deterministic choice; which specific commit ends up cited doesn't matter (AC-2 only asserts
-  // presence/absence of a single drift entry per slug, not which duplicate commit is named).
-  const bySlug = new Map<string, { prNumber: number; sha: string }>()
+function byText(left: string, right: string): number {
+  return left.localeCompare(right)
+}
+
+function keysWithStoryId(prefix: string, statuses: Map<string, string>): string[] {
+  const needle = `${prefix}-`
+  return [...statuses.keys()].filter((key) => key.startsWith(needle)).toSorted(byText)
+}
+
+type ClassifiedSlug =
+  | { kind: 'skip' }
+  | { kind: 'drift'; storyKey: string; status: string }
+  | { kind: 'ambiguous'; candidateKeys: string[] }
+
+/** A shortened `feature/<id>-<tail>` branch is the story whose key starts with `<id>-`
+ * when exactly one key does. No key: skip. Two or more: fail closed, do not guess. */
+function classifySlug(slug: string, statuses: Map<string, string>): ClassifiedSlug {
+  const prefix = storyIdPrefix(slug)
+  if (prefix === null) return { kind: 'skip' }
+  const candidateKeys = keysWithStoryId(prefix, statuses)
+  if (candidateKeys.length === 0) return { kind: 'skip' }
+  if (candidateKeys.length > 1) return { kind: 'ambiguous', candidateKeys }
+  const storyKey = candidateKeys[0]
+  if (storyKey === undefined) return { kind: 'skip' }
+  const status = statuses.get(storyKey)
+  if (status === undefined || status === 'done') return { kind: 'skip' }
+  return { kind: 'drift', storyKey, status }
+}
+
+/**
+ * Cross-references merge commits' source-branch story ids against sprint-status.yaml's
+ * development_status block at HEAD. A merged feature branch flags its story when that
+ * story is not yet `done`. One entry per story key (which duplicate merge is cited is
+ * unspecified). An id that matches two keys is an ambiguity, not a guessed drift.
+ */
+export function scanPostMergeStatusDrift(rootDir = process.cwd()): PostMergeDriftScan {
+  const commits = getMergeCommits(rootDir)
+  const statuses = loadSprintStatuses(rootDir)
+  if (!statuses) return { drifts: [], ambiguities: [] }
+
+  const byStory = new Map<string, { status: string; prNumber: number; sha: string }>()
+  const ambiguities: PostMergePrefixAmbiguity[] = []
+  const seenPrefix = new Set<string>()
+
   for (const { sha, subject } of commits) {
     const match = MERGE_SUBJECT_PATTERN.exec(subject)
     if (!match) continue
+    const slug = match[2] ?? ''
+    const classified = classifySlug(slug, statuses)
+    if (classified.kind === 'skip') continue
     const prNumber = Number(match[1])
-    const slug = match[2] as string
-    bySlug.set(slug, { prNumber, sha })
-  }
-
-  const statuses = loadSprintStatuses(rootDir)
-  if (!statuses) return []
-
-  const drifts: PostMergeDrift[] = []
-  for (const [slug, { prNumber, sha }] of bySlug) {
-    // Only real story keys (e.g. "20-6-some-slug") are driftable — an epic rollup ("epic-20") or
-    // retrospective ("epic-20-retrospective") key can coincidentally share a slug with a
-    // non-story-convention branch name like "feature/epic-20" and must never be checked here.
-    if (!/^\d+-\d+-/.test(slug)) continue
-    const status = statuses.get(slug)
-    // Not a tracked story key (renamed, deleted, or never tracked) — skip, not an error (AC-4).
-    if (status === undefined) continue
-    if (status !== 'done') {
-      drifts.push({ storyKey: slug, status, prNumber, mergeCommitSha: sha })
+    if (classified.kind === 'ambiguous') {
+      const prefix = storyIdPrefix(slug)
+      if (prefix !== null && !seenPrefix.has(prefix)) {
+        seenPrefix.add(prefix)
+        ambiguities.push({
+          branchSlug: slug,
+          prNumber,
+          mergeCommitSha: sha,
+          candidateKeys: classified.candidateKeys,
+        })
+      }
+      continue
     }
+    byStory.set(classified.storyKey, { status: classified.status, prNumber, sha })
   }
 
-  return drifts.sort((a, b) => a.storyKey.localeCompare(b.storyKey))
+  const drifts = [...byStory.entries()].map(([storyKey, entry]) => ({
+    storyKey,
+    status: entry.status,
+    prNumber: entry.prNumber,
+    mergeCommitSha: entry.sha,
+  }))
+
+  return {
+    drifts: drifts.toSorted((left, right) => byText(left.storyKey, right.storyKey)),
+    ambiguities: ambiguities.toSorted((left, right) => byText(left.branchSlug, right.branchSlug)),
+  }
 }
 
-function report(drifts: PostMergeDrift[]): void {
-  if (drifts.length === 0) {
-    process.stdout.write(
-      'check-post-merge-status-drift: no merged-PR / sprint-status drift found — OK\n'
-    )
-    return
+export function formatPostMergeDriftReport(scan: PostMergeDriftScan): PostMergeDriftReport {
+  if (scan.drifts.length === 0 && scan.ambiguities.length === 0) {
+    return { stdout: OK_LINE, stderr: '', exitCode: 0 }
   }
 
-  process.stderr.write(
-    "FATAL: a story's PR merged to main, but sprint-status.yaml never advanced its status to " +
+  let stderr = ''
+  if (scan.drifts.length > 0) {
+    stderr +=
+      "FATAL: a story's PR merged to main, but sprint-status.yaml never advanced its status to " +
       '"done" (the Story 14.8 drift):\n'
-  )
-  for (const d of drifts) {
-    process.stderr.write(
-      `  - ${d.storyKey}: status is "${d.status}", PR #${d.prNumber}, merge commit ` +
-        `${d.mergeCommitSha.slice(0, 7)}\n`
-    )
-  }
-  process.stderr.write(
-    '\nFix: update sprint-status.yaml so the drifted story key(s) above read "done" (or ' +
+    for (const drift of scan.drifts) {
+      stderr +=
+        `  - ${drift.storyKey}: status is "${drift.status}", PR #${drift.prNumber}, merge commit ` +
+        `${drift.mergeCommitSha.slice(0, 7)}\n`
+    }
+    stderr +=
+      '\nFix: update sprint-status.yaml so the drifted story key(s) above read "done" (or ' +
       'investigate why the review -> done flip never landed).\n'
-  )
-  process.exitCode = 1
+  }
+  if (scan.ambiguities.length > 0) {
+    stderr += 'FATAL: a merged feature branch matches more than one story key; refusing to guess:\n'
+    for (const ambiguity of scan.ambiguities) {
+      stderr +=
+        `  - ${ambiguity.branchSlug}: PR #${ambiguity.prNumber}, merge commit ` +
+        `${ambiguity.mergeCommitSha.slice(0, 7)}, candidate keys: ${ambiguity.candidateKeys.join(', ')}\n`
+    }
+    stderr += '\nFix: make exactly one sprint-status key start with that story id, then re-run.\n'
+  }
+  return { stdout: '', stderr, exitCode: 1 }
+}
+
+function report(scan: PostMergeDriftScan): void {
+  const formatted = formatPostMergeDriftReport(scan)
+  if (formatted.stdout.length > 0) process.stdout.write(formatted.stdout)
+  if (formatted.stderr.length > 0) process.stderr.write(formatted.stderr)
+  if (formatted.exitCode !== 0) process.exitCode = formatted.exitCode
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

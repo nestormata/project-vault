@@ -101,7 +101,7 @@ label — so `/health` and `/status` can never disagree about what is running.
 stays a permanent `0.0.1` development placeholder and is never read as release identity — do not
 "fix" a `0.0.1` report by bumping a manifest.
 
-- **Where it is injected:** `.github/workflows/container-publish.yml`'s `build-publish` job passes
+- **Where it is injected:** `.github/workflows/container-publish.yml`'s `build-platform` job passes
   `build-args: RELEASE_VERSION=<the validated vMAJOR.MINOR.PATCH release tag, without the v>` to
   `docker/build-push-action`, and adds the same value as the `org.opencontainers.image.version`
   label via `docker/metadata-action`. `apps/api/Dockerfile` declares `ARG RELEASE_VERSION=dev` in
