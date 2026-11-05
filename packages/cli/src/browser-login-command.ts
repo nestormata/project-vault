@@ -79,7 +79,7 @@ export async function runBrowserLogin(
   streams: LoginStreams,
   deps: BrowserLoginDeps
 ): Promise<number> {
-  warnIfInsecureBaseUrl(config.baseUrl, streams.stderr)
+  warnIfInsecureBaseUrl(config.baseUrl, (chunk) => streams.stderr.write(chunk))
   const sleep = deps.sleep ?? defaultSleep
   const now = deps.now ?? Date.now
   const store = deps.writeSessionFn ?? writeSession

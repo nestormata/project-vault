@@ -64,6 +64,8 @@ export const VERSION_CHECKED_COMMANDS: ReadonlySet<string> = new Set([
   'run',
   'write-env',
   'login',
+  'organization',
+  'use',
 ])
 /** `logout` only reduces exposure (revokes and deletes the stored session), so a withdrawn CLI can
  * always still run it. */

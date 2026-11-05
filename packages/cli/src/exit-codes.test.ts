@@ -85,8 +85,8 @@ describe('EXIT_CODES — Story 43.6 addition (append-only)', () => {
     expect(EXIT_CODES.cliVersionWithdrawn).toBe(29)
     expect(EXIT_CODES.unhardenedInjectionNotAcknowledged).toBe(23)
     const all = Object.values(EXIT_CODES)
-    // Later append-only blocks (Story 43.8's `rateLimited: 30`) sit after 29 by design.
-    expect(Math.max(...all.filter((code) => code !== EXIT_CODES.rateLimited))).toBe(29)
+    // Later append-only blocks (Stories 43.8 and 43.30) sit after 29 by design.
+    expect(Math.max(...all.filter((code) => code !== EXIT_CODES.rateLimited))).toBe(32)
     expect(new Set(all).size).toBe(all.length)
   })
 })
@@ -96,7 +96,7 @@ describe('EXIT_CODES — Story 43.8 addition (append-only)', () => {
     expect(EXIT_CODES.rateLimited).toBe(30)
     expect(EXIT_CODES.unhardenedInjectionNotAcknowledged).toBe(23)
     const all = Object.values(EXIT_CODES)
-    expect(Math.max(...all)).toBe(30)
+    expect(Math.max(...all)).toBe(32)
     expect(new Set(all).size).toBe(all.length)
   })
 })
