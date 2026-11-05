@@ -8,7 +8,18 @@
 // Their roots are the current repository or a root a test passes in, and file names are joined
 // from fixed repo-relative constants or from listings of those roots; no path comes from a
 // network request or from end-user input.
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync, type Stats } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  type Stats,
+} from 'node:fs'
 
 /**
  * Reads a UTF-8 text file.
@@ -48,4 +59,37 @@ export function statPath(path: string): Stats {
  */
 export function realPath(path: string): string {
   return realpathSync(path)
+}
+
+/**
+ * Writes a UTF-8 text file.
+ * Reason: the compile helper writes emitted sources and a package.json into a temp directory it
+ * created. The path is that directory, not request input.
+ */
+export function writeText(path: string, text: string): void {
+  writeFileSync(path, text)
+}
+
+/**
+ * Creates a directory and any missing parents.
+ * Reason: the compile helper creates subdirectories of a temp directory it owns.
+ */
+export function makeDirectory(path: string): void {
+  mkdirSync(path, { recursive: true })
+}
+
+/**
+ * Creates a new temp directory whose name starts with `prefix`.
+ * Reason: the compile helper owns this directory and deletes it in `removeTree`.
+ */
+export function makeTempDirectory(prefix: string): string {
+  return mkdtempSync(prefix)
+}
+
+/**
+ * Deletes a directory tree. A missing path is not an error.
+ * Reason: the compile helper removes the temp directory it created, including a second call.
+ */
+export function removeTree(path: string): void {
+  rmSync(path, { recursive: true, force: true })
 }

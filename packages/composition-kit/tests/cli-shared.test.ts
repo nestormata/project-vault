@@ -1,18 +1,13 @@
 import { spawnSync } from 'node:child_process'
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import ts from 'typescript'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import {
+  compileSourceSubset,
+  type CompiledSourceSubset,
+} from '../../../scripts/lib/compile-source-subset.js'
 import { isEntryPoint } from '../src/cli-shared.js'
 
 // Story 68-20: `runAsScript` must run `main` when the bin is launched through a symlink (the
@@ -25,6 +20,7 @@ const IMPORT_FLAGS = ['--input-type=module', '-e']
 let root = ''
 let entry = ''
 let other = ''
+let compiled: CompiledSourceSubset | undefined
 
 function link(target: string, path: string): string {
   mkdirSync(dirname(path), { recursive: true })
@@ -46,19 +42,16 @@ function importOnly(path: string): { code: number | null; out: string; err: stri
 
 beforeAll(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), 'pv-cli-shared-')))
-  const transpile = (name: string): string =>
-    ts.transpileModule(readFileSync(join(import.meta.dirname, '..', 'src', name), 'utf8'), {
-      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-    }).outputText
-  mkdirSync(join(root, 'pkg', 'dist'), { recursive: true })
-  // cli-shared imports its file access from ./fs-access.js, so the fixture ships both files.
-  writeFileSync(join(root, 'pkg', 'dist', 'cli-shared.mjs'), transpile('cli-shared.ts'))
-  writeFileSync(join(root, 'pkg', 'dist', 'fs-access.js'), transpile('fs-access.ts'))
-  entry = join(root, 'pkg', 'dist', 'entry.mjs')
+  compiled = compileSourceSubset(fileURLToPath(new URL('../src/cli-shared.ts', import.meta.url)))
+  mkdirSync(join(root, 'pkg'), { recursive: true })
+  // cli-shared imports ./fs-access.js. The helper emits that closure; this symlink is the dist the
+  // entry-point cases launch.
+  symlinkSync(compiled.directory, join(root, 'pkg', 'dist'))
+  entry = join(compiled.directory, 'entry.mjs')
   writeFileSync(
     entry,
     [
-      "import { runAsScript } from './cli-shared.mjs'",
+      "import { runAsScript } from './cli-shared.js'",
       "await runAsScript('fixture', import.meta.url, (argv, io) => {",
       `  io.out('${MARKER}:' + argv.join(',') + '\\n')`,
       '  return Promise.resolve(0)',
@@ -71,6 +64,7 @@ beforeAll(() => {
 })
 
 afterAll(() => {
+  compiled?.cleanup()
   rmSync(root, { recursive: true, force: true })
 })
 
