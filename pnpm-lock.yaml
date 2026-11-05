@@ -17,9 +17,6 @@ overrides:
   source-map-js@<1.2.2: ^1.2.2
   vite@>=8.3.0 <8.3.3: ^8.3.3
 
-patchedDependencies:
-  '@stryker-mutator/vitest-runner': 261003fb6deb93c8524f261aef408dfaa49cb418fb327aee47f23510339c6ee4
-
 importers:
 
   .:
@@ -38,7 +35,7 @@ importers:
         version: 10.1.1(@types/node@26.6.6)
       '@stryker-mutator/vitest-runner':
         specifier: ^10.1.1
-        version: 10.1.1(patch_hash=261003fb6deb93c8524f261aef408dfaa49cb418fb327aee47f23510339c6ee4)(@stryker-mutator/core@10.1.1(@types/node@26.6.6))(vitest@5.0.5)
+        version: 10.1.1(@stryker-mutator/core@10.1.1(@types/node@26.6.6))(vitest@5.0.5)
       audit-ci:
         specifier: ^7.1.0
         version: 7.1.0
@@ -3037,6 +3034,11 @@ packages:
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
+    peerDependencies:
+      ajv: ^8.0.0
+    peerDependenciesMeta:
+      ajv:
+        optional: true
 
   ajv@6.15.0:
     resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
@@ -6798,7 +6800,7 @@ snapshots:
 
   '@stryker-mutator/util@10.1.1': {}
 
-  '@stryker-mutator/vitest-runner@10.1.1(patch_hash=261003fb6deb93c8524f261aef408dfaa49cb418fb327aee47f23510339c6ee4)(@stryker-mutator/core@10.1.1(@types/node@26.6.6))(vitest@5.0.5)':
+  '@stryker-mutator/vitest-runner@10.1.1(@stryker-mutator/core@10.1.1(@types/node@26.6.6))(vitest@5.0.5)':
     dependencies:
       '@stryker-mutator/api': 10.1.1
       '@stryker-mutator/core': 10.1.1(@types/node@26.6.6)
