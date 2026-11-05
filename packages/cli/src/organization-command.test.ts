@@ -142,7 +142,9 @@ describe('runUseOrganization', () => {
     })
     const storedCredentials = Object.values(written.orgCredentials ?? {})
     expect(storedCredentials).toHaveLength(1)
-    expect(Date.parse(storedCredentials[0].accessExpiresAt)).toBeGreaterThan(Date.now())
+    const storedExpiry = storedCredentials[0]?.accessExpiresAt
+    expect(storedExpiry).toBeDefined()
+    expect(Date.parse(storedExpiry ?? '')).toBeGreaterThan(Date.now())
     expect(written).not.toHaveProperty('orgId')
     expect(io.stdout.join('')).toContain(ORGANIZATION_ID)
     expect(io.stderr).toEqual([])
