@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { getDb } from '@project-vault/db'
-import { cliDeviceGrants, users } from '@project-vault/db/schema'
+import { getDb, withOrg } from '@project-vault/db'
+import { cliDeviceGrants, sessions, users } from '@project-vault/db/schema'
+import { env } from '../../config/env.js'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -433,5 +434,44 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
       .where(eq(cliDeviceGrants.userId, member.userId))
     expect(grants.some((row) => row.status === 'consumed')).toBe(false)
     expect(grants.some((row) => row.status === 'revoked')).toBe(true)
+  })
+
+  it.each([
+    ['expired', { expiresAt: new Date(Date.now() - 1000) }],
+    [
+      'idle',
+      { lastActiveAt: new Date(Date.now() - (env.SESSION_IDLE_TIMEOUT_MINUTES + 1) * 60_000) },
+    ],
+  ])('does not issue a session after the approving session is %s', async (_state, stale) => {
+    const member = await registerAndLoginViaApi(app, {
+      email: `device-stale-${randomUUID()}@example.com`,
+      password: PASSWORD,
+      orgName: `Device Stale ${randomUUID()}`,
+    })
+    const started = await start()
+    const approved = await app.inject({
+      method: 'POST',
+      url: DECISION_URL,
+      headers: { cookie: cookieHeader(member.cookies) },
+      payload: { userCode: started.userCode, decision: 'approve' },
+    })
+    expect(approved.statusCode).toBe(200)
+    const sessionId = (
+      await app.inject({
+        method: 'GET',
+        url: ME_URL,
+        headers: { cookie: cookieHeader(member.cookies) },
+      })
+    ).json<{ data: { sessionId: string } }>().data.sessionId
+    await withOrg(member.orgId, (tx) =>
+      tx.update(sessions).set(stale).where(eq(sessions.id, sessionId))
+    )
+    const token = await app.inject({
+      method: 'POST',
+      url: TOKEN_URL,
+      payload: { deviceCode: started.deviceCode },
+    })
+    expect(token.statusCode).toBe(400)
+    expect(token.json()).toMatchObject({ code: 'access_denied' })
   })
 })

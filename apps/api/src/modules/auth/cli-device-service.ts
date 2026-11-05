@@ -3,6 +3,7 @@ import { getDb, withOrg, type Tx } from '@project-vault/db'
 import { cliDeviceGrants, sessions } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
+import { env } from '../../config/env.js'
 import { isOrgMember } from '../../lib/org-membership.js'
 import { resolveActiveOrgRoleInTx } from '../../plugins/authenticate.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
@@ -238,11 +239,18 @@ async function approverSessionLive(tx: Tx, grant: GrantRow): Promise<boolean> {
   if (!grant.approverSessionId || !grant.orgId || !grant.userId) return false
   await setOrgContext(tx, grant.orgId, grant.userId)
   const rows = await tx
-    .select({ revokedAt: sessions.revokedAt })
+    .select({
+      revokedAt: sessions.revokedAt,
+      expiresAt: sessions.expiresAt,
+      lastActiveAt: sessions.lastActiveAt,
+    })
     .from(sessions)
     .where(eq(sessions.id, grant.approverSessionId))
     .limit(1)
-  return rows[0]?.revokedAt === null
+  const session = rows[0]
+  if (!session || session.revokedAt !== null || session.expiresAt.getTime() <= Date.now())
+    return false
+  return Date.now() - session.lastActiveAt.getTime() <= env.SESSION_IDLE_TIMEOUT_MINUTES * 60_000
 }
 
 async function markRevoked(tx: Tx, grant: GrantRow, meta: RequestMeta, now: Date): Promise<void> {
