@@ -69,7 +69,7 @@ export const ENTRY_POINT_DOCS = [
  * suppression, so check (d) ties this alternation to the registered subcommands instead.
  */
 export const PV_INVOCATION =
-  /(^|[\s`'"(>|])pv (get|run|login|logout|write-env|--version|-V|--help)(?![\w-])/gm
+  /(^|[\s`'"(>|])pv (get|run|login|logout|organization|use|write-env|--version|-V|--help)(?![\w-])/gm
 
 const COMMANDER_SUBCOMMAND = /\.command\(\s*['"]([a-z][a-z-]*)['"]/g
 const PV_INVOCATION_ALTERNATION = /pv \(([^)]*)\)/
@@ -118,7 +118,11 @@ export function hasCliReadmeLink(markdown: string): boolean {
 
 /** True when the README documents `` `pvault <name>`` followed by a space or a backtick. */
 export function readmeDocumentsSubcommand(readme: string, name: string): boolean {
-  return readme.includes('`pvault ' + name + ' ') || readme.includes('`pvault ' + name + '`')
+  return (
+    readme.includes('`pvault ' + name + ' ') ||
+    readme.includes('`pvault ' + name + '`') ||
+    (name === 'use' && readme.includes('`pvault organization use '))
+  )
 }
 
 function scanned(path: string): string {

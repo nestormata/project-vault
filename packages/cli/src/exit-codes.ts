@@ -84,6 +84,11 @@ export const EXIT_CODES = {
    * session refresh, or MFA verification. Distinct from `invalidCredentials`/`sessionExpired`: the
    * credentials and session may be perfectly fine. The CLI never auto-retries a 429. */
   rateLimited: 30,
+  // Story 43.30 — append-only. `pvault login --browser` outcomes.
+  /** The signed-in user denied the CLI sign-in, or the approving session was revoked. */
+  deviceLoginDenied: 31,
+  /** The device sign-in expired before it was approved, or the local wait ran out. */
+  deviceLoginExpired: 32,
 } as const
 
 // A Map (rather than a plain object keyed by an external string) sidesteps prototype-pollution/

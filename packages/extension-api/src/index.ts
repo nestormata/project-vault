@@ -79,6 +79,11 @@ export type {
   OrgAuthorizationOutcome,
 } from './hooks/org-authorization.js'
 export type {
+  OrgMembershipCheck,
+  OrgMembershipHost,
+  OrgMembershipResult,
+} from './hooks/org-membership.js'
+export type {
   ProjectAuthorizationCheckContext,
   ProjectAuthorizationHost,
   ProjectAuthorizationOutcome,

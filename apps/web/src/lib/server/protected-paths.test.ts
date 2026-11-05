@@ -13,11 +13,12 @@ const PV = composeProtectedPaths(PV_PROTECTED_PREFIXES, EMPTY_CONTRIBUTED_PATHS)
 const req = (pathname: string, routeId: string | null = null) => ({ pathname, routeId })
 
 describe('PV_PROTECTED_PREFIXES', () => {
-  it('is the 9-entry list from auth-guard, same order, /extensions/panels verbatim', () => {
+  it('is the 10-entry list from auth-guard, same order, /extensions/panels verbatim', () => {
     expect(PV_PROTECTED_PREFIXES).toEqual([
       '/dashboard',
       '/projects',
       '/credentials',
+      '/cli',
       '/alerts',
       '/health',
       '/settings',

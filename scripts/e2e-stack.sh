@@ -59,6 +59,7 @@ SECRET_NAMES=(
   INVITATION_TOKEN_HMAC_SECRET
   RECOVERY_TOKEN_HMAC_SECRET
   API_KEY_HMAC_SECRET
+  CLI_DEVICE_CODE_HMAC_SECRET
   MACHINE_JWT_SECRET
   STATUS_PAGE_TOKEN_HMAC_SECRET
   ERASURE_EMAIL_HASH_SECRET
@@ -407,8 +408,8 @@ cmd_self_test() {
     ! is_placeholder "${!name}" || die "self-test: $name looks like a placeholder"
     first_set+=("${!name}")
   done
-  [[ ${#first_set[@]} -eq 12 ]] || die "self-test: expected 12 secrets, got ${#first_set[@]}"
-  say "12 distinct throwaway secrets OK (64 hex chars each)"
+  [[ ${#first_set[@]} -eq 13 ]] || die "self-test: expected 13 secrets, got ${#first_set[@]}"
+  say "13 distinct throwaway secrets OK (64 hex chars each)"
 
   first="${SECRET_NAMES[0]}"
   probe="${!first}"

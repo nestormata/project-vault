@@ -78,6 +78,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
       notificationOriginator: notificationOriginatorStub,
       extensionRequestState: extensionRequestStateStub,
       credentialSharing: credentialSharingStub,
+      membership: { isOrgMember: async () => ({ status: 'denied' as const }) },
     })
     expect(hooks).toEqual({})
   })
@@ -111,6 +112,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
       notificationOriginator: notificationOriginatorStub,
       extensionRequestState: extensionRequestStateStub,
       credentialSharing: credentialSharingStub,
+      membership: { isOrgMember: async () => ({ status: 'denied' as const }) },
     })
 
     const result = await triggerAuditWrite({

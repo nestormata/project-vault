@@ -387,5 +387,20 @@
   "dashboard_attention_link_share": "View secret",
   "dashboard_attention_link_certificate": "View certificates",
   "dashboard_attention_link_invitation": "View members",
-  "dashboard_attention_more": "and {count} more"
+  "dashboard_attention_more": "and {count} more",
+  "cli_device_page_title": "Approve a command-line sign-in",
+  "cli_device_heading": "Approve a command-line sign-in",
+  "cli_device_description": "Approving lets that program sign in as you and access organizations you belong to until you sign that session out.",
+  "cli_device_code_label": "Sign-in code",
+  "cli_device_code_hint": "Type the code the program printed, or check the one already filled in. It looks like ABCD-EFGH.",
+  "cli_device_totp_label": "Authenticator code",
+  "cli_device_totp_hint": "This account is a platform operator, so approving needs the current code from your authenticator app.",
+  "cli_device_approve": "Approve",
+  "cli_device_deny": "Deny",
+  "cli_device_approved": "Approved. You can return to the program.",
+  "cli_device_denied": "Denied. The program will not be signed in.",
+  "cli_device_invalid_code": "That code is not waiting for approval. Check the program and try again.",
+  "cli_device_step_up_required": "Enter the current authenticator code to approve.",
+  "cli_device_enrollment_required": "Enroll an authenticator under Security settings before approving.",
+  "cli_device_error": "The sign-in could not be updated. Try again."
 }

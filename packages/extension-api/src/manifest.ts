@@ -665,7 +665,9 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // its two types and the `checkCredentialSharingMachineUserMode` conformance helper (policy rows 1
 // and 2). The lazy host-managed machine user applies only to a manifest declaring 3.39.0 or later,
 // so a manifest declaring 3.38.0 or older behaves exactly as before.
-export const EXTENSION_API_VERSION = '3.39.0'
+// Story 43.30 — bumped as a minor (3.39.0 -> 3.40.0): `HostServices.membership.isOrgMember`
+// (policy row 1). Additive. `orgAuthorization.checkMembership` is unchanged.
+export const EXTENSION_API_VERSION = '3.40.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

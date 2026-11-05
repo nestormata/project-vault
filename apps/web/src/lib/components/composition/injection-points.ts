@@ -184,6 +184,10 @@ export interface InjectionPointProps {
   'auth.register.after': StandardPointProps
   'auth.register.before': StandardPointProps
   'auth.register.header.actions': StandardPointProps
+  'cli.device.after': StandardPointProps
+  'cli.device.before': StandardPointProps
+  'cli.device.form': StandardPointProps
+  'cli.device.header.actions': StandardPointProps
   'credential.detail.actions': CredentialPointProps
   'credential.detail.after': CredentialPointProps
   'credential.detail.before': CredentialPointProps
@@ -824,6 +828,8 @@ const ENDPOINT_DETAIL_PAGE_HOST =
 
 export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...pagePoints('StandardPointProps', ['app.layout']),
+  ...pagePoints('StandardPointProps', ['cli.device']),
+  ...regionPoints('StandardPointProps', ['/(app)/cli/device#page'], ['cli.device.form']),
   ...pagePoints('StandardPointProps', [
     'auth.handoff',
     'auth.invitations-accept',

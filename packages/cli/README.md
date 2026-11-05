@@ -170,7 +170,13 @@ pvault logout
 ```
 
 `login`/`logout` take no `--api-key`/`--project-id` (that's the machine-user path) — only
-`VAULT_URL` (or `--url`). Email and password are always prompted interactively, never accepted as
+`VAULT_URL` (or `--url`). `pvault login --browser` does not ask for a password: it prints a
+short code and an approval address. Open that address in a browser where you are already signed
+in and approve the same code. A platform operator also enters a current authenticator code.
+The sign-in stores a user session that is not bound to an organization. Run
+`pvault organization use <organizationId>` to store a separate 15-minute credential for one
+organization. That does not replace the user session, and each organization gets its own credential.
+Email and password are always prompted interactively for the default login, never accepted as
 flags or argv (the same shell-history/`ps`-visibility reasoning Story 43.3's injected-secret ACs
 document). A WebAuthn-only account fails closed with a clear message rather than silently
 attempting a weaker factor — CLI WebAuthn support is Epic 46's Story 46.5, not this one.
@@ -179,7 +185,8 @@ attempting a weaker factor — CLI WebAuthn support is Epic 46's Story 46.5, not
 
 The server limits the CLI auth endpoints per client IP (IPv6 per `/64`), per minute, each route
 with its own budget: `/cli-login` 60 (`AUTH_RATE_LIMIT_MAX`), `/cli/mfa/verify-login` 20,
-`/cli/refresh` 120, `/cli/logout` 60 (`AUTH_RATE_LIMIT_MAX`). Over the limit the server answers
+`/cli/refresh` 120, `/cli/logout` 60 (`AUTH_RATE_LIMIT_MAX`), `/cli/device` 10,
+`/cli/device/token` 30, `/cli/org` 20. Over the limit the server answers
 `429` with a `Retry-After` header, and `pvault`:
 
 - `login`: prints `Too many sign-in attempts from this network. Try again in N seconds.` (or

@@ -379,3 +379,20 @@ There is no required pre-step.
   `0099_handoff_pending_states_claim_hash.sql` against it.
 - **Background job rename:** `prune-handoff-pending-states` is replaced by `prune-handoff-nonces`
   (every five minutes). The old schedule is removed at boot.
+
+## Unreleased — browser-approved CLI sign-in
+
+- **Before the new API boots in production,** set `CLI_DEVICE_CODE_HMAC_SECRET` to 32 or more bytes
+  (`openssl rand -hex 32`). It must differ from the other auth secrets and must not be a published
+  dev value. `docker-compose.prod.yml` refuses to start without it. Local compose uses a dev fallback.
+- **Migration `0111`** (`0111_cli_device_grants.sql`) adds `cli_device_grants`. It has no row-level
+  security and no foreign keys, alters no existing table, and backfills nothing. The previous
+  release does not read the table.
+- **Migration `0112`** (`0112_cli_user_sessions.sql`) adds `user_sessions`, `user_refresh_tokens`
+  and `cli_org_credentials`. None has row-level security. They do not alter an existing table.
+- The completed sign-in is a user session with no organization. `POST /api/v1/auth/cli/org` mints a
+  separate 15-minute organization credential. Set `PUBLIC_APP_BASE_URL` when the verification page
+  is served from a front door that is not `WEB_BASE_URL`. The approval URL never uses the Host header.
+- A new schedule, `prune-cli-device-grants`, runs every five minutes.
+- Human access tokens are now also accepted as `Authorization: Bearer` when the `access-token`
+  cookie is absent. A request that sends both still uses the cookie.

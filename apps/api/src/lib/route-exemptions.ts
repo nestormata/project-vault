@@ -148,6 +148,43 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'POST /api/v1/auth/cli/device',
+    reason:
+      'Story 43.30 — public CLI device-authorization start. Returns a short-lived user code and a high-entropy device code. Only HMAC hashes are stored. No session is issued here.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, 'hashed-single-use-codes', 'short-ttl'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/cli/device/token',
+    reason:
+      'Story 43.30 — public exchange of a device code for a user session. The session is not bound to an organization. A signed-in browser must have approved that exact grant.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, 'hashed-single-use-codes', 'short-ttl', 'poll-interval'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/cli/org',
+    reason:
+      'Story 43.30 — exchanges a user-scoped CLI session and an organization id for a new short-lived organization credential. It authenticates the user-session bearer itself, because that session has no organization and cannot enter secureRoute. Membership is checked server-side. The user session is not modified.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      IP_RATE_LIMIT,
+      'user-rate-limit',
+      TOKEN_IS_CREDENTIAL,
+      'membership-check',
+    ],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/cli/session/revoke',
+    reason:
+      'Story 43.30 — revokes the current user-scoped CLI session and the organization credentials minted from it. Authenticates the user-session bearer. There is no organization on the session, so it is not a secureRoute.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, TOKEN_IS_CREDENTIAL],
+    expiresAfterStory: null,
+  },
+  {
     route: 'POST /api/v1/auth/cli/logout',
     reason:
       "Story 43.2 AC-6 — CLI-facing best-effort session revoke. The caller's access token may already be expired (that is the normal logout case), so this cannot require an authenticated SecureRoute session; it authenticates purely via the hashed refresh token supplied in the body, exactly like /cli/refresh, and treats a missing/unrecognized/already-dead token as a no-op rather than an error.",
@@ -391,6 +428,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditEvent: 'MFA_RECOVERY_CODES_REGENERATED',
     sameTransactionAuditService: 'regenerateRecoveryCodes',
+  },
+  'POST /api/v1/auth/cli/device/decision': {
+    action: SECURITY_ACTION,
+    auditEvent: 'CLI_DEVICE_LOGIN_APPROVED',
+    sameTransactionAuditService: 'decideDeviceGrant',
   },
   'GET /api/v1/auth/sessions': {
     action: 'read',
@@ -1769,6 +1811,11 @@ const METHOD_NOT_ALLOWED_STUB_PATHS = [
   '/api/v1/auth/cli/mfa/verify-login',
   '/api/v1/auth/cli/refresh',
   '/api/v1/auth/cli/logout',
+  '/api/v1/auth/cli/device',
+  '/api/v1/auth/cli/device/token',
+  '/api/v1/auth/cli/device/decision',
+  '/api/v1/auth/cli/org',
+  '/api/v1/auth/cli/session/revoke',
 ]
 
 const METHOD_NOT_ALLOWED_STUB_METHODS = ['GET', 'PUT', 'PATCH', 'DELETE']

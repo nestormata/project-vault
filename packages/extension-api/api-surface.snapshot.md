@@ -1491,7 +1491,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.39.0"`
+- type: `"3.40.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -1879,6 +1879,13 @@ Generated from `src/index.ts`; update this file and classify the change against 
     - since: 3.19.0
     - type: `() => Promise<Record<string, unknown> | undefined>`
     - call-signature: `(): Promise<Record<string, unknown> | undefined>`
+- member: `membership`
+  - since: 3.40.0
+  - type: `OrgMembershipHost`
+  - member: `isOrgMember`
+    - since: 3.40.0
+    - type: `(check: OrgMembershipCheck) => Promise<OrgMembershipResult>`
+    - call-signature: `(check: OrgMembershipCheck): Promise<OrgMembershipResult>`
 - member: `monitoring`
   - since: 3.12.0
   - type: `PvMonitoringHost`
@@ -3311,6 +3318,35 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `OrgAuthorizationOutcome`
 - union-members: `{ outcome: "authorized"; }`, `{ outcome: "denied"; reasonCode: string; }`, `{ outcome: "error"; reasonCode: string; }`
 
+## export `OrgMembershipCheck`
+
+- since: 3.40.0
+- kind: type
+- type: `OrgMembershipCheck`
+- member: `organizationId`
+  - since: 3.40.0
+  - type: `string`
+- member: `userId`
+  - since: 3.40.0
+  - type: `string`
+
+## export `OrgMembershipHost`
+
+- since: 3.40.0
+- kind: type
+- type: `OrgMembershipHost`
+- member: `isOrgMember`
+  - since: 3.40.0
+  - type: `(check: OrgMembershipCheck) => Promise<OrgMembershipResult>`
+  - call-signature: `(check: OrgMembershipCheck): Promise<OrgMembershipResult>`
+
+## export `OrgMembershipResult`
+
+- since: 3.40.0
+- kind: type
+- type: `OrgMembershipResult`
+- union-members: `{ status: "allowed"; }`, `{ status: "denied"; }`, `{ status: "unavailable"; reason?: string; }`
+
 ## export `PANEL_DATA_PATH_PATTERN`
 
 - since: 3.8.0
@@ -3877,6 +3913,13 @@ Generated from `src/index.ts`; update this file and classify the change against 
       - since: 3.19.0
       - type: `() => Promise<Record<string, unknown> | undefined>`
       - call-signature: `(): Promise<Record<string, unknown> | undefined>`
+  - member: `membership`
+    - since: 3.40.0
+    - type: `OrgMembershipHost`
+    - member: `isOrgMember`
+      - since: 3.40.0
+      - type: `(check: OrgMembershipCheck) => Promise<OrgMembershipResult>`
+      - call-signature: `(check: OrgMembershipCheck): Promise<OrgMembershipResult>`
   - member: `monitoring`
     - since: 3.18.0
     - type: `PvMonitoringHost`

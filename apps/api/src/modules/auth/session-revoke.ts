@@ -19,6 +19,7 @@ import { writeSystemAuditEntry } from '../audit/machine-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { deletePendingEnrollmentForUser } from './recovery-codes.js'
 import { evictSessionActivityDebounce } from './session-activity.js'
+import { revokeDeviceGrantsForSessions } from './cli-device-revoke.js'
 
 export type SessionRevokeScope =
   | 'single'
@@ -281,6 +282,7 @@ export async function revokeSessionById(
     evictSessionActivityDebounce(session.id)
 
     await maybeWriteSessionRevokedAudit(tx, session, options)
+    await revokeDeviceGrantsForSessions(tx, [sessionId])
 
     return {
       revoked: true,
@@ -430,6 +432,7 @@ export async function revokeAllSessionsForOrg({
       .returning({ id: sessions.id, userId: sessions.userId, jti: sessions.jti })
 
     const sessionIds = revokedSessionRows.map((row) => row.id)
+    await revokeDeviceGrantsForSessions(innerTx, sessionIds, now)
 
     if (sessionIds.length > 0) {
       // 2. Bulk-revoke their refresh tokens.

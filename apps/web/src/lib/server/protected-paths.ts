@@ -17,6 +17,8 @@ export const PV_PROTECTED_PREFIXES: readonly string[] = Object.freeze([
   '/dashboard',
   '/projects',
   '/credentials',
+  // Story 43.30: the browser approval page for a CLI sign-in. Anonymous visitors go to /login.
+  '/cli',
   '/alerts',
   '/health',
   '/settings',

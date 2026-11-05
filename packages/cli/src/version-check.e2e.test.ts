@@ -478,7 +478,14 @@ describe('AC-6 wiring', () => {
       const exempt = VERSION_CHECK_EXEMPT_COMMANDS.has(name)
       expect(checked !== exempt, `pvault ${name} must be in exactly one set`).toBe(true)
     }
-    expect([...VERSION_CHECKED_COMMANDS].sort()).toEqual(['get', 'login', 'run', 'write-env'])
+    expect([...VERSION_CHECKED_COMMANDS].sort()).toEqual([
+      'get',
+      'login',
+      'organization',
+      'run',
+      'use',
+      'write-env',
+    ])
     expect([...VERSION_CHECK_EXEMPT_COMMANDS]).toEqual(['logout'])
   })
 })

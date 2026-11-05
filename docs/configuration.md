@@ -61,6 +61,7 @@ variables only `docker-compose*.yml` reads. The copyable starting point is
 | `INVITATION_TOKEN_HMAC_SECRET` | dev value | **required** | Keys team-invitation acceptance tokens. |
 | `RECOVERY_TOKEN_HMAC_SECRET` | dev value | **required** | Keys account-recovery / reactivation tokens. |
 | `WEB_BASE_URL` | `http://localhost:5173` | recommended | Base URL used to build invitation and recovery links in email. This is the literal schema default; under Compose it follows `PUBLIC_WEB_ORIGIN` instead. |
+| `PUBLIC_APP_BASE_URL` | unset (`WEB_BASE_URL`) | optional | Browser origin of the CLI verification page (`/cli/device`). Set this when a front door serves that page on a different origin from the API and from `WEB_BASE_URL`. The approval URL is never taken from the request Host header. |
 | `SSO_STATE_HMAC_SECRET` | dev value | **required** | Signs the SSO login-state cookie/param, preventing callback CSRF and state tampering. |
 | `API_KEY_HMAC_SECRET` | dev value | **required** | Keys the machine-user API-key hash. |
 | `MACHINE_JWT_SECRET` | dev value | **required** | Signs the machine token-exchange JWT — an HS256 context independent of `SESSION_SECRET`. |
@@ -99,7 +100,7 @@ variables only `docker-compose*.yml` reads. The copyable starting point is
 | `FAILED_AUTH_THRESHOLD_COUNT` | `10` | | Failures that raise an asynchronous operator alert (never blocks login). |
 | `FAILED_AUTH_THRESHOLD_WINDOW_SECONDS` | `300` | | Window for that alert threshold. |
 
-`/mfa/verify-login` and `/cli/mfa/verify-login` are fixed at 20 requests per minute per IP, and `/refresh` and `/cli/refresh` at 120. Each route has its own bucket, so `/login` and `/cli-login` budgets are separate. IPv6 clients on the CLI routes are grouped per `/64`.
+`/mfa/verify-login` and `/cli/mfa/verify-login` are fixed at 20 requests per minute per IP, and `/refresh` and `/cli/refresh` at 120. Each route has its own bucket, so `/login` and `/cli-login` budgets are separate. IPv6 clients on the CLI routes are grouped per `/64`. Browser-approved CLI sign-in (`POST /api/v1/auth/cli/device`, `/cli/device/token`, `/cli/device/decision`) uses its own buckets: 10 creates per minute per IP, 30 polls per minute per IP, and 10 decisions per minute per signed-in user (also 30 per minute per IP).
 | `FAILED_AUTH_RETENTION_HOURS` | `24` | | Retention of `failed_auth_attempts` rows. |
 | `FAILED_AUTH_RECORD_ENABLED` | `true` | | Master switch for recording failed-auth attempts. |
 | `ANOMALOUS_ACCESS_THRESHOLD_COUNT` | `5` | | Credential reads that trigger an anomalous-access alert. |
@@ -177,6 +178,7 @@ and no scheduling happens at all. Configure exactly one destination (path **xor*
 | `METRICS_BIND_HOST` | `127.0.0.1` | | Interface the Prometheus `/metrics` listener binds. Use `0.0.0.0` only for an intended external scraper. |
 | `STATUS_PAGE_TOKEN_HMAC_SECRET` | dev value | **required** | Signs public status-page opaque tokens. |
 | `OPERATIONAL_STATUS_TOKEN_HMAC_SECRET` | dev value | **required** | Keys the `GET /status` bearer-token hash (`operational_status_tokens`). |
+| `CLI_DEVICE_CODE_HMAC_SECRET` | dev value | **required** | Keys the browser-approved CLI sign-in codes. It must differ from the other auth secrets. |
 | `STATUS_DISK_MIN_FREE_PERCENT` | `10` | | Free-disk percentage below which `GET /status` reports disk pressure. |
 | `MAX_SERVICE_ENDPOINTS_PER_PROJECT` | `25` | | Cap on monitored HTTP endpoints per project. |
 | `HEALTH_CHECK_MAX_CONCURRENCY` | `20` | | Parallelism of the endpoint health-check sweep. |

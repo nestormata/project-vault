@@ -15,6 +15,7 @@ import {
 import { pruneMfaPendingEnrollments } from './workers/prune-mfa-pending.js'
 import { pruneRevokedTokens } from './workers/prune-revoked-tokens.js'
 import {
+  pruneCliDeviceGrants,
   pruneHandoffNonces,
   RETIRED_HANDOFF_PRUNE_SCHEDULES,
   pruneHandoffTokenJti,
@@ -237,6 +238,7 @@ async function main(): Promise<void> {
       // handoff/clock-skew-check job registered alongside it.
       'prune-handoff-token-jti': { cron: EVERY_FIVE_MINUTES_CRON },
       'prune-handoff-nonces': { cron: EVERY_FIVE_MINUTES_CRON },
+      'prune-cli-device-grants': { cron: EVERY_FIVE_MINUTES_CRON },
       // Story 71.7: one bounded DELETE per minute keeps the delegation burn ledger small (rows
       // live about 90 s plus a 300 s prune grace).
       'delegation/prune-assertion-jti': { cron: '* * * * *' },
@@ -339,6 +341,7 @@ async function main(): Promise<void> {
       'prune-revoked-tokens': () => pruneRevokedTokens(),
       'prune-handoff-token-jti': () => pruneHandoffTokenJti(),
       'prune-handoff-nonces': () => pruneHandoffNonces(),
+      'prune-cli-device-grants': () => pruneCliDeviceGrants(),
       'delegation/prune-assertion-jti': () => pruneDelegationAssertionJti(),
       'mfa/prune-totp-used-codes': () => pruneTotpUsedCodes(),
       'mfa/prune-pending-mfa-sessions': () => prunePendingMfaSessions(),

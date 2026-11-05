@@ -30,6 +30,7 @@ const DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'i'.repeat(64)
 const DEV_ERASURE_EMAIL_HASH_SECRET = 'j'.repeat(64)
 const DEV_SSO_STATE_HMAC_SECRET = 'k'.repeat(64)
 const DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET = 'l'.repeat(64)
+const DEV_CLI_DEVICE_CODE_HMAC_SECRET = 'q'.repeat(64)
 // Story 1.24: TOTP_REPLAY_HMAC_SECRET has no DEV_* constant of its own — its in-app dev fallback
 // (loadEnv(), below) silently reuses REFRESH_TOKEN_HMAC_SECRET's value instead. But
 // docker-compose.yml sets a THIRD, independent literal fallback for this same var ('c'.repeat(64))
@@ -59,6 +60,7 @@ const KNOWN_DEV_SECRET_VALUES: ReadonlySet<string> = new Set([
   DEV_ERASURE_EMAIL_HASH_SECRET,
   DEV_SSO_STATE_HMAC_SECRET,
   DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
+  DEV_CLI_DEVICE_CODE_HMAC_SECRET,
 ])
 
 // Trimmed before comparison: an operator's `.env` file or shell export can carry an incidental
@@ -112,6 +114,7 @@ type ProductionEnv = {
   ERASURE_EMAIL_HASH_SECRET?: string
   SSO_STATE_HMAC_SECRET?: string
   OPERATIONAL_STATUS_TOKEN_HMAC_SECRET?: string
+  CLI_DEVICE_CODE_HMAC_SECRET?: string
   LOG_LEVEL: string
   VAULT_KMS_ENDPOINT?: string
   EXTENSION_DATABASE_URL?: string
@@ -711,6 +714,43 @@ function reportDelegationVerifyKeys(
   }
 }
 
+function cliDeviceCodeSharesAnotherAuthSecret(env: ProductionEnv): boolean {
+  const otherSecrets = [
+    ...priorAuthSecrets(env),
+    env.SSO_STATE_HMAC_SECRET,
+    env.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
+  ]
+  return otherSecrets.includes(env.CLI_DEVICE_CODE_HMAC_SECRET)
+}
+
+function validateCliDeviceCodeProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
+  if (!env.CLI_DEVICE_CODE_HMAC_SECRET) {
+    addEnvIssue(
+      ctx,
+      'CLI_DEVICE_CODE_HMAC_SECRET',
+      'CLI_DEVICE_CODE_HMAC_SECRET is required in production'
+    )
+  } else if (cliDeviceCodeSharesAnotherAuthSecret(env)) {
+    addEnvIssue(
+      ctx,
+      'CLI_DEVICE_CODE_HMAC_SECRET',
+      'CLI_DEVICE_CODE_HMAC_SECRET must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.CLI_DEVICE_CODE_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'CLI_DEVICE_CODE_HMAC_SECRET',
+      'CLI_DEVICE_CODE_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  } else if (isKnownDevSecretValue(env.CLI_DEVICE_CODE_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'CLI_DEVICE_CODE_HMAC_SECRET',
+      'CLI_DEVICE_CODE_HMAC_SECRET must not be a known dev-only secret value in production'
+    )
+  }
+}
+
 function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateProductionBasics(env, ctx)
   validateTotpReplayProductionSecret(env, ctx)
@@ -725,6 +765,7 @@ function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateErasureEmailHashProductionSecret(env, ctx)
   validateSsoStateProductionSecret(env, ctx)
   validateOperationalStatusTokenProductionSecret(env, ctx)
+  validateCliDeviceCodeProductionSecret(env, ctx)
   validateVaultKmsEndpointProductionSafety(env, ctx)
 }
 
@@ -1081,6 +1122,11 @@ const envSchema = z
       (value) => (value === '' ? undefined : value),
       z.string().min(32).optional()
     ),
+    // Story 43.30: HMAC for CLI device-login codes. Never shared with another auth secret.
+    CLI_DEVICE_CODE_HMAC_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32).optional()
+    ),
     // Story 8.4 D6: dedicated keyed-HMAC secret for data_erasure_requests.original_email_hash —
     // a bare unsalted hash of a low-entropy email address is brute-forceable, so this must be a
     // server-side secret never shared with any other auth-token HMAC (see the production
@@ -1090,6 +1136,13 @@ const envSchema = z
       z.string().min(32).optional()
     ),
     WEB_BASE_URL: z.url().default('http://localhost:5173'),
+    // Story 43.30: browser-facing origin of the CLI verification page. A front door in front of
+    // the web app sets this to the origin users open. Never taken from the request Host header.
+    // Falls back to WEB_BASE_URL when unset.
+    PUBLIC_APP_BASE_URL: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.url().optional()
+    ),
     MFA_PRIVILEGED_ROLE_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(7),
     FAILED_AUTH_THRESHOLD_COUNT: z.coerce.number().int().min(3).max(100).default(10),
     FAILED_AUTH_THRESHOLD_WINDOW_SECONDS: z.coerce.number().int().min(60).max(3600).default(300),
@@ -1598,6 +1651,7 @@ type AuthEnvKey =
   | 'ERASURE_EMAIL_HASH_SECRET'
   | 'SSO_STATE_HMAC_SECRET'
   | 'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET'
+  | 'CLI_DEVICE_CODE_HMAC_SECRET'
 export type Env = Omit<
   RawEnv,
   | 'TOTP_REPLAY_HMAC_SECRET'
@@ -1610,6 +1664,7 @@ export type Env = Omit<
   | 'ERASURE_EMAIL_HASH_SECRET'
   | 'SSO_STATE_HMAC_SECRET'
   | 'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET'
+  | 'CLI_DEVICE_CODE_HMAC_SECRET'
 > & {
   TOTP_REPLAY_HMAC_SECRET: string
   MFA_PENDING_SESSION_HMAC_SECRET: string
@@ -1621,6 +1676,7 @@ export type Env = Omit<
   ERASURE_EMAIL_HASH_SECRET: string
   SSO_STATE_HMAC_SECRET: string
   OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: string
+  CLI_DEVICE_CODE_HMAC_SECRET: string
 }
 
 // Story 14.3: extracted so adding SSO_STATE_HMAC_SECRET's fallback didn't push loadEnv() past
@@ -1699,6 +1755,11 @@ function loadEnv(): Env {
     data.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
     'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
     DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET
+  )
+  data.CLI_DEVICE_CODE_HMAC_SECRET = withDevSecretFallback(
+    data.CLI_DEVICE_CODE_HMAC_SECRET,
+    'CLI_DEVICE_CODE_HMAC_SECRET',
+    DEV_CLI_DEVICE_CODE_HMAC_SECRET
   )
   return data as Env
 }

@@ -4,11 +4,12 @@
 # silently leaves the base file's public dev-fallback secrets in place.)
 #
 # Variables this overlay HARD-REQUIRES in .env — `docker compose config` fails fast, naming each
-# one, until all 12 are set to distinct, non-placeholder 32+ byte values:
+# one, until all 13 are set to distinct, non-placeholder 32+ byte values:
 #   SESSION_SECRET, REFRESH_TOKEN_HMAC_SECRET, TOTP_REPLAY_HMAC_SECRET,
 #   MFA_PENDING_SESSION_HMAC_SECRET, INVITATION_TOKEN_HMAC_SECRET, RECOVERY_TOKEN_HMAC_SECRET,
 #   API_KEY_HMAC_SECRET, MACHINE_JWT_SECRET, STATUS_PAGE_TOKEN_HMAC_SECRET,
-#   ERASURE_EMAIL_HASH_SECRET, SSO_STATE_HMAC_SECRET, OPERATIONAL_STATUS_TOKEN_HMAC_SECRET
+#   ERASURE_EMAIL_HASH_SECRET, SSO_STATE_HMAC_SECRET, OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
+#   CLI_DEVICE_CODE_HMAC_SECRET
 #
 # Strongly recommended but NOT enforced here (no compose-time check is possible):
 #   PUBLIC_WEB_ORIGIN            the exact scheme://host[:port] browsers use (CORS + adapter-node)
@@ -79,6 +80,7 @@ services:
       ERASURE_EMAIL_HASH_SECRET: ${ERASURE_EMAIL_HASH_SECRET:?ERASURE_EMAIL_HASH_SECRET required in production}
       SSO_STATE_HMAC_SECRET: ${SSO_STATE_HMAC_SECRET:?SSO_STATE_HMAC_SECRET required in production}
       OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: ${OPERATIONAL_STATUS_TOKEN_HMAC_SECRET:?OPERATIONAL_STATUS_TOKEN_HMAC_SECRET required in production}
+      CLI_DEVICE_CODE_HMAC_SECRET: ${CLI_DEVICE_CODE_HMAC_SECRET:?CLI_DEVICE_CODE_HMAC_SECRET required in production}
 
   web:
     mem_limit: 256m

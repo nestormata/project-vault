@@ -63,6 +63,9 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     // Story 1.19 D6: same reasoning — baked into the base fixture so unrelated production tests
     // aren't also tripped by this newest dedicated secret being unset.
     OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: 'L'.repeat(64),
+    // Story 43.30: baked into the base fixture so unrelated production tests are not tripped
+    // by this dedicated device-code secret being unset.
+    CLI_DEVICE_CODE_HMAC_SECRET: 'Q'.repeat(64),
     AUTH_DUMMY_PASSWORD_HASH,
     ...overrides,
   }
@@ -777,6 +780,29 @@ describe('env', () => {
       })
       await expectInvalidEnv(exitSpy)
     }
+  })
+
+  it('requires a dedicated CLI device-code secret in production (Story 43.30)', async () => {
+    await expectDedicatedSecretRequired(
+      exitSpy,
+      {
+        ...priorSecretsSatisfiedWithSsoState,
+        OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: 'L'.repeat(64),
+        CLI_DEVICE_CODE_HMAC_SECRET: undefined,
+      },
+      'CLI_DEVICE_CODE_HMAC_SECRET',
+      'Q'.repeat(64)
+    )
+  })
+
+  it('rejects a CLI device-code secret that reuses another auth secret', async () => {
+    resetEnvImport(exitSpy)
+    process.env = productionEnv({
+      ...priorSecretsSatisfiedWithSsoState,
+      OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: 'L'.repeat(64),
+      CLI_DEVICE_CODE_HMAC_SECRET: 'A'.repeat(64),
+    })
+    await expectInvalidEnv(exitSpy)
   })
 
   it('rejects unsupported MFA parameter values', async () => {
@@ -1999,7 +2025,7 @@ describe('env', () => {
   // DEV_* constants this file exports for local-dev convenience (and docker-compose.yml sets as
   // its own fallback default). This left a real auth-bypass gap for self-hosted deployments that
   // forget to override even one of these vars. These tests lock in the additive exact-value
-  // rejection for all 12 known dev-secret literals (11 named DEV_* constants plus
+  // rejection for all 13 known dev-secret literals (12 named DEV_* constants plus
   // TOTP_REPLAY_HMAC_SECRET's unnamed docker-compose.yml literal).
   describe('Story 1.24: rejects exact repo-committed dev-secret values in production', () => {
     function fullyValidProductionEnv(): NodeJS.ProcessEnv {
@@ -2009,7 +2035,7 @@ describe('env', () => {
       })
     }
 
-    it('accepts all 12 secrets when none matches a known dev-secret value (no regression)', async () => {
+    it('accepts all 13 secrets when none matches a known dev-secret value (no regression)', async () => {
       process.env = fullyValidProductionEnv()
       const { env } = await import('./env.js')
       expect(env.SESSION_SECRET).toBe('A'.repeat(64))
@@ -2029,6 +2055,7 @@ describe('env', () => {
       ['ERASURE_EMAIL_HASH_SECRET', 'j'.repeat(64)],
       ['SSO_STATE_HMAC_SECRET', 'k'.repeat(64)],
       ['OPERATIONAL_STATUS_TOKEN_HMAC_SECRET', 'l'.repeat(64)],
+      ['CLI_DEVICE_CODE_HMAC_SECRET', 'q'.repeat(64)],
     ])(
       'AC-1: rejects %s set to its own exact repo-committed dev value, naming the field',
       async (field, devValue) => {

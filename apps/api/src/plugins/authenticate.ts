@@ -10,7 +10,8 @@ import {
   touchSessionActivity,
 } from '../modules/auth/session-activity.js'
 import { cleanupExpiredSession } from '../modules/auth/session-revoke.js'
-import { parseAccessTokenClaims } from '../modules/auth/tokens.js'
+import { extractBearerToken } from '../modules/machine-users/bearer-token.js'
+import { parseAccessTokenClaims, parseUserAccessClaims } from '../modules/auth/tokens.js'
 import { bindRequestContext, bindRequestContextLifecycle } from '../lib/request-context.js'
 
 const ORG_ROLES = new Set(['owner', 'admin', 'member', 'viewer'])
@@ -63,7 +64,16 @@ async function verifyAccessClaims(
   }
 
   const claims = parseAccessTokenClaims(verified)
-  if (!claims) throw accessTokenInvalid()
+  if (!claims) {
+    if (parseUserAccessClaims(verified)) {
+      throw new AppError(
+        'org_scope_required',
+        'This route requires an organization credential.',
+        401
+      )
+    }
+    throw accessTokenInvalid()
+  }
   assertTemporalClaims(claims)
   return claims
 }
@@ -234,7 +244,11 @@ export async function authenticateRequest(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  const token = request.cookies?.['access-token']
+  const cookie = request.cookies?.['access-token']
+  // Story 43.30: a non-empty access-token cookie wins, so a smuggled Authorization header cannot
+  // replace a browser session. Bearer is the same human access JWT, for a CLI that has no cookie jar.
+  const token =
+    typeof cookie === 'string' && cookie.length > 0 ? cookie : extractBearerToken(request)
   if (!token) {
     return sendAuthError(
       reply,

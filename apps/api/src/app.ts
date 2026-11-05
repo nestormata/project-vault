@@ -23,6 +23,8 @@ import { vaultRoutes } from './modules/vault/routes.js'
 import { serviceProvisioningRoutes } from './modules/service-provisioning/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { cliLoginRoutes } from './modules/auth/cli-login-routes.js'
+import { cliDeviceRoutes } from './modules/auth/cli-device-routes.js'
+import { cliUserSessionRoutes } from './modules/auth/cli-user-session-routes.js'
 import { orgRoutes } from './modules/org/routes.js'
 import { auditRoutes } from './modules/audit/routes.js'
 import { projectRoutes } from './modules/projects/routes.js'
@@ -587,6 +589,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 43.2 — CLI JSON-bearer-token login/refresh/logout, distinct from authRoutes' cookie-
   // based routes above (same prefix, separate route file per Story 43.2 decision #2).
   await fastify.register(cliLoginRoutes, { prefix: AUTH_ROUTE_PREFIX })
+  // Story 43.30 — browser-approved CLI sign-in. Same prefix, its own plugin so its IP limiter
+  // does not share the password-login budget.
+  await fastify.register(cliDeviceRoutes, { prefix: AUTH_ROUTE_PREFIX })
+  await fastify.register(cliUserSessionRoutes, { prefix: AUTH_ROUTE_PREFIX })
   await fastify.register(machineTokenExchangeRoutes, { prefix: AUTH_ROUTE_PREFIX })
   // Story 14.3: start/callback are public (unauthenticated) SSO routes, mounted alongside local
   // auth at the same public prefix — see judgment call #6 on file/module placement.

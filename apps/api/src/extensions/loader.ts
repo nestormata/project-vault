@@ -28,6 +28,7 @@ import { raceWithTimeout as sharedRaceWithTimeout } from '../lib/race-with-timeo
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.js'
 import { checkOrgAuthorization } from '../lib/org-authorization.js'
+import { isOrgMember } from '../lib/org-membership.js'
 import { checkProjectAuthorization } from '../lib/project-authorization.js'
 import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
 import { createExtensionRequestStateHost } from '../lib/extension-request-state-host.js'
@@ -320,6 +321,9 @@ async function buildHostServices(
     // fields are not enumerated anywhere for that purpose — credentialSharing is wired as a whole
     // object, same as monitoring/notificationOriginator above). See lib/credential-sharing-host.ts.
     credentialSharing: buildCredentialSharingHost(manifest, logger),
+    membership: {
+      isOrgMember: (check) => isOrgMember(check),
+    },
     getDbHandle: async () => {
       if (!manifest.dbScope || manifest.dbScope.length === 0) {
         return { unavailable: 'no-approved-scope' }

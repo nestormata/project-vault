@@ -333,7 +333,7 @@ function accessTokenExpFromRequest(fastify: FastifyApp, req: FastifyRequest): Da
   return typeof exp === 'number' ? new Date(exp * 1000) : undefined
 }
 
-function sendAppError(reply: FastifyReply, error: AppError) {
+export function sendAppError(reply: FastifyReply, error: AppError) {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
 }
 

@@ -340,6 +340,7 @@ repo's own dev values, and any duplicate between two of these keys, at startup.
 | `ERASURE_EMAIL_HASH_SECRET` | Keys `data_erasure_requests.original_email_hash` | `openssl rand -hex 32` |
 | `SSO_STATE_HMAC_SECRET` | Signs the SSO login-state cookie/param | `openssl rand -hex 32` |
 | `OPERATIONAL_STATUS_TOKEN_HMAC_SECRET` | Keys the `GET /status` bearer-token hash | `openssl rand -hex 32` |
+| `CLI_DEVICE_CODE_HMAC_SECRET` | Keys browser-approved CLI sign-in codes | `openssl rand -hex 32` |
 
 ```bash
 cp .env.example .env
@@ -347,7 +348,7 @@ for v in SESSION_SECRET REFRESH_TOKEN_HMAC_SECRET TOTP_REPLAY_HMAC_SECRET \
          MFA_PENDING_SESSION_HMAC_SECRET INVITATION_TOKEN_HMAC_SECRET \
          RECOVERY_TOKEN_HMAC_SECRET API_KEY_HMAC_SECRET MACHINE_JWT_SECRET \
          STATUS_PAGE_TOKEN_HMAC_SECRET ERASURE_EMAIL_HASH_SECRET SSO_STATE_HMAC_SECRET \
-         OPERATIONAL_STATUS_TOKEN_HMAC_SECRET; do
+         OPERATIONAL_STATUS_TOKEN_HMAC_SECRET CLI_DEVICE_CODE_HMAC_SECRET; do
   sed -i "s|^$v=.*|$v=$(openssl rand -hex 32)|" .env
 done
 
@@ -360,7 +361,7 @@ sed -i "s|^VAULT_BOOTSTRAP_TOKEN=.*|VAULT_BOOTSTRAP_TOKEN=$(openssl rand -base64
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config >/dev/null && echo OK
 ```
 
-`docker-compose.prod.yml` turns all 12 keys from `${VAR:-<public dev fallback>}` into
+`docker-compose.prod.yml` turns all 13 keys from `${VAR:-<public dev fallback>}` into
 `${VAR:?<message>}`, so this command names every variable still unset and exits non-zero. It must
 be the **last** `-f` argument: Compose merges `environment:` key-by-key with the last file
 winning, so any other order silently leaves the public dev values in place.
@@ -430,7 +431,7 @@ init form asks for it). `VAULT_ALLOW_REMOTE_INIT` must stay `false`.
 ### Production hardening (before non-dev deploy)
 
 1. Change **both** `vault_app` and `vault_admin` passwords (Step 4).
-2. Set distinct 32+ byte values for all 12 secrets (Step 1). Never reuse a value across two of
+2. Set distinct 32+ byte values for all 13 secrets (Step 1). Never reuse a value across two of
    them; never keep `docker-compose.yml`'s public dev fallbacks.
 3. Set `VAULT_BOOTSTRAP_TOKEN`; never set `VAULT_ALLOW_REMOTE_INIT=true`.
 4. Pass `docker-compose.prod.yml` **last** (Step 2) — Postgres is then not exposed on a public
@@ -509,7 +510,7 @@ The same cause makes a bare `make test` fail after a hand-migrated database.
 
 ### `SESSION_SECRET required in production` (or any of the other 11)
 
-You are running with `docker-compose.prod.yml` layered on, which hard-requires all 12 secrets.
+You are running with `docker-compose.prod.yml` layered on, which hard-requires all 13 secrets.
 Generate them (Path D Step 1) and re-run `docker compose … config` to confirm. If you are *not*
 using the prod overlay and still see `X is required in production`, you have set one of these vars
 to an **empty string** in `.env` — an empty value overrides Compose's dev fallback with nothing.

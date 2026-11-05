@@ -76,7 +76,7 @@ describe('EXTENSION_API_VERSION', () => {
     // (additive-minor, rows 1 and 2): 3.30.0 -> 3.31.0. Story 70.3 — optional `html`, `webhookRateLimit` and
     // `DeliveryProviderPermanentError` (additive-minor, rows 1 and 2): 3.31.0 -> 3.32.0. Story 71.4 — optional `actorId`/`occurredAt`, delegation `occurredAt`/
     // `actorAttestationReason` and `historicalActorPolicy` (additive-minor, row 1): 3.32.0 -> 3.33.0. Story 67.1 — conformance helpers (additive-minor, row 2): 3.33.0 -> 3.34.0. Story 65.4 — optional `anonymousRouteMinResponseMs` (additive-minor, row 1): 3.34.0 -> 3.35.0. Story 65.6 — `sharedBy`, `actingUserId`/`viewer`/`actor` and three error classes (additive-minor, row 1): 3.35.0 -> 3.36.0. Story 69.18 — optional `minimumProjectRole`, contract-keyed default (additive-minor, row 1): 3.36.0 -> 3.37.0. Story 72.21 — `totpCode` and two step-up errors, contract-keyed (additive-minor, row 1): 3.37.0 -> 3.38.0. Story 73.9 — `provisionMachineUser` and a conformance helper, contract-keyed (additive-minor, rows 1 and 2): 3.38.0 -> 3.39.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.39.0')
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.40.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

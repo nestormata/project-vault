@@ -32,6 +32,19 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Browser-approved CLI sign-in.** `POST /api/v1/auth/cli/device` starts a short-lived sign-in
+  (user code, device code, approval URL, interval, expiry). The approval URL is built from
+  `PUBLIC_APP_BASE_URL`, or `WEB_BASE_URL` when that is unset, and never from the request Host
+  header, so the verification page can sit on a front door that is not the API origin. A signed-in
+  browser approves or denies it at `/cli/device` (`POST /api/v1/auth/cli/device/decision`).
+  Approving as a platform operator requires a fresh authenticator code. `POST /api/v1/auth/cli/device/token`
+  returns a user session that is not bound to an organization. `POST /api/v1/auth/cli/org` exchanges
+  that user session plus an organization id for a new 15-minute organization credential after a
+  server-side membership check. Non-members get 403. Each call mints a new credential. Codes are
+  stored only as hashes, are single-use, and expire in five minutes. `pvault login --browser`
+  stores the user session. `pvault organization use <organizationId>` stores an organization
+  credential beside it. New production secret: `CLI_DEVICE_CODE_HMAC_SECRET`.
+  `@project-vault/extension-api` 3.40.0 adds `HostServices.membership.isOrgMember`.
 - **Web: the shell header tagline is the `shell_brand_tagline` message** (Story 72.17, CentralizeMe
   request R2). `ShellBrand` renders `m.shell_brand_tagline()` instead of a hard-coded sentence; the
   default text in `en` and `es` is unchanged ("Run complex projects. Miss nothing."), so PV renders

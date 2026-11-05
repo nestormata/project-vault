@@ -11,8 +11,14 @@ import { registerIpRateLimit } from '../../lib/ip-rate-limit.js'
 import { validationError } from '../../lib/route-helpers.js'
 import { revokeSessionById } from './session-revoke.js'
 import { refreshSession, type LoginResult } from './service.js'
+import { refreshUserSession, revokeUserSessionByRefresh } from './user-session.js'
 import { verifyLogin } from './mfa-login.js'
-import { buildCookieTokens, hashRefreshToken, type JwtSigner } from './tokens.js'
+import {
+  buildCookieTokens,
+  hashRefreshToken,
+  signUserAccessToken,
+  type JwtSigner,
+} from './tokens.js'
 import {
   handleGatedLogin,
   metaFromRequest,
@@ -46,7 +52,7 @@ function sendAppError(reply: FastifyReply, error: AppError): unknown {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
 }
 
-async function sendBearerSession(
+export async function sendBearerSession(
   fastify: FastifyApp,
   reply: FastifyReply,
   result: LoginResult
@@ -162,23 +168,37 @@ export async function cliLoginRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = cliRefreshBodySchema.safeParse(req.body)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
       try {
-        const result = await refreshSession(parsed.data.refreshToken, metaFromRequest(req))
-        const built = await buildCookieTokens(fastify as unknown as JwtSigner, result.tokens)
-        if (!built.refreshOpaque) {
-          throw new AppError(
-            'service_unavailable',
-            'Session refresh did not produce a refresh token',
-            503
-          )
+        try {
+          const result = await refreshSession(parsed.data.refreshToken, metaFromRequest(req))
+          const built = await buildCookieTokens(fastify as unknown as JwtSigner, result.tokens)
+          if (!built.refreshOpaque) {
+            throw new AppError(
+              'service_unavailable',
+              'Session refresh did not produce a refresh token',
+              503
+            )
+          }
+          return reply.send({
+            data: {
+              accessToken: built.accessJwt,
+              refreshToken: built.refreshOpaque,
+              tokenType: 'Bearer' as const,
+              expiresIn: built.accessMaxAgeSec,
+            },
+          })
+        } catch (error) {
+          if (!(error instanceof AppError) || error.code !== 'refresh_token_invalid') throw error
+          const session = await refreshUserSession(parsed.data.refreshToken, metaFromRequest(req))
+          const accessToken = await signUserAccessToken(fastify as unknown as JwtSigner, session)
+          return reply.send({
+            data: {
+              accessToken,
+              refreshToken: session.refreshOpaque,
+              tokenType: 'Bearer' as const,
+              expiresIn: session.accessMaxAgeSec,
+            },
+          })
         }
-        return reply.send({
-          data: {
-            accessToken: built.accessJwt,
-            refreshToken: built.refreshOpaque,
-            tokenType: 'Bearer' as const,
-            expiresIn: built.accessMaxAgeSec,
-          },
-        })
       } catch (error) {
         if (error instanceof AppError) return sendAppError(reply, error)
         throw error
@@ -210,7 +230,8 @@ export async function cliLoginRoutes(fastify: FastifyApp): Promise<void> {
       if (!refreshToken) return reply.send({ data: { revoked: false } })
       try {
         const revoked = await revokeCliSession(refreshToken)
-        return reply.send({ data: { revoked } })
+        if (revoked) return reply.send({ data: { revoked: true } })
+        return reply.send({ data: { revoked: await revokeUserSessionByRefresh(refreshToken) } })
       } catch {
         return reply.send({ data: { revoked: false } })
       }

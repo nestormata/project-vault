@@ -1,6 +1,6 @@
 import { lt } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
-import { handoffNonces, handoffTokenJti } from '@project-vault/db/schema'
+import { cliDeviceGrants, handoffNonces, handoffTokenJti } from '@project-vault/db/schema'
 import { runPruneJob, type WorkerLogger } from './prune-utils.js'
 
 /**
@@ -25,6 +25,15 @@ export async function pruneHandoffNonces(logger?: WorkerLogger): Promise<void> {
   await runPruneJob(
     'prune-handoff-nonces',
     () => getDb().delete(handoffNonces).where(lt(handoffNonces.expiresAt, new Date())),
+    logger
+  )
+}
+
+/** Story 43.30: device-login grants live 5 minutes. Expired rows are deleted, consumed or not. */
+export async function pruneCliDeviceGrants(logger?: WorkerLogger): Promise<void> {
+  await runPruneJob(
+    'prune-cli-device-grants',
+    () => getDb().delete(cliDeviceGrants).where(lt(cliDeviceGrants.expiresAt, new Date())),
     logger
   )
 }

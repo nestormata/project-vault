@@ -57,6 +57,9 @@ export function fakeHostServices(overrides: Partial<HostServices> = {}): HostSer
       listSharesForOrganization: unavailable('credentialSharing.listSharesForOrganization'),
       provisionMachineUser: unavailable('credentialSharing.provisionMachineUser'),
     },
+    membership: {
+      isOrgMember: unavailable('membership.isOrgMember'),
+    },
     ...overrides,
   }
 }
