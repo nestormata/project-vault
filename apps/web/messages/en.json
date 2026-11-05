@@ -390,7 +390,7 @@
   "dashboard_attention_more": "and {count} more",
   "cli_device_page_title": "Approve a command-line sign-in",
   "cli_device_heading": "Approve a command-line sign-in",
-  "cli_device_description": "Approving lets that program sign in as you, with your current organization and role, until you sign that session out.",
+  "cli_device_description": "Approving lets that program sign in as you and access organizations you belong to until you sign that session out.",
   "cli_device_code_label": "Sign-in code",
   "cli_device_code_hint": "Type the code the program printed, or check the one already filled in. It looks like ABCD-EFGH.",
   "cli_device_totp_label": "Authenticator code",

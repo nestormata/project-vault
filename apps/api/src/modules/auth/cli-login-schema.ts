@@ -7,11 +7,14 @@ import { z } from 'zod/v4'
 
 export { LoginRequestSchema } from '@project-vault/shared'
 
-export const cliBearerSessionDataSchema = z.object({
+export const cliTokenPairSchema = z.object({
   accessToken: z.string(),
   refreshToken: z.string(),
   tokenType: z.literal('Bearer'),
   expiresIn: z.number().int().positive(),
+})
+
+export const cliBearerSessionDataSchema = cliTokenPairSchema.extend({
   userId: z.uuid(),
   orgId: z.uuid(),
 })
@@ -30,14 +33,7 @@ export { mfaVerifyLoginBodySchema as cliMfaVerifyLoginBodySchema } from './schem
 export const cliMfaVerifyLoginResponseSchema = z.object({ data: cliBearerSessionDataSchema })
 
 export const cliRefreshBodySchema = z.object({ refreshToken: z.string().min(1).max(128) })
-export const cliRefreshResponseSchema = z.object({
-  data: z.object({
-    accessToken: z.string(),
-    refreshToken: z.string(),
-    tokenType: z.literal('Bearer'),
-    expiresIn: z.number().int().positive(),
-  }),
-})
+export const cliRefreshResponseSchema = z.object({ data: cliTokenPairSchema })
 
 export const cliLogoutBodySchema = z.object({
   refreshToken: z.string().min(1).max(128).optional(),

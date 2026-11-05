@@ -19,6 +19,7 @@ vi.setConfig({ testTimeout: 60_000 })
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 const PASSWORD = 'correct-horse-battery-staple'
 const TOKEN_URL = '/api/v1/auth/cli/device/token'
+const DEVICE_URL = '/api/v1/auth/cli/device'
 const DECISION_URL = '/api/v1/auth/cli/device/decision'
 const ORG_URL = '/api/v1/auth/cli/org'
 const ME_URL = '/api/v1/auth/me'
@@ -63,7 +64,7 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
   async function start() {
     const created = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/cli/device',
+      url: DEVICE_URL,
       headers: { host: FRONT_DOOR_HOST },
       payload: { clientName: 'desk' },
     })
@@ -80,6 +81,21 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
     expect(body.verificationUri).not.toContain(FRONT_DOOR_HOST)
     return body
   }
+
+  it('accepts a plain client name and rejects control characters', async () => {
+    const accepted = await app.inject({
+      method: 'POST',
+      url: DEVICE_URL,
+      payload: { clientName: 'invalid' },
+    })
+    expect(accepted.statusCode).toBe(201)
+    const rejected = await app.inject({
+      method: 'POST',
+      url: DEVICE_URL,
+      payload: { clientName: 'terminal\u0001' },
+    })
+    expect(rejected.statusCode).toBe(422)
+  })
 
   it('lets a non-operator approve and then call APIs with the bearer token', async () => {
     const member = await registerAndLoginViaApi(app, {

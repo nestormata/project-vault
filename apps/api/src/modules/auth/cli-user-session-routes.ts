@@ -6,7 +6,7 @@ import { ApiErrorSchema, withRouteTypeProvider } from '../../lib/api-contracts.j
 import { registerIpRateLimit } from '../../lib/ip-rate-limit.js'
 import { enforceUserRateLimit, validationError } from '../../lib/route-helpers.js'
 import { extractBearerToken } from '../machine-users/bearer-token.js'
-import { metaFromRequest, registerMethodNotAllowed } from './routes.js'
+import { metaFromRequest, registerMethodNotAllowed, sendAppError } from './routes.js'
 import {
   CLI_ORG_CREDENTIAL_TTL_SECONDS,
   CLI_ORG_EXCHANGE_LIMIT_PER_MINUTE,
@@ -28,7 +28,7 @@ type AccessSigner = {
       payload: Record<string, unknown>,
       options: { jti: string; expiresIn: number }
     ) => Promise<string> | string
-    verify: (token: string) => Promise<unknown> | unknown
+    verify: (token: string) => unknown
   }
 }
 
@@ -117,9 +117,7 @@ export async function cliUserSessionRoutes(fastify: FastifyApp): Promise<void> {
           },
         })
       } catch (error) {
-        if (error instanceof AppError) {
-          return reply.status(error.statusCode).send({ code: error.code, message: error.message })
-        }
+        if (error instanceof AppError) return sendAppError(reply, error)
         throw error
       }
     },

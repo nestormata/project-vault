@@ -13,7 +13,12 @@ import { revokeSessionById } from './session-revoke.js'
 import { refreshSession, type LoginResult } from './service.js'
 import { refreshUserSession, revokeUserSessionByRefresh } from './user-session.js'
 import { verifyLogin } from './mfa-login.js'
-import { buildCookieTokens, hashRefreshToken, type JwtSigner } from './tokens.js'
+import {
+  buildCookieTokens,
+  hashRefreshToken,
+  signUserAccessToken,
+  type JwtSigner,
+} from './tokens.js'
 import {
   handleGatedLogin,
   metaFromRequest,
@@ -184,14 +189,7 @@ export async function cliLoginRoutes(fastify: FastifyApp): Promise<void> {
         } catch (error) {
           if (!(error instanceof AppError) || error.code !== 'refresh_token_invalid') throw error
           const session = await refreshUserSession(parsed.data.refreshToken, metaFromRequest(req))
-          const accessToken = await (fastify as unknown as JwtSigner).jwt.sign(
-            {
-              sub: session.accessClaims.sub,
-              scope: session.accessClaims.scope,
-              sessionVersion: session.accessClaims.sessionVersion,
-            },
-            { jti: session.accessClaims.jti, expiresIn: session.accessMaxAgeSec }
-          )
+          const accessToken = await signUserAccessToken(fastify as unknown as JwtSigner, session)
           return reply.send({
             data: {
               accessToken,

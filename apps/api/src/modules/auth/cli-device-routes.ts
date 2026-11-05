@@ -8,7 +8,8 @@ import { registerIpRateLimit } from '../../lib/ip-rate-limit.js'
 import { validationError } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { operationalLog } from '../../lib/logger.js'
-import { metaFromRequest, registerMethodNotAllowed } from './routes.js'
+import { metaFromRequest, registerMethodNotAllowed, sendAppError } from './routes.js'
+import { signUserAccessToken, type JwtSigner } from './tokens.js'
 import {
   CLI_DEVICE_CREATE_LIMIT_PER_MINUTE,
   CLI_DEVICE_DECISION_IP_LIMIT_PER_MINUTE,
@@ -34,10 +35,8 @@ import {
   type DevicePollResult,
 } from './cli-device-service.js'
 
-function clientNameOf(raw: string | undefined): string | null | 'invalid' {
-  if (raw === undefined) return null
-  if (/[\p{C}]/u.test(raw)) return 'invalid'
-  return raw
+function invalidClientName(raw: string | undefined): boolean {
+  return raw !== undefined && /\p{C}/u.test(raw)
 }
 
 function publicAppBase(): string {
@@ -134,14 +133,13 @@ export async function cliDeviceRoutes(fastify: FastifyApp): Promise<void> {
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const parsed = cliDeviceCreateBodySchema.safeParse(req.body ?? {})
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
-      const clientName = clientNameOf(parsed.data.clientName)
-      if (clientName === 'invalid') {
+      if (invalidClientName(parsed.data.clientName)) {
         return reply.status(422).send({
           code: 'validation_error',
           message: 'clientName must be plain text, at most 64 characters.',
         })
       }
-      const created = await createDeviceGrant(clientName)
+      const created = await createDeviceGrant(parsed.data.clientName ?? null)
       operationalLog(
         req.log,
         'info',
@@ -191,14 +189,7 @@ export async function cliDeviceRoutes(fastify: FastifyApp): Promise<void> {
       const result = await pollDeviceGrant(parsed.data.deviceCode, metaFromRequest(req))
       if (result.kind !== 'session') return sendPoll(reply, result)
       const session = result.session
-      const accessToken = await fastify.jwt.sign(
-        {
-          sub: session.accessClaims.sub,
-          scope: session.accessClaims.scope,
-          sessionVersion: session.accessClaims.sessionVersion,
-        },
-        { jti: session.accessClaims.jti, expiresIn: session.accessMaxAgeSec }
-      )
+      const accessToken = await signUserAccessToken(fastify as unknown as JwtSigner, session)
       return reply.status(200).send({
         data: {
           accessToken,
@@ -258,9 +249,7 @@ export async function cliDeviceRoutes(fastify: FastifyApp): Promise<void> {
         )
         return sendDecision(reply, result)
       } catch (error) {
-        if (error instanceof AppError) {
-          return reply.status(error.statusCode).send({ code: error.code, message: error.message })
-        }
+        if (error instanceof AppError) return sendAppError(reply, error)
         throw error
       }
     },

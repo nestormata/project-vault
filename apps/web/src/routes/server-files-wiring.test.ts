@@ -15,6 +15,7 @@ const PAGES_WITH_OWN_ACTIONS = new Set([
   './(app)/settings/language/+page.server.ts',
   './(app)/notifications/+page.server.ts',
   './(app)/settings/notifications/+page.server.ts',
+  './(app)/cli/device/+page.server.ts',
 ])
 
 describe("page and layout server files in PV's own build", () => {

@@ -9,6 +9,14 @@ import { generateRefreshToken, hashRefreshToken, parseUserAccessClaims } from '.
 import type { RequestMeta } from './service.js'
 
 const USER_REFRESH_REUSE_GRACE_MS = 30_000
+const sessionColumns = {
+  userId: userSessions.userId,
+  jti: userSessions.jti,
+  sessionVersion: userSessions.sessionVersion,
+  revokedAt: userSessions.revokedAt,
+  expiresAt: userSessions.expiresAt,
+  lastActiveAt: userSessions.lastActiveAt,
+}
 
 export type UserAccessClaims = NonNullable<ReturnType<typeof parseUserAccessClaims>>
 
@@ -52,7 +60,7 @@ function idleExceeded(lastActiveAt: Date, now: Date): boolean {
   return now.getTime() - lastActiveAt.getTime() > env.SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000
 }
 
-async function platformOperator(tx: Tx, userId: string): Promise<boolean> {
+export async function platformOperator(tx: Tx, userId: string): Promise<boolean> {
   const rows = await tx
     .select({ isPlatformOperator: users.isPlatformOperator })
     .from(users)
@@ -130,7 +138,7 @@ async function revokeUserSessionInTx(tx: Tx, sessionId: string, now: Date): Prom
   await revokeLinkedCredentials(tx, links)
 }
 
-export async function revokeUserSessionById(sessionId: string, userId: string): Promise<boolean> {
+export function revokeUserSessionById(sessionId: string, userId: string): Promise<boolean> {
   return getDb().transaction(async (dbTx) => {
     const tx = dbTx as Tx
     const rows = await tx
@@ -185,14 +193,7 @@ async function loadRefreshRow(tx: Tx, tokenHash: string): Promise<RefreshRow | u
   const token = tokenRows[0]
   if (!token) return undefined
   const sessionRows = await tx
-    .select({
-      userId: userSessions.userId,
-      jti: userSessions.jti,
-      sessionVersion: userSessions.sessionVersion,
-      revokedAt: userSessions.revokedAt,
-      expiresAt: userSessions.expiresAt,
-      lastActiveAt: userSessions.lastActiveAt,
-    })
+    .select(sessionColumns)
     .from(userSessions)
     .where(eq(userSessions.id, token.userSessionId))
     .limit(1)
@@ -268,7 +269,7 @@ async function rotateUserRefresh(
   }
 }
 
-export async function refreshUserSession(
+export function refreshUserSession(
   refreshOpaque: string,
   meta: RequestMeta,
   now = new Date()
@@ -282,7 +283,7 @@ export async function refreshUserSession(
   })
 }
 
-export async function revokeUserSessionByRefresh(refreshOpaque: string): Promise<boolean> {
+export function revokeUserSessionByRefresh(refreshOpaque: string): Promise<boolean> {
   const tokenHash = hashRefreshToken(refreshOpaque)
   return getDb().transaction(async (dbTx) => {
     const tx = dbTx as Tx
@@ -293,22 +294,14 @@ export async function revokeUserSessionByRefresh(refreshOpaque: string): Promise
   })
 }
 
-export async function verifyUserSession(
+export function verifyUserSession(
   claims: UserAccessClaims,
   now = new Date()
 ): Promise<VerifiedUserSession> {
   return getDb().transaction(async (dbTx) => {
     const tx = dbTx as Tx
     const rows = await tx
-      .select({
-        id: userSessions.id,
-        userId: userSessions.userId,
-        jti: userSessions.jti,
-        sessionVersion: userSessions.sessionVersion,
-        revokedAt: userSessions.revokedAt,
-        expiresAt: userSessions.expiresAt,
-        lastActiveAt: userSessions.lastActiveAt,
-      })
+      .select({ id: userSessions.id, ...sessionColumns })
       .from(userSessions)
       .where(eq(userSessions.jti, claims.jti))
       .limit(1)

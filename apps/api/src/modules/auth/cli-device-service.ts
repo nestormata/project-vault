@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
-import { cliDeviceGrants, sessions, users } from '@project-vault/db/schema'
+import { cliDeviceGrants, sessions } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
 import { isOrgMember } from '../../lib/org-membership.js'
@@ -16,6 +16,7 @@ import {
 } from './service.js'
 import {
   issueUserSessionInTx,
+  platformOperator,
   recordOrgCredential,
   type IssuedUserSession,
 } from './user-session.js'
@@ -158,15 +159,6 @@ async function lockGrantByUserCode(tx: Tx, normalized: string): Promise<GrantRow
   return grant && matches ? grant : undefined
 }
 
-async function operatorNeedsStepUp(tx: Tx, userId: string): Promise<boolean> {
-  const rows = await tx
-    .select({ isPlatformOperator: users.isPlatformOperator })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1)
-  return rows[0]?.isPlatformOperator === true
-}
-
 async function applyStepUp(
   tx: Tx,
   grant: GrantRow,
@@ -201,7 +193,7 @@ export async function decideDeviceGrant(
 ): Promise<DeviceDecision> {
   await setOrgContext(tx, approver.orgId, approver.userId)
   const grant = await lockGrantByUserCode(tx, normalizedUserCode)
-  if (!grant || grant.status !== 'pending' || isExpired(grant, now)) return { kind: 'invalid' }
+  if (grant?.status !== 'pending' || isExpired(grant, now)) return { kind: 'invalid' }
   if (decision === 'deny') {
     await tx
       .update(cliDeviceGrants)
@@ -217,7 +209,7 @@ export async function decideDeviceGrant(
     )
     return { kind: 'denied' }
   }
-  if (await operatorNeedsStepUp(tx, approver.userId)) {
+  if (await platformOperator(tx, approver.userId)) {
     const refused = await applyStepUp(tx, grant, approver.userId, totpCode, now)
     if (refused) return refused
   }
@@ -250,7 +242,7 @@ async function approverSessionLive(tx: Tx, grant: GrantRow): Promise<boolean> {
     .from(sessions)
     .where(eq(sessions.id, grant.approverSessionId))
     .limit(1)
-  return Boolean(rows[0] && rows[0].revokedAt === null)
+  return rows[0]?.revokedAt === null
 }
 
 async function markRevoked(tx: Tx, grant: GrantRow, meta: RequestMeta, now: Date): Promise<void> {
@@ -336,7 +328,7 @@ async function pollLockedGrant(
   return { kind: 'session', session: await issueFromGrant(tx, grant, meta, now) }
 }
 
-export async function pollDeviceGrant(
+export function pollDeviceGrant(
   deviceCode: string,
   meta: RequestMeta,
   now = new Date()

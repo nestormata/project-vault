@@ -72,7 +72,7 @@
       value="approve">{m.cli_device_approve()}</button
     >
     <button
-      class="rounded border border-slate-300 px-4 py-2"
+      class="rounded border border-[color:var(--color-border-strong,#64748b)] px-4 py-2"
       type="submit"
       name="decision"
       value="deny">{m.cli_device_deny()}</button

@@ -70,7 +70,7 @@ const SCRIPT = 'scripts/e2e-stack.sh'
 const START_STEP = 'Start the full stack (db, migrate, api, web)'
 const WAIT_STEP = 'Wait for API readiness'
 const PLAYWRIGHT_STEP = 'Run Playwright E2E suite'
-const OK_LINE = 'e2e-stack: 12 distinct throwaway secrets OK (64 hex chars each)'
+const OK_LINE = 'e2e-stack: 13 distinct throwaway secrets OK (64 hex chars each)'
 const HEX64 = /\b[0-9a-f]{64}\b/
 const FIRST_SECRET = 'SESSION_SECRET'
 const LATER_SECRET = 'MACHINE_JWT_SECRET'
@@ -336,9 +336,9 @@ function runWait(env: Record<string, string>) {
 const SECRET_NAMES_FROM_SCRIPT = () => scriptSecretNames(repoText(SCRIPT))
 
 describe('Story 66.1 AC-7.1: the script generates exactly the compose dev-default secrets', () => {
-  it('matches the 12 api dev-default secrets in docker-compose.yml', () => {
+  it('matches the 13 api dev-default secrets in docker-compose.yml', () => {
     const composeKeys = devSecretKeysFromCompose(repoText(BASE_COMPOSE))
-    expect(composeKeys).toHaveLength(12)
+    expect(composeKeys).toHaveLength(13)
     expect(parityProblems(composeKeys, SECRET_NAMES_FROM_SCRIPT())).toEqual([])
   })
 
@@ -452,7 +452,7 @@ describe('Story 66.1 AC-7.4/7.5/7.12: script hygiene', () => {
 })
 
 describe('Story 66.1 AC-7.6: self-test (no docker)', () => {
-  it('generates 12 distinct values and prints no value', () => {
+  it('generates 13 distinct values and prints no value', () => {
     const run = runScript(['self-test'])
     expect(run.status, run.stderr).toBe(0)
     expect(run.stdout).toContain(OK_LINE)
@@ -491,7 +491,7 @@ describe('Story 66.1 AC-7.6: self-test (no docker)', () => {
     const ci = runScript(['self-test'], { [GITHUB_ACTIONS]: 'true' })
     expect(ci.status, ci.stderr).toBe(0)
     const masks = ci.stdout.split('\n').filter((line) => line.startsWith(ADD_MASK))
-    expect(masks).toHaveLength(12)
+    expect(masks).toHaveLength(13)
     expect(ci.stdout.indexOf(ADD_MASK)).toBe(0)
   })
 
@@ -807,7 +807,7 @@ describe('Story 68.10: the mock-ui-pack flavour of the e2e stack', () => {
     expect(spawnSync('node', [FREE_PORTS_HELPER, '0']).status).toBe(2)
   })
 
-  it('keeps the self-test (12 distinct secrets, redaction) working under the flavour', () => {
+  it('keeps the self-test (13 distinct secrets, redaction) working under the flavour', () => {
     const run = runScript(['self-test'], { [FLAVOR_ENV]: MOCK_PACK_FLAVOR })
     expect(run.status, run.stderr).toBe(0)
     expect(run.stdout).toContain(OK_LINE)

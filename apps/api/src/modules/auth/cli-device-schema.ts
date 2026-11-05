@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { cliTokenPairSchema } from './cli-login-schema.js'
 
 export const cliDeviceCreateBodySchema = z
   .object({
@@ -24,11 +25,7 @@ export const cliDeviceTokenBodySchema = z
   .strict()
 
 export const cliDeviceTokenResponseSchema = z.object({
-  data: z.object({
-    accessToken: z.string(),
-    refreshToken: z.string(),
-    tokenType: z.literal('Bearer'),
-    expiresIn: z.number().int().positive(),
+  data: cliTokenPairSchema.extend({
     userId: z.uuid(),
     sessionId: z.uuid(),
     scope: z.literal('user'),

@@ -389,7 +389,7 @@
   "dashboard_attention_more": "y {count} más",
   "cli_device_page_title": "Aprobar un inicio de sesión de línea de comandos",
   "cli_device_heading": "Aprobar un inicio de sesión de línea de comandos",
-  "cli_device_description": "Aprobar permite que ese programa inicie sesión como usted, con su organización y su rol actuales, hasta que cierre esa sesión.",
+  "cli_device_description": "Aprobar permite que ese programa inicie sesión como usted y acceda a las organizaciones a las que pertenece hasta que cierre esa sesión.",
   "cli_device_code_label": "Código de inicio de sesión",
   "cli_device_code_hint": "Escriba el código que imprimió el programa, o revise el que ya está escrito. Se ve como ABCD-EFGH.",
   "cli_device_totp_label": "Código del autenticador",

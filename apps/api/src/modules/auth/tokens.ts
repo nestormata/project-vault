@@ -22,12 +22,11 @@ export type AccessTokenClaims = {
   exp?: number
 }
 
-export function parseAccessTokenClaims(payload: unknown): AccessTokenClaims | null {
+function parseCommonClaims(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null
   const claims = payload as Record<string, unknown>
   if (
     typeof claims['sub'] !== 'string' ||
-    typeof claims['orgId'] !== 'string' ||
     typeof claims['jti'] !== 'string' ||
     typeof claims['sessionVersion'] !== 'number'
   ) {
@@ -35,12 +34,24 @@ export function parseAccessTokenClaims(payload: unknown): AccessTokenClaims | nu
   }
   return {
     sub: claims['sub'],
-    orgId: claims['orgId'],
     jti: claims['jti'],
     sessionVersion: claims['sessionVersion'],
     iat: typeof claims['iat'] === 'number' ? claims['iat'] : undefined,
     exp: typeof claims['exp'] === 'number' ? claims['exp'] : undefined,
   }
+}
+
+export function parseAccessTokenClaims(payload: unknown): AccessTokenClaims | null {
+  const common = parseCommonClaims(payload)
+  if (
+    !common ||
+    !payload ||
+    typeof payload !== 'object' ||
+    !('orgId' in payload) ||
+    typeof payload.orgId !== 'string'
+  )
+    return null
+  return { ...common, orgId: payload.orgId }
 }
 
 export function parseUserAccessClaims(payload: unknown): {
@@ -51,23 +62,13 @@ export function parseUserAccessClaims(payload: unknown): {
   iat?: number
   exp?: number
 } | null {
-  if (!payload || typeof payload !== 'object') return null
+  const common = parseCommonClaims(payload)
+  if (!common || !payload || typeof payload !== 'object') return null
   const claims = payload as Record<string, unknown>
   if (claims['scope'] !== 'user' || typeof claims['orgId'] === 'string') return null
-  if (
-    typeof claims['sub'] !== 'string' ||
-    typeof claims['jti'] !== 'string' ||
-    typeof claims['sessionVersion'] !== 'number'
-  ) {
-    return null
-  }
   return {
-    sub: claims['sub'],
+    ...common,
     scope: 'user',
-    jti: claims['jti'],
-    sessionVersion: claims['sessionVersion'],
-    iat: typeof claims['iat'] === 'number' ? claims['iat'] : undefined,
-    exp: typeof claims['exp'] === 'number' ? claims['exp'] : undefined,
   }
 }
 
@@ -179,6 +180,20 @@ export type JwtSigner = {
       options: { jti: string; expiresIn: number }
     ) => Promise<string> | string
   }
+}
+
+export function signUserAccessToken(
+  signer: JwtSigner,
+  session: {
+    accessClaims: { sub: string; scope: 'user'; sessionVersion: number; jti: string }
+    accessMaxAgeSec: number
+  }
+): Promise<string> | string {
+  const { sub, scope, sessionVersion, jti } = session.accessClaims
+  return signer.jwt.sign(
+    { sub, scope, sessionVersion },
+    { jti, expiresIn: session.accessMaxAgeSec }
+  )
 }
 
 type BuildableTokens = {
