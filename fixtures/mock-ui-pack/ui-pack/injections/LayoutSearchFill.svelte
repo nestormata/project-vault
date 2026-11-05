@@ -4,6 +4,8 @@
   // Story 72.18: the same fill registers a results provider with the palette, the way CM adds its
   // tenant/group results without replacing `GlobalSearch`. `mockpack` finds the Mock Billing page and
   // an action result; `mockpack-fail` makes the provider reject, `mockpack-slow` never answers.
+  // `data-mock-search-query` records the query the provider was actually asked, so a test can see
+  // that a new search has started while the previous rows are still on screen.
   import { resolve } from '$app/paths'
   import { registerSearchProvider } from '$lib/components/shell/search-providers.svelte.js'
 
@@ -13,6 +15,7 @@
     id: 'mock-ui-pack',
     timeoutMs: 800,
     search: async (query) => {
+      document.documentElement.dataset['mockSearchQuery'] = query
       const term = query.toLowerCase()
       if (term.includes('mockpack-fail')) throw new Error('mock provider failure')
       if (term.includes('mockpack-slow')) return new Promise(() => {})

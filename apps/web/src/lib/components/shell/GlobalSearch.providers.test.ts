@@ -258,4 +258,162 @@ describe('GlobalSearch results providers (Story 72.18)', () => {
     expect(await screen.findByText(/Infra Core/, {}, { timeout: 2000 })).toBeTruthy()
     expect(screen.queryByText('Some results could not be loaded.')).toBeNull()
   })
+
+  // Story 72.26: the previous provider rows stay until the new answer replaces them. The
+  // proof is the held promises, not a clock: the second search has been asked, and the
+  // first row is still in the list (and still the arrowed row) until that promise resolves.
+  it('ignores a superseded answer while the next query is waiting to start', async () => {
+    const releases: Array<(rows: SearchProviderResult[]) => void> = []
+    const search = vi.fn(
+      () =>
+        new Promise<SearchProviderResult[]>((resolve) => {
+          releases.push(resolve)
+        })
+    )
+    mountWith([{ id: 'cm', search }])
+    await typeQuery('acme')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1))
+    releases[0]?.([tenant])
+    await findOption('Acme Holdings')
+
+    await typeQuery('beta')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    await typeQuery('gamma')
+    releases[1]?.([{ ...tenant, id: 't2', label: 'Beta Tenant' }])
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(3))
+    expect(hasOption('Acme Holdings')).toBe(true)
+    expect(hasOption('Beta Tenant')).toBe(false)
+  })
+
+  it('keeps the arrowed provider row until the next answer replaces it', async () => {
+    const releases: Array<(rows: SearchProviderResult[]) => void> = []
+    const search = vi.fn(
+      () =>
+        new Promise<SearchProviderResult[]>((resolve) => {
+          releases.push(resolve)
+        })
+    )
+    let releaseNative: (response: Response) => void = () => {}
+    let nativeCalls = 0
+    installSearchFetchMock((url) => {
+      if (!String(url).startsWith('/api/v1/search')) return searchResponse([])
+      nativeCalls += 1
+      if (nativeCalls === 1) return searchResponse([credentialResult, projectResult], 'acme')
+      return new Promise((resolve) => {
+        releaseNative = resolve
+      })
+    })
+    mountWith([{ id: 'cm', search }])
+    await typeQuery('acme')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1))
+    const first = releases[0]
+    if (!first) throw new Error('the first provider search never started')
+    first([tenant])
+    await findOption('Acme Holdings')
+
+    const input = screen.getByLabelText('Search')
+    await fireEvent.keyDown(input, { key: 'ArrowDown' })
+    await fireEvent.keyDown(input, { key: 'ArrowDown' })
+    const providerOption = () =>
+      screen.getAllByRole('option').find((option) => option.textContent?.includes('Acme Holdings'))
+    expect(providerOption()?.getAttribute('aria-selected')).toBe('true')
+
+    await typeQuery('acme2')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    expect(providerOption()?.getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByText(/No results/)).toBeNull()
+
+    // Native rows shrink under the still-pending provider. The highlight follows the same row.
+    releaseNative(searchResponse([credentialResult], 'acme2'))
+    await vi.waitFor(() => {
+      const options = screen.getAllByRole('option')
+      if (options.some((option) => option.textContent?.includes('Infra Core'))) {
+        throw new Error('the previous native project row is still showing')
+      }
+    })
+    expect(providerOption()?.getAttribute('aria-selected')).toBe('true')
+    expect(hasOption('Acme Holdings')).toBe(true)
+
+    const second = releases[1]
+    if (!second) throw new Error('the second provider search never started')
+    second([{ ...tenant, id: 't9', label: 'Beta Tenant' }])
+    await findOption('Beta Tenant')
+    expect(hasOption('Acme Holdings')).toBe(false)
+  })
+
+  it('keeps the arrowed provider row when the next query inserts an action row above it', async () => {
+    mockedPage.data = { user: { orgRole: 'owner', userId: 'u1' } }
+    const releases: Array<(rows: SearchProviderResult[]) => void> = []
+    const search = vi.fn(
+      () =>
+        new Promise<SearchProviderResult[]>((resolve) => {
+          releases.push(resolve)
+        })
+    )
+    mountWith([{ id: 'cm', search }])
+    await typeQuery('acme')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1))
+    releases[0]?.([tenant])
+    await findOption('Acme Holdings')
+    const input = screen.getByLabelText('Search')
+    await fireEvent.keyDown(input, { key: 'ArrowDown' })
+    await fireEvent.keyDown(input, { key: 'ArrowDown' })
+    const providerOption = () =>
+      screen.getAllByRole('option').find((option) => option.textContent?.includes('Acme Holdings'))
+    expect(providerOption()?.getAttribute('aria-selected')).toBe('true')
+
+    // "c" matches "Create project", so an action row appears above the provider row immediately,
+    // before the debounced search asks the provider. The highlight must stay on the same row.
+    await typeQuery('c')
+    await vi.waitFor(() => {
+      expect(screen.getAllByRole('option')[0]?.textContent).toContain('Create project')
+      expect(providerOption()?.getAttribute('aria-selected')).toBe('true')
+    })
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    expect(providerOption()?.getAttribute('aria-selected')).toBe('true')
+    mockedPage.data = { user: { orgRole: 'viewer', userId: 'u1' } }
+  })
+
+  it('replaces the previous provider row when the next answer is empty', async () => {
+    let calls = 0
+    const search = vi.fn(async () => {
+      calls += 1
+      return calls === 1 ? [tenant] : []
+    })
+    mountWith([{ id: 'cm', search }])
+    await typeQuery('acme')
+    await findOption('Acme Holdings')
+    await typeQuery('acme2')
+    await vi.waitFor(() => expect(calls).toBe(2))
+    await vi.waitFor(() => {
+      if (hasOption('Acme Holdings')) throw new Error('stale provider row still shown')
+    })
+    expect(screen.queryByText('Some results could not be loaded.')).toBeNull()
+    expect(screen.getByText('Stripe API Key')).toBeTruthy()
+  })
+
+  it('drops a stale provider row only once the follow-up answer has failed', async () => {
+    let rejectSecond: (reason: unknown) => void = () => {}
+    let calls = 0
+    const search = vi.fn(() => {
+      calls += 1
+      if (calls === 1) return Promise.resolve([tenant])
+      return new Promise<SearchProviderResult[]>((_, reject) => {
+        rejectSecond = reject
+      })
+    })
+    mountWith([{ id: 'cm', search }])
+    await typeQuery('acme')
+    await findOption('Acme Holdings')
+    await typeQuery('acme2')
+    await vi.waitFor(() => expect(calls).toBe(2))
+    expect(hasOption('Acme Holdings')).toBe(true)
+    expect(screen.queryByText('Some results could not be loaded.')).toBeNull()
+
+    rejectSecond(new Error('boom'))
+    expect(await screen.findByText('Some results could not be loaded.')).toBeTruthy()
+    expect(hasOption('Acme Holdings')).toBe(false)
+    expect(screen.getByText('Stripe API Key')).toBeTruthy()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
 })
