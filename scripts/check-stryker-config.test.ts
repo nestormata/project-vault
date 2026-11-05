@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import config, { SHARDS } from '../stryker.config.mjs'
+import {
+  VITEST_MODERN_TEST_NAME_SEPARATOR,
+  collectTestName,
+} from '../node_modules/@stryker-mutator/vitest-runner/dist/src/test-helpers.js'
 
 // Story 66-7 guard: the invariants the Stryker/vitest-5 fix depends on. Each assertion fails if
 // someone "fixes" a red nightly by loosening the gate instead of the cause (DW-335).
 // Files are loaded as raw text at transform time by Vite (literal globs are required).
-const workspaceYaml = Object.values(
-  import.meta.glob('../pnpm-workspace.yaml', { query: '?raw', import: 'default', eager: true })
-).join('\n') as string
 const nightly = Object.values(
   import.meta.glob('../.github/workflows/nightly.yml', {
     query: '?raw',
@@ -14,16 +15,6 @@ const nightly = Object.values(
     eager: true,
   })
 ).join('\n') as string
-const patchFiles = import.meta.glob('../patches/@stryker-mutator__vitest-runner.patch', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
-const installedRunner = import.meta.glob(
-  '../node_modules/@stryker-mutator/vitest-runner/dist/src/{test-helpers,stryker-setup}.js',
-  { query: '?raw', import: 'default', eager: true }
-) as Record<string, string>
-
 describe('stryker.config.mjs gate invariants', () => {
   it('keeps the break threshold at 60 or higher (never lowered to get green)', () => {
     expect(config.thresholds.break).toBeGreaterThanOrEqual(60)
@@ -55,26 +46,16 @@ describe('stryker.config.mjs gate invariants', () => {
   })
 })
 
-describe('vitest 5 runner patch (DW-335)', () => {
-  it('is registered in pnpm-workspace.yaml patchedDependencies and the patch file exists', () => {
-    expect(workspaceYaml).toMatch(
-      /patchedDependencies:\s*\n\s+'@stryker-mutator\/vitest-runner': patches\/@stryker-mutator__vitest-runner\.patch/
-    )
-    expect(Object.keys(patchFiles)).toHaveLength(1)
-  })
-
-  it('joins test-name parts with " > " in both copies of collectTestName', () => {
-    const [patch] = Object.values(patchFiles)
-    expect(patch).toContain('dist/src/test-helpers.js')
-    expect(patch).toContain('dist/src/stryker-setup.js')
-    expect(patch.match(/^\+\s+return nameParts\.join\(' > '\)\.trim\(\);$/gm)).toHaveLength(2)
-  })
-
-  it('is actually applied to the installed runner (a lost patch scores every mutant "survived")', () => {
-    expect(Object.keys(installedRunner)).toHaveLength(2)
-    for (const text of Object.values(installedRunner)) {
-      expect(text).toContain("nameParts.join(' > ').trim()")
+describe('upstream Vitest 5 test-name matching (DW-335)', () => {
+  it('builds the full suite path with the separator Vitest 5 matches', () => {
+    const nestedTest = {
+      name: 'rejects a stale token',
+      suite: { name: 'refresh tokens', suite: { name: 'authentication', suite: undefined } },
     }
+    expect(VITEST_MODERN_TEST_NAME_SEPARATOR).toBe(' > ')
+    expect(collectTestName(nestedTest, VITEST_MODERN_TEST_NAME_SEPARATOR)).toBe(
+      'authentication > refresh tokens > rejects a stale token'
+    )
   })
 })
 

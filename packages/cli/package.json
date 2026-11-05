@@ -30,7 +30,7 @@
     "@project-vault/api": "workspace:*",
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@vercel/ncc": "0.45.0",
     "@vitest/coverage-v8": "^5.0.5",
     "eslint": "^10.13.0",
