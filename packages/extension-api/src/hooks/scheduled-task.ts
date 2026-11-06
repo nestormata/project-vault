@@ -5,9 +5,11 @@ import type { HostServices } from '../host-services.js'
  * Deliberately minimal and serializable-data-only per the architecture's data-boundary rule: no
  * `Tx`, no raw DB handle, no `AuthContext` — only `organizationId`/`taskName` (plain strings) and
  * the SAME `HostServices` instance already bound for this extension at load time (see
- * `apps/api/src/extensions/loader.ts#buildHostServices`). A future PR that adds a `Tx`/raw-handle
- * field to this type "for efficiency" is a Data Boundaries violation — reject it in review exactly
- * as any other `packages/extension-api` boundary breach would be (AC3 reviewer checklist).
+ * `apps/api/src/extensions/loader.ts#buildHostServices`). PV uses invocation-local async context
+ * to bind `membership.isOrgMember` to this `organizationId` for the callback's lifetime. A future
+ * PR that adds a `Tx`/raw-handle field to this type "for efficiency" is a Data Boundaries
+ * violation — reject it in review exactly as any other `packages/extension-api` boundary breach
+ * would be (AC3 reviewer checklist).
  */
 export type ScheduledTaskContext = {
   organizationId: string

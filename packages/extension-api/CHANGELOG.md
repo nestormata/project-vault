@@ -2,6 +2,40 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.41.0 — 2026-11-05
+
+contract-hash: sha256:4af93ab24e1d2ccbaea035b59d3ce94db9ff5f5364e0fccf7d2bef5f280dbe9a
+
+Story 73.11. Scheduled-task membership checks are bound to the organization PV selected for the
+current invocation. Calls outside a scheduled invocation or for a different organization return
+`unavailable`; the supplied organization is checked against the binding and never selects scope.
+The tri-state result still reveals no role or cross-organization membership detail. This contract
+does not revalidate actors for already-accepted audit outbox events: those events remain deliverable
+after the actor leaves the organization.
+
+### Changed
+
+- `HostServices.membership.isOrgMember({ organizationId, userId })` is available only inside the
+  current scheduled-task invocation and only for that invocation's organization. The host applies
+  its existing per-extension in-flight limit and records the same coarse operational audit fields
+  as the request-bound membership check; it never logs internal failure reasons or driver details.
+- Documentation now distinguishes this out-of-request membership fact check from
+  `orgAuthorization.checkMembership()`, which remains request-bound.
+
+### Deprecated
+
+This release deprecates nothing. The 3.30.0 notice remains in force, restated for the marker check:
+types `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionContext`,
+`ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`, `ModuleDataResult`,
+`ModuleDataRouteHandler`, `ModuleDataRouteDeclaration` and `ExtensionNavItem`; manifest fields
+`uiPanelSlots`, `moduleActions`, `navItems` and `moduleDataRoutes`; hooks `uiPanel`, `moduleAction`
+and `moduleData`; and the `'ui-panel'` capability. Replacements are `ExtensionRequestContext`,
+`ExtensionActionResult`, composed UI and M7 `apiRoutes`.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; this release adds nothing to it).
+
 ## 3.40.0 — 2026-11-02
 
 contract-hash: sha256:5daea89bf00d181eb13ecf266775242154dbcc12aa3570074ac99d914c2d62c1

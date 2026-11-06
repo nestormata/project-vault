@@ -159,7 +159,7 @@ describe('checkProjectWriteRoles (Story 69.18)', () => {
 })
 
 describe('checkCredentialSharingMachineUserMode (Story 73.9)', () => {
-  it.each(['3.39.0', '3.39.7', '3.40.0', '4.0.0', EXTENSION_API_VERSION])(
+  it.each(['3.39.0', '3.39.7', '3.40.0', '3.41.0', '4.0.0', EXTENSION_API_VERSION])(
     '%s gets the host-managed machine user',
     (apiVersion) => {
       expect(checkCredentialSharingMachineUserMode({ apiVersion })).toEqual({

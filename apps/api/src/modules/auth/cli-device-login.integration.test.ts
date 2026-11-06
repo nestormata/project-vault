@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
-import { cliDeviceGrants, sessions, users } from '@project-vault/db/schema'
+import { cliDeviceGrants, orgMemberships, sessions, users } from '@project-vault/db/schema'
 import { env } from '../../config/env.js'
 import {
   bootstrapRouteIntegrationTest,
@@ -13,12 +13,16 @@ import {
 import { enrollUserWithMfa } from '../../__tests__/helpers/mfa-enroll-test-helpers.js'
 import { totpForSecret } from '../../__tests__/helpers/totp.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
-import { isOrgMember } from '../../lib/org-membership.js'
+import {
+  isOrgMember,
+  isOrgMemberForScheduledTask,
+  withScheduledTaskOrganization,
+} from '../../lib/org-membership.js'
 
 vi.setConfig({ testTimeout: 60_000 })
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
-const PASSWORD = 'correct-horse-battery-staple'
+const TEST_CREDENTIAL = 'correct-horse-battery-staple'
 const TOKEN_URL = '/api/v1/auth/cli/device/token'
 const DEVICE_URL = '/api/v1/auth/cli/device'
 const DECISION_URL = '/api/v1/auth/cli/device/decision'
@@ -46,7 +50,7 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
     operator = await enrollUserWithMfa(app, {
       emailPrefix: 'device-operator',
       orgNamePrefix: 'Device Operator',
-      password: PASSWORD,
+      password: TEST_CREDENTIAL,
     })
     await getDb()
       .update(users)
@@ -120,7 +124,7 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
   it('lets a non-operator approve and then call APIs with the bearer token', async () => {
     const member = await registerAndLoginViaApi(app, {
       email: `device-member-${randomUUID()}@example.com`,
-      password: PASSWORD,
+      password: TEST_CREDENTIAL,
       orgName: `Device Member ${randomUUID()}`,
     })
     const started = await start()
@@ -199,6 +203,32 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
     expect(await isOrgMember({ organizationId: 'not-a-uuid', userId: member.userId })).toEqual({
       status: 'unavailable',
       reason: 'membership_check_failed',
+    })
+    expect(
+      await isOrgMemberForScheduledTask({ organizationId: member.orgId, userId: member.userId })
+    ).toEqual({ status: 'unavailable', reason: 'membership_scope_unavailable' })
+    await withScheduledTaskOrganization(member.orgId, async () => {
+      await expect(
+        isOrgMemberForScheduledTask({ organizationId: member.orgId, userId: member.userId })
+      ).resolves.toEqual({ status: 'allowed' })
+      await expect(
+        isOrgMemberForScheduledTask({ organizationId: operator.orgId, userId: member.userId })
+      ).resolves.toEqual({ status: 'unavailable', reason: 'membership_scope_mismatch' })
+      await withOrg(member.orgId, async (tx) => {
+        await tx
+          .update(orgMemberships)
+          .set({ status: 'deactivated' })
+          .where(eq(orgMemberships.userId, member.userId))
+      })
+      await expect(
+        isOrgMemberForScheduledTask({ organizationId: member.orgId, userId: member.userId })
+      ).resolves.toEqual({ status: 'denied' })
+      await withOrg(member.orgId, async (tx) => {
+        await tx
+          .update(orgMemberships)
+          .set({ status: 'active' })
+          .where(eq(orgMemberships.userId, member.userId))
+      })
     })
 
     const exchanged = await app.inject({
@@ -345,7 +375,7 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
   it('denies a grant and refuses a second decision', async () => {
     const member = await registerAndLoginViaApi(app, {
       email: `device-deny-${randomUUID()}@example.com`,
-      password: PASSWORD,
+      password: TEST_CREDENTIAL,
       orgName: `Device Deny ${randomUUID()}`,
     })
     const started = await start()
@@ -377,7 +407,7 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
   it('refuses a platform operator who has no authenticator enrolled', async () => {
     const member = await registerAndLoginViaApi(app, {
       email: `device-no-totp-${randomUUID()}@example.com`,
-      password: PASSWORD,
+      password: TEST_CREDENTIAL,
       orgName: `Device No Totp ${randomUUID()}`,
     })
     await getDb()
@@ -416,7 +446,7 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
   it('does not issue a session after the approving session is revoked', async () => {
     const member = await registerAndLoginViaApi(app, {
       email: `device-revoke-${randomUUID()}@example.com`,
-      password: PASSWORD,
+      password: TEST_CREDENTIAL,
       orgName: `Device Revoke ${randomUUID()}`,
     })
     const started = await start()
@@ -464,7 +494,7 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
   ])('does not issue a session after the approving session is %s', async (_state, stale) => {
     const member = await registerAndLoginViaApi(app, {
       email: `device-stale-${randomUUID()}@example.com`,
-      password: PASSWORD,
+      password: TEST_CREDENTIAL,
       orgName: `Device Stale ${randomUUID()}`,
     })
     const started = await start()
