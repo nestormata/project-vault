@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { isOrgMemberForScheduledTask, withScheduledTaskOrganization } from './org-membership.js'
 import { raceWithTimeout } from './race-with-timeout.js'
 
@@ -13,17 +14,17 @@ describe('scheduled membership scope lifetime', () => {
     'revokes detached continuations after the invocation is %s',
     async (outcome) => {
       vi.useFakeTimers()
+      const organizationId = randomUUID()
+      const userId = randomUUID()
       resolveActiveOrgRole.mockResolvedValue('member')
       let resume = () => {}
       const gate = new Promise<void>((resolve) => {
         resume = resolve
       })
       let detachedCheck: ReturnType<typeof isOrgMemberForScheduledTask> | undefined
-      const invocation = withScheduledTaskOrganization('org-a', () =>
+      const invocation = withScheduledTaskOrganization(organizationId, () =>
         raceWithTimeout(async () => {
-          detachedCheck = gate.then(() =>
-            isOrgMemberForScheduledTask({ organizationId: 'org-a', userId: 'user-a' })
-          )
+          detachedCheck = gate.then(() => isOrgMemberForScheduledTask({ organizationId, userId }))
           if (outcome === 'rejected') throw new Error('task failed')
           if (outcome === 'timed-out') await gate
         }, 10)
