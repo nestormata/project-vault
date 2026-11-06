@@ -264,9 +264,8 @@ export async function invokeOneTask(
       hostServices: fresh.hostServices,
     }
 
-    const raced = await raceWithTimeout(
-      () => withScheduledTaskOrganization(tuple.orgId, () => fresh.invoke(context)),
-      EXTENSION_CALLOUT_TIMEOUT_MS
+    const raced = await withScheduledTaskOrganization(tuple.orgId, () =>
+      raceWithTimeout(() => fresh.invoke(context), EXTENSION_CALLOUT_TIMEOUT_MS)
     )
     const durationMs = Math.round(performance.now() - start)
 

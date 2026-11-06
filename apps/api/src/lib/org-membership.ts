@@ -8,7 +8,10 @@ import { operationalLog } from './logger.js'
 const UNAVAILABLE_REASON = 'membership_check_failed'
 const scheduledTaskScopeUnavailable = 'membership_scope_unavailable'
 const scheduledTaskScopeMismatch = 'membership_scope_mismatch'
-const scheduledTaskOrganization = new AsyncLocalStorage<string>()
+const scheduledTaskOrganization = new AsyncLocalStorage<{
+  organizationId: string
+  active: boolean
+}>()
 const membershipCheckInFlight = new Map<string, number>()
 const MAX_MEMBERSHIP_CHECKS_IN_FLIGHT_PER_EXTENSION = 20
 
@@ -18,8 +21,18 @@ type ScheduledTaskMembershipHostContext = {
   maxInFlight?: number
 }
 
-export function withScheduledTaskOrganization<T>(organizationId: string, callback: () => T): T {
-  return scheduledTaskOrganization.run(organizationId, callback)
+export function withScheduledTaskOrganization<T>(
+  organizationId: string,
+  callback: () => T | Promise<T>
+): Promise<T> {
+  const scope = { organizationId, active: true }
+  return scheduledTaskOrganization.run(scope, async () => {
+    try {
+      return await callback()
+    } finally {
+      scope.active = false
+    }
+  })
 }
 
 function recordScheduledTaskMembershipCheck(
@@ -95,7 +108,8 @@ export async function isOrgMemberForScheduledTask(
   check: OrgMembershipCheck,
   hostContext: ScheduledTaskMembershipHostContext = { extensionName: 'unknown-extension' }
 ): Promise<OrgMembershipResult> {
-  const organizationId = scheduledTaskOrganization.getStore()
+  const scope = scheduledTaskOrganization.getStore()
+  const organizationId = scope?.active ? scope.organizationId : undefined
   const result = await resolveScheduledTaskMembership(check, organizationId, hostContext)
   recordScheduledTaskMembershipCheck(check, organizationId, result, hostContext)
   return result
