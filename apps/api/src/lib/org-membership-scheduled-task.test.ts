@@ -1,7 +1,12 @@
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { isOrgMemberForScheduledTask, withScheduledTaskOrganization } from './org-membership.js'
 
 const isOrgMember = vi.hoisted(() => vi.fn())
+const ORG_A = randomUUID()
+const ORG_B = randomUUID()
+const USER_A = randomUUID()
+const USER_B = randomUUID()
 
 vi.mock('../plugins/authenticate.js', () => ({
   resolveActiveOrgRole: isOrgMember,
@@ -12,7 +17,7 @@ describe('scheduled-task organization membership scope', () => {
     isOrgMember.mockResolvedValue('member')
 
     await expect(
-      isOrgMemberForScheduledTask({ organizationId: 'org-a', userId: 'user-a' })
+      isOrgMemberForScheduledTask({ organizationId: ORG_A, userId: USER_A })
     ).resolves.toEqual({ status: 'unavailable', reason: 'membership_scope_unavailable' })
     expect(isOrgMember).not.toHaveBeenCalled()
   })
@@ -20,38 +25,38 @@ describe('scheduled-task organization membership scope', () => {
   it('answers only for the organization bound by PV to the current task', async () => {
     isOrgMember.mockResolvedValue('member')
 
-    await withScheduledTaskOrganization('org-a', async () => {
+    await withScheduledTaskOrganization(ORG_A, async () => {
       await expect(
-        isOrgMemberForScheduledTask({ organizationId: 'org-a', userId: 'user-a' })
+        isOrgMemberForScheduledTask({ organizationId: ORG_A, userId: USER_A })
       ).resolves.toEqual({ status: 'allowed' })
       await expect(
-        isOrgMemberForScheduledTask({ organizationId: 'org-b', userId: 'user-a' })
+        isOrgMemberForScheduledTask({ organizationId: ORG_B, userId: USER_A })
       ).resolves.toEqual({ status: 'unavailable', reason: 'membership_scope_mismatch' })
     })
 
     expect(isOrgMember).toHaveBeenCalledTimes(1)
-    expect(isOrgMember).toHaveBeenCalledWith('user-a', 'org-a')
+    expect(isOrgMember).toHaveBeenCalledWith(USER_A, ORG_A)
   })
 
   it('keeps concurrent task organizations isolated across asynchronous work', async () => {
     isOrgMember.mockImplementation(async (userId: string, organizationId: string) => {
-      await new Promise((resolve) => setTimeout(resolve, organizationId === 'org-a' ? 5 : 1))
+      await new Promise((resolve) => setTimeout(resolve, organizationId === ORG_A ? 5 : 1))
       return `${userId}:${organizationId}`
     })
 
     const results = await Promise.all([
-      withScheduledTaskOrganization('org-a', () =>
-        isOrgMemberForScheduledTask({ organizationId: 'org-a', userId: 'user-a' })
+      withScheduledTaskOrganization(ORG_A, () =>
+        isOrgMemberForScheduledTask({ organizationId: ORG_A, userId: USER_A })
       ),
-      withScheduledTaskOrganization('org-b', () =>
-        isOrgMemberForScheduledTask({ organizationId: 'org-b', userId: 'user-b' })
+      withScheduledTaskOrganization(ORG_B, () =>
+        isOrgMemberForScheduledTask({ organizationId: ORG_B, userId: USER_B })
       ),
     ])
 
     expect(results).toEqual([{ status: 'allowed' }, { status: 'allowed' }])
     expect(isOrgMember.mock.calls).toEqual([
-      ['user-a', 'org-a'],
-      ['user-b', 'org-b'],
+      [USER_A, ORG_A],
+      [USER_B, ORG_B],
     ])
   })
 
@@ -59,10 +64,10 @@ describe('scheduled-task organization membership scope', () => {
     isOrgMember.mockRejectedValue(new Error('database detail'))
     const logger = { info: vi.fn(), warn: vi.fn() }
 
-    await withScheduledTaskOrganization('org-a', async () => {
+    await withScheduledTaskOrganization(ORG_A, async () => {
       await expect(
         isOrgMemberForScheduledTask(
-          { organizationId: 'org-a', userId: 'user-a' },
+          { organizationId: ORG_A, userId: USER_A },
           { extensionName: 'com.example.test', logger }
         )
       ).resolves.toEqual({ status: 'unavailable', reason: 'membership_check_failed' })
@@ -80,12 +85,12 @@ describe('scheduled-task organization membership scope', () => {
     const logger = { info: vi.fn(), warn: vi.fn() }
     const hostContext = { extensionName: 'com.example.limited', logger, maxInFlight: 1 }
 
-    const first = withScheduledTaskOrganization('org-a', () =>
-      isOrgMemberForScheduledTask({ organizationId: 'org-a', userId: 'user-a' }, hostContext)
+    const first = withScheduledTaskOrganization(ORG_A, () =>
+      isOrgMemberForScheduledTask({ organizationId: ORG_A, userId: USER_A }, hostContext)
     )
     await expect(
-      withScheduledTaskOrganization('org-a', () =>
-        isOrgMemberForScheduledTask({ organizationId: 'org-a', userId: 'user-b' }, hostContext)
+      withScheduledTaskOrganization(ORG_A, () =>
+        isOrgMemberForScheduledTask({ organizationId: ORG_A, userId: USER_B }, hostContext)
       )
     ).resolves.toEqual({ status: 'unavailable', reason: 'membership_check_rate_limited' })
     expect(logger.warn).toHaveBeenCalledWith(
@@ -93,7 +98,7 @@ describe('scheduled-task organization membership scope', () => {
       'scheduled-task membership check was rate limited'
     )
     expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'error', organizationId: 'org-a' }),
+      expect.objectContaining({ outcome: 'error', organizationId: ORG_A }),
       'scheduled-task membership check recorded'
     )
 

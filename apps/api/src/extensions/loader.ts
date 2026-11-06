@@ -29,6 +29,7 @@ import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.js'
 import { checkOrgAuthorization } from '../lib/org-authorization.js'
 import { isOrgMemberForScheduledTask } from '../lib/org-membership.js'
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { checkProjectAuthorization } from '../lib/project-authorization.js'
 import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
 import { createExtensionRequestStateHost } from '../lib/extension-request-state-host.js'
@@ -520,7 +521,7 @@ async function runAuditFanout(
     return
   }
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       await auditWriter(orgId, eventType, payload)
     } catch {
@@ -532,7 +533,7 @@ async function runAuditFanout(
         { orgId, subReason: 'audit_write_failed' }
       )
     }
-  }
+  })
 }
 
 type LoadOutcome = {

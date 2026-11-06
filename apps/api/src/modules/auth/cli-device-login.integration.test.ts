@@ -214,6 +214,12 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
       await expect(
         isOrgMemberForScheduledTask({ organizationId: operator.orgId, userId: member.userId })
       ).resolves.toEqual({ status: 'unavailable', reason: 'membership_scope_mismatch' })
+      await expect(
+        isOrgMemberForScheduledTask({ organizationId: member.orgId, userId: operator.userId })
+      ).resolves.toEqual({ status: 'denied' })
+      await expect(
+        isOrgMemberForScheduledTask({ organizationId: member.orgId, userId: randomUUID() })
+      ).resolves.toEqual({ status: 'denied' })
       await withOrg(member.orgId, async (tx) => {
         await tx
           .update(orgMemberships)
@@ -229,6 +235,14 @@ describe('browser-approved CLI sign-in (Story 43.30)', () => {
           .set({ status: 'active' })
           .where(eq(orgMemberships.userId, member.userId))
       })
+    })
+    await withScheduledTaskOrganization(operator.orgId, async () => {
+      await expect(
+        isOrgMemberForScheduledTask({ organizationId: operator.orgId, userId: operator.userId })
+      ).resolves.toEqual({ status: 'allowed' })
+      await expect(
+        isOrgMemberForScheduledTask({ organizationId: operator.orgId, userId: member.userId })
+      ).resolves.toEqual({ status: 'denied' })
     })
 
     const exchanged = await app.inject({

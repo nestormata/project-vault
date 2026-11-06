@@ -462,6 +462,7 @@ describe('loadExtension — audit fanout failure isolation (judgment call #4)', 
     ).resolves.toBeUndefined()
 
     expect(auditWriter).toHaveBeenCalledTimes(2)
+    expect(auditWriter.mock.calls.map(([orgId]) => orgId)).toEqual(['org-1', 'org-2'])
     expect(getExtensionStatus().status).toBe('loaded')
   })
 

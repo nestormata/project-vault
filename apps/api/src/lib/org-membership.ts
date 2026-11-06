@@ -3,11 +3,13 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { FastifyBaseLogger } from 'fastify'
 import { OperationalEvent } from '@project-vault/shared'
 import { resolveActiveOrgRole } from '../plugins/authenticate.js'
+import { isUuid } from '../middleware/rls.js'
 import { operationalLog } from './logger.js'
 
 const UNAVAILABLE_REASON = 'membership_check_failed'
 const scheduledTaskScopeUnavailable = 'membership_scope_unavailable'
 const scheduledTaskScopeMismatch = 'membership_scope_mismatch'
+const scheduledTaskInvalidIdentifier = 'membership_check_invalid_identifier'
 const scheduledTaskOrganization = new AsyncLocalStorage<{
   organizationId: string
   active: boolean
@@ -70,37 +72,54 @@ async function resolveScheduledTaskMembership(
   organizationId: string | undefined,
   hostContext: ScheduledTaskMembershipHostContext
 ): Promise<OrgMembershipResult> {
+  const invalidScopeReason = getScheduledTaskMembershipScopeReason(check, organizationId)
+  if (invalidScopeReason) return { status: 'unavailable', reason: invalidScopeReason }
+
   const accountingKey = `scheduled-membership:${hostContext.extensionName}`
   const inFlight = membershipCheckInFlight.get(accountingKey) ?? 0
   const maxInFlight = hostContext.maxInFlight ?? MAX_MEMBERSHIP_CHECKS_IN_FLIGHT_PER_EXTENSION
   if (inFlight >= maxInFlight) {
-    try {
-      operationalLog(
-        hostContext.logger ?? {},
-        'warn',
-        OperationalEvent.ORG_AUTHORIZATION_RATE_LIMITED,
-        'scheduled-task membership check was rate limited',
-        { extensionName: hostContext.extensionName }
-      )
-    } catch {
-      // Logging must not change the host's fail-closed result.
-    }
+    recordScheduledTaskMembershipRateLimit(hostContext)
     return { status: 'unavailable', reason: 'membership_check_rate_limited' }
   }
 
   membershipCheckInFlight.set(accountingKey, inFlight + 1)
   try {
-    if (organizationId === undefined) {
-      return { status: 'unavailable', reason: scheduledTaskScopeUnavailable }
-    }
-    if (check.organizationId !== organizationId) {
-      return { status: 'unavailable', reason: scheduledTaskScopeMismatch }
-    }
     return await isOrgMember(check)
   } finally {
     const current = membershipCheckInFlight.get(accountingKey) ?? 0
     if (current <= 1) membershipCheckInFlight.delete(accountingKey)
     else membershipCheckInFlight.set(accountingKey, current - 1)
+  }
+}
+
+function getScheduledTaskMembershipScopeReason(
+  check: OrgMembershipCheck,
+  organizationId: string | undefined
+): string | undefined {
+  if (organizationId === undefined || !isUuid(organizationId)) {
+    return scheduledTaskScopeUnavailable
+  }
+  if (!isUuid(check.organizationId) || !isUuid(check.userId)) {
+    return scheduledTaskInvalidIdentifier
+  }
+  if (check.organizationId !== organizationId) {
+    return scheduledTaskScopeMismatch
+  }
+  return undefined
+}
+
+function recordScheduledTaskMembershipRateLimit(hostContext: ScheduledTaskMembershipHostContext) {
+  try {
+    operationalLog(
+      hostContext.logger ?? {},
+      'warn',
+      OperationalEvent.ORG_AUTHORIZATION_RATE_LIMITED,
+      'scheduled-task membership check was rate limited',
+      { extensionName: hostContext.extensionName }
+    )
+  } catch {
+    // Logging must not change the host's fail-closed result.
   }
 }
 
