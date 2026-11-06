@@ -51,12 +51,6 @@ export const FS_ACCESS_MODULES = [
 // name; the repo-relative pin above is what makes the exemption narrow.
 const FS_ACCESS_GLOBS = ['**/fs-access.ts', '**/fs-access.mjs']
 
-// Ledgered carve-out from `no-await-in-loop` (Story 66-17, deferred-work DW-582):
-// apps/api/src/extensions/loader.ts cannot be changed without an extension-api version bump
-// (check-extension-api-version-skew lists it), so its one sequential audit-fanout loop stays until
-// that bump. Remove this entry when the loop is converted. A guard test pins this list.
-export const NO_AWAIT_IN_LOOP_CARVE_OUTS = ['**/src/extensions/loader.ts']
-
 /**
  * Story 66-17: the locally reproducible SonarCloud rules that are NOT clean repo-wide, so they are
  * not in `baseRules`. They are switched on only when `PV_SONAR_LOCAL=1` (set by
@@ -197,7 +191,7 @@ export const baseRules = [
     // (131 fixed + 1 open) has 0 test-file hits although the tests contain ~300 sequential awaits,
     // so test/spec/e2e files stay out of scope (sequential by design). See ~/specs/pv-cm-quality-gates.md.
     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.mjs', '**/*.cjs'],
-    ignores: [...TEST_FILE_GLOBS, ...NO_AWAIT_IN_LOOP_CARVE_OUTS],
+    ignores: TEST_FILE_GLOBS,
     rules: {
       'no-await-in-loop': 'error',
     },

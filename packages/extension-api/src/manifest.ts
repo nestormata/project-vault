@@ -667,7 +667,9 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // so a manifest declaring 3.38.0 or older behaves exactly as before.
 // Story 43.30 — bumped as a minor (3.39.0 -> 3.40.0): `HostServices.membership.isOrgMember`
 // (policy row 1). Additive. `orgAuthorization.checkMembership` is unchanged.
-export const EXTENSION_API_VERSION = '3.40.0'
+// Story 73.11 — bumped as a minor (3.40.0 -> 3.41.0): scheduled-task membership checks are
+// bound to PV's current organization invocation and refuse calls outside that scope (policy row 1).
+export const EXTENSION_API_VERSION = '3.41.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

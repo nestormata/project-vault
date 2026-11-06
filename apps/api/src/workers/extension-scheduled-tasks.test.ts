@@ -7,6 +7,7 @@ import { insertTestProject, withTestOrg } from '@project-vault/db/test-helpers'
 import type { ExtensionManifest, ScheduledTaskContext } from '@project-vault/extension-api'
 import { __resetExtensionStateForTests } from '../extensions/loader.js'
 import { buildMonitoringHost } from '../lib/monitoring-host.js'
+import { isOrgMemberForScheduledTask } from '../lib/org-membership.js'
 import { withTwoTestOrgs } from './worker-test-helpers.js'
 import { withExpiryAlertTestOrg } from './expiry-alert-test-helpers.js'
 import { fakeHostServices, setExtension } from './extension-scheduled-tasks-test-helpers.js'
@@ -149,6 +150,50 @@ describe('runScheduledTasksTick — AC1/AC2 invocation + isolation (DB integrati
       const run = await readRun(orgId, manifest.name, PROBE_SWEEP)
       expect(run?.lastOutcome).toBe('success')
       expect(run?.lastRunAt).not.toBeNull()
+    })
+  })
+
+  it('binds membership checks to the organization tuple for the full scheduled invocation', async () => {
+    const outcomes: Array<{ organizationId: string; status: string; reason?: string }> = []
+    const hostServices = fakeHostServices({
+      membership: { isOrgMember: isOrgMemberForScheduledTask },
+    })
+    const manifest = singleTaskManifest('com.acme.scoped-membership')
+    setExtension(
+      manifest,
+      {
+        scheduledTask: {
+          onScheduledTask: async ({ organizationId, hostServices: taskHost }) => {
+            const sameOrg = await taskHost.membership.isOrgMember({
+              organizationId,
+              userId: randomUUID(),
+            })
+            const otherOrg = await taskHost.membership.isOrgMember({
+              organizationId: randomUUID(),
+              userId: randomUUID(),
+            })
+            outcomes.push({
+              organizationId,
+              status: sameOrg.status,
+              ...('reason' in sameOrg && { reason: sameOrg.reason }),
+            })
+            outcomes.push({
+              organizationId,
+              status: otherOrg.status,
+              ...('reason' in otherOrg && { reason: otherOrg.reason }),
+            })
+          },
+        },
+      },
+      hostServices
+    )
+
+    await withTestOrg(async ({ orgId }) => {
+      await invokeOneTask({ orgId, taskName: PROBE_SWEEP }, manifest.name, undefined)
+      expect(outcomes).toEqual([
+        { organizationId: orgId, status: 'denied' },
+        { organizationId: orgId, status: 'unavailable', reason: 'membership_scope_mismatch' },
+      ])
     })
   })
 
