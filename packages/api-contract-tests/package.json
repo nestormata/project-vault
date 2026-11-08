@@ -14,17 +14,17 @@
     "@project-vault/db": "workspace:*",
     "@project-vault/shared": "workspace:*",
     "drizzle-orm": "^0.45.4",
-    "postgres": "^3.4.5"
+    "postgres": "^4.0.0"
   },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
     "@types/node": "^26.6.6",
     "ajv": "^8.18.0",
-    "eslint": "^10.13.0",
-    "otpauth": "9.5.2",
+    "eslint": "^10.14.0",
+    "otpauth": "9.6.0",
     "tsx": "4.23.15",
-    "typescript": "^6.0.3",
-    "vitest": "^5.0.5"
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   }
 }
