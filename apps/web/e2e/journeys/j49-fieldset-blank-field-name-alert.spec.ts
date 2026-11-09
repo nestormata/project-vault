@@ -22,7 +22,7 @@ function fieldName(page: Page, index: number) {
 
 function fieldCard(page: Page, index: number) {
   return fieldName(page, index).locator(
-    'xpath=ancestor::div[contains(@class,"space-y-1") and contains(@class,"rounded-xl")][1]'
+    'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " space-y-1 ") and contains(concat(" ", normalize-space(@class), " "), " rounded-xl ")][1]'
   )
 }
 
@@ -58,7 +58,9 @@ async function openLoginTemplate(
 
 function isCredentialDetailPath(projectId: string, pathname: string): boolean {
   const prefix = `/projects/${projectId}/credentials/`
-  return pathname.startsWith(prefix) && pathname !== `${prefix}new`
+  if (!pathname.startsWith(prefix)) return false
+  const rest = pathname.slice(prefix.length).replace(/\/$/, '')
+  return rest.length > 0 && rest !== 'new' && !rest.startsWith('new/')
 }
 
 describeEachAppearance('J49 blank field-name alert in the field-set editor', (appearance) => {
