@@ -2,7 +2,7 @@
   "name": "@project-vault/cli",
   "version": "0.0.1",
   "private": true,
-  "description": "Terminal CLI for fetching and injecting Project Vault secrets. Binary name is `pvault` (not `pv` — see README's \"Package/binary name\" decision).",
+  "description": "Terminal CLI for fetching and injecting Project Vault secrets. Binary name is `pvault` (not `pv` \u2014 see README's \"Package/binary name\" decision).",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "./dist/index.js",
@@ -32,10 +32,10 @@
     "@project-vault/tsconfig": "workspace:*",
     "@types/node": "^26.6.6",
     "@vercel/ncc": "0.45.0",
-    "@vitest/coverage-v8": "^5.0.5",
-    "eslint": "^10.13.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "eslint": "^10.14.0",
     "postgres": "^3.4.5",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   }
 }

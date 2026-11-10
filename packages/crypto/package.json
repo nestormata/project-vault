@@ -19,15 +19,15 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "argon2": "0.45.1"
+    "argon2": "0.45.2"
   },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
     "@types/node": "^26.6.6",
-    "@vitest/coverage-v8": "^5.0.5",
-    "eslint": "^10.13.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "eslint": "^10.14.0",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   }
 }
