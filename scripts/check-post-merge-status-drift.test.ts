@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { writeFixture } from './lib/fixture-test-helpers.js'
 import { trustedGit } from './lib/trusted-executable.js'
@@ -50,7 +51,7 @@ function writeSprintStatus(root: string, yaml: string): void {
 /** Crafts a real merge commit (two parents — `git log --merges` only matches those) with the
  * exact subject line GitHub's merge-commit UI produces. Uses a throwaway local branch + `--no-ff`
  * merge so the resulting commit has the right shape without needing a real PR/remote. */
-function mergeCommit(root: string, prNumber: number, branch: string): string {
+function mergeCommit(root: string, prNumber: number, branch: string, subjectSuffix = ''): string {
   const localBranch = `pr-${prNumber}`
   git(root, ['checkout', '-b', localBranch])
   writeFixture(root, `pr-${prNumber}.txt`, `content for PR #${prNumber}\n`)
@@ -62,11 +63,19 @@ function mergeCommit(root: string, prNumber: number, branch: string): string {
     '--no-ff',
     localBranch,
     '-m',
-    `Merge pull request #${prNumber} from ${branch}`,
+    `Merge pull request #${prNumber} from ${branch}${subjectSuffix}`,
   ])
   git(root, ['branch', '-D', localBranch])
   return git(root, ['rev-parse', 'HEAD'])
 }
+
+const DRIFT_SOURCE = readFileSync(
+  fileURLToPath(new URL('./check-post-merge-status-drift.ts', import.meta.url)),
+  'utf8'
+)
+const MERGE_SUBJECT_PATTERN_LINE = /^const MERGE_SUBJECT_PATTERN = (\/.+\/)$/m
+const ANCHORED_MERGE_SUBJECT_PATTERN =
+  '/^Merge pull request #(\\d+) from [^/]+\\/feature\\/(\\S+)$/'
 
 const tempRoots: string[] = []
 afterEach(() => {
@@ -80,6 +89,14 @@ function makeFixtureRepo(): { root: string } {
   tempRoots.push(fixture.root)
   return fixture
 }
+
+describe('MERGE_SUBJECT_PATTERN end-of-string anchor', () => {
+  it('keeps the production literal end-anchored and the comment in agreement', () => {
+    expect(DRIFT_SOURCE).toContain('anchored end-of-string')
+    const line = MERGE_SUBJECT_PATTERN_LINE.exec(DRIFT_SOURCE)
+    expect(line?.[1]).toBe(ANCHORED_MERGE_SUBJECT_PATTERN)
+  })
+})
 
 describe('getMergeCommits', () => {
   it('extracts sha + subject for merge commits only, ignoring regular commits', () => {
@@ -174,6 +191,22 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     mergeCommit(root, 300, BRANCH_9_3_FOO)
     mergeCommit(root, 301, BRANCH_9_3_FOO)
 
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
+  })
+
+  it('does not match a merge subject with characters after the slug', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  1-1-foo: ${STATUS_REVIEW}
+`
+    )
+    mergeCommit(root, 100, BRANCH_1_1_FOO, ' extra-junk')
+
+    expect(getMergeCommits(root)[0]?.subject).toBe(
+      `Merge pull request #100 from ${BRANCH_1_1_FOO} extra-junk`
+    )
     expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 
