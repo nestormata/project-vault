@@ -54,12 +54,7 @@ function recordScheduledTaskMembershipCheck(
         organizationId: organizationId ?? 'unbound-context',
         viewerIdentityId: check.userId,
         minimumRole: 'membership',
-        outcome:
-          result.status === 'allowed'
-            ? 'authorized'
-            : result.status === 'denied'
-              ? 'denied'
-              : 'error',
+        outcome: membershipCheckOutcome(result),
       }
     )
   } catch {
@@ -109,6 +104,12 @@ function getScheduledTaskMembershipScopeReason(
   return undefined
 }
 
+function membershipCheckOutcome(result: OrgMembershipResult): 'authorized' | 'denied' | 'error' {
+  if (result.status === 'allowed') return 'authorized'
+  if (result.status === 'denied') return 'denied'
+  return 'error'
+}
+
 function recordScheduledTaskMembershipRateLimit(hostContext: ScheduledTaskMembershipHostContext) {
   try {
     operationalLog(
@@ -123,9 +124,13 @@ function recordScheduledTaskMembershipRateLimit(hostContext: ScheduledTaskMember
   }
 }
 
+const UNKNOWN_SCHEDULED_TASK_HOST: ScheduledTaskMembershipHostContext = {
+  extensionName: 'unknown-extension',
+}
+
 export async function isOrgMemberForScheduledTask(
   check: OrgMembershipCheck,
-  hostContext: ScheduledTaskMembershipHostContext = { extensionName: 'unknown-extension' }
+  hostContext: ScheduledTaskMembershipHostContext = UNKNOWN_SCHEDULED_TASK_HOST
 ): Promise<OrgMembershipResult> {
   const scope = scheduledTaskOrganization.getStore()
   const organizationId = scope?.active ? scope.organizationId : undefined
