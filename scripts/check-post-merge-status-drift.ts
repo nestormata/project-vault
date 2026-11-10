@@ -44,11 +44,12 @@ export type PostMergeDriftReport = {
 }
 
 /** Matches `Merge pull request #<N> from <owner>/feature/<slug>` exactly, anchored end-of-string.
+ * The slug is non-whitespace (`\S+`), so characters after it on the same line do not match.
  * Branches that aren't `feature/<slug>` (chore/, fix/, retro/, ...) simply don't match at all.
  * The story id inside the slug is `<digits>-<digits>` plus one optional trailing letter
  * (`24-5b`). The id is followed by a hyphen, so `1-1-foo` cannot match `1-11-foobar` and
  * `24-5-...` cannot match `24-5b-...`. */
-const MERGE_SUBJECT_PATTERN = /^Merge pull request #(\d+) from [^/]+\/feature\/(.+)$/
+const MERGE_SUBJECT_PATTERN = /^Merge pull request #(\d+) from [^/]+\/feature\/(\S+)$/
 const STORY_ID_PREFIX = /^(\d+-\d+[a-z]?)-/
 const OK_LINE = 'check-post-merge-status-drift: no merged-PR / sprint-status drift found — OK\n'
 
