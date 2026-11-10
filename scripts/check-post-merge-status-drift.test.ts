@@ -23,6 +23,7 @@ const NO_DRIFT = { drifts: [], ambiguities: [] }
 const KEY_12_3_ALPHA = '12-3-alpha'
 const KEY_12_3_BETA = '12-3-beta'
 const SLUG_12_3_SHORT = '12-3-short'
+const KEY_14_8_SOME_STORY = '14-8-some-story'
 
 function git(cwd: string, args: string[]): string {
   return trustedGit(cwd, args).trim()
@@ -123,14 +124,19 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     writeSprintStatus(
       root,
       `development_status:
-  14-8-some-story: review
+  ${KEY_14_8_SOME_STORY}: review
 `
     )
-    const sha = mergeCommit(root, 243, 'nestormata/feature/14-8-some-story')
+    const sha = mergeCommit(root, 243, `nestormata/feature/${KEY_14_8_SOME_STORY}`)
 
     expect(scanPostMergeStatusDrift(root)).toEqual({
       drifts: [
-        { storyKey: '14-8-some-story', status: STATUS_REVIEW, prNumber: 243, mergeCommitSha: sha },
+        {
+          storyKey: KEY_14_8_SOME_STORY,
+          status: STATUS_REVIEW,
+          prNumber: 243,
+          mergeCommitSha: sha,
+        },
       ],
       ambiguities: [],
     })
@@ -397,5 +403,30 @@ describe('formatPostMergeDriftReport', () => {
     expect(report.stderr).toContain(KEY_12_3_ALPHA)
     expect(report.stderr).toContain(KEY_12_3_BETA)
     expect(report.stderr).toContain(SLUG_12_3_SHORT)
+  })
+
+  it('prints the drift FATAL for a drift-only report and does not mention ambiguity', () => {
+    const mergeCommitSha = 'abcdef1234567890'
+    const shortSha = mergeCommitSha.slice(0, 7)
+    const report = formatPostMergeDriftReport({
+      drifts: [
+        {
+          storyKey: KEY_14_8_SOME_STORY,
+          status: STATUS_REVIEW,
+          prNumber: 243,
+          mergeCommitSha,
+        },
+      ],
+      ambiguities: [],
+    })
+
+    expect(report.exitCode).toBe(1)
+    expect(report.stdout).toBe('')
+    expect(report.stderr).toContain(KEY_14_8_SOME_STORY)
+    expect(report.stderr).toContain(STATUS_REVIEW)
+    expect(report.stderr).toContain('243')
+    expect(report.stderr).toContain(shortSha)
+    expect(report.stderr).not.toContain(mergeCommitSha)
+    expect(report.stderr).not.toContain('refusing to guess')
   })
 })
