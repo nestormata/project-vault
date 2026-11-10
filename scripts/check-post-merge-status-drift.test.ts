@@ -13,6 +13,10 @@ import {
 const SPRINT_STATUS_PATH = '_bmad-output/implementation-artifacts/sprint-status.yaml'
 const BRANCH_1_1_FOO = 'nestormata/feature/1-1-foo'
 const BRANCH_9_3_FOO = 'nestormata/feature/9-3-foo'
+const BRANCH_EPIC_20 = 'nestormata/feature/epic-20'
+const BRANCH_24_5_ID_ONLY = 'nestormata/feature/24-5'
+const BRANCH_24_5B_UPPER = 'nestormata/feature/24-5B-short'
+const KEY_24_5_PLAIN = '24-5-plain'
 const STATUS_REVIEW = 'review'
 const NO_DRIFT = { drifts: [], ambiguities: [] }
 const KEY_12_3_ALPHA = '12-3-alpha'
@@ -256,7 +260,7 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     writeSprintStatus(
       root,
       `development_status:
-  24-5-plain: done
+  ${KEY_24_5_PLAIN}: done
   24-5b-letter: ${STATUS_REVIEW}
 `
     )
@@ -327,6 +331,35 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     const root = mkdtempSync(join(tmpdir(), 'post-merge-status-drift-not-git-2-'))
     tempRoots.push(root)
     expect(() => scanPostMergeStatusDrift(root)).toThrow()
+  })
+})
+
+describe('scanPostMergeStatusDrift skipped slug shapes (story 74-12)', { timeout: 60_000 }, () => {
+  it('skips feature/epic-20 even when 20-1-foo is not done', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  20-1-foo: ${STATUS_REVIEW}
+`
+    )
+    mergeCommit(root, 200, BRANCH_EPIC_20)
+
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
+  })
+
+  it('skips id-only feature/24-5 and uppercase feature/24-5B-short even when 24-5-plain is not done', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  ${KEY_24_5_PLAIN}: ${STATUS_REVIEW}
+`
+    )
+    mergeCommit(root, 245, BRANCH_24_5_ID_ONLY)
+    mergeCommit(root, 246, BRANCH_24_5B_UPPER)
+
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 })
 
