@@ -17,6 +17,7 @@ const BRANCH_EPIC_20 = 'nestormata/feature/epic-20'
 const BRANCH_24_5_ID_ONLY = 'nestormata/feature/24-5'
 const BRANCH_24_5B_UPPER = 'nestormata/feature/24-5B-short'
 const KEY_24_5_PLAIN = '24-5-plain'
+const KEY_24_5B_LETTER = '24-5b-letter'
 const STATUS_REVIEW = 'review'
 const NO_DRIFT = { drifts: [], ambiguities: [] }
 const KEY_12_3_ALPHA = '12-3-alpha'
@@ -261,7 +262,7 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
       root,
       `development_status:
   ${KEY_24_5_PLAIN}: done
-  24-5b-letter: ${STATUS_REVIEW}
+  ${KEY_24_5B_LETTER}: ${STATUS_REVIEW}
 `
     )
     mergeCommit(root, 240, 'nestormata/feature/24-5-plain-short')
@@ -270,7 +271,7 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     expect(scanPostMergeStatusDrift(root)).toEqual({
       drifts: [
         {
-          storyKey: '24-5b-letter',
+          storyKey: KEY_24_5B_LETTER,
           status: STATUS_REVIEW,
           prNumber: 241,
           mergeCommitSha: sha,
@@ -348,12 +349,13 @@ describe('scanPostMergeStatusDrift skipped slug shapes (story 74-12)', { timeout
     expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 
-  it('skips id-only feature/24-5 and uppercase feature/24-5B-short even when 24-5-plain is not done', () => {
+  it('skips id-only feature/24-5 and uppercase feature/24-5B-short even when 24-5-plain and 24-5b-letter are not done', () => {
     const { root } = makeFixtureRepo()
     writeSprintStatus(
       root,
       `development_status:
   ${KEY_24_5_PLAIN}: ${STATUS_REVIEW}
+  ${KEY_24_5B_LETTER}: ${STATUS_REVIEW}
 `
     )
     mergeCommit(root, 245, BRANCH_24_5_ID_ONLY)
