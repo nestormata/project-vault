@@ -8,6 +8,7 @@ import { env } from '../config/env.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { getExtensionStatus } from '../extensions/loader.js'
 import { raceWithTimeout } from '../lib/race-with-timeout.js'
+import { withScheduledTaskOrganization } from '../lib/org-membership.js'
 import { EXTENSION_CALLOUT_TIMEOUT_MS } from '../lib/extension-callout-timeout.js'
 import { operationalLog, serializeLogError } from '../lib/logger.js'
 import { runWithConcurrencyLimit } from './monitoring-health-check.js'
@@ -263,7 +264,9 @@ export async function invokeOneTask(
       hostServices: fresh.hostServices,
     }
 
-    const raced = await raceWithTimeout(() => fresh.invoke(context), EXTENSION_CALLOUT_TIMEOUT_MS)
+    const raced = await withScheduledTaskOrganization(tuple.orgId, () =>
+      raceWithTimeout(() => fresh.invoke(context), EXTENSION_CALLOUT_TIMEOUT_MS)
+    )
     const durationMs = Math.round(performance.now() - start)
 
     if (raced.status === 'resolved') {

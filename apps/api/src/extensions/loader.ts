@@ -28,7 +28,8 @@ import { raceWithTimeout as sharedRaceWithTimeout } from '../lib/race-with-timeo
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.js'
 import { checkOrgAuthorization } from '../lib/org-authorization.js'
-import { isOrgMember } from '../lib/org-membership.js'
+import { isOrgMemberForScheduledTask } from '../lib/org-membership.js'
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { checkProjectAuthorization } from '../lib/project-authorization.js'
 import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
 import { createExtensionRequestStateHost } from '../lib/extension-request-state-host.js'
@@ -322,7 +323,8 @@ async function buildHostServices(
     // object, same as monitoring/notificationOriginator above). See lib/credential-sharing-host.ts.
     credentialSharing: buildCredentialSharingHost(manifest, logger),
     membership: {
-      isOrgMember: (check) => isOrgMember(check),
+      isOrgMember: (check) =>
+        isOrgMemberForScheduledTask(check, { extensionName: manifest.name, logger }),
     },
     getDbHandle: async () => {
       if (!manifest.dbScope || manifest.dbScope.length === 0) {
@@ -519,7 +521,7 @@ async function runAuditFanout(
     return
   }
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       await auditWriter(orgId, eventType, payload)
     } catch {
@@ -531,7 +533,7 @@ async function runAuditFanout(
         { orgId, subReason: 'audit_write_failed' }
       )
     }
-  }
+  })
 }
 
 type LoadOutcome = {

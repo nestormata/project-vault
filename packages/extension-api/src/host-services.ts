@@ -63,11 +63,12 @@ export type HostServices = {
    * full directionality/attribution/rate-limiting rationale. */
   credentialSharing: CredentialSharingHost
   /**
-   * Story 43.30 — bound once at extension-load time. `isOrgMember({ organizationId, userId })`
-   * answers one pair with no ambient request, so a scheduled task can use it. `userId` is the
-   * stored user id, not a session id. The result is `{ status: 'allowed' | 'denied' | 'unavailable' }`.
-   * A host or database failure is `unavailable` and is never `denied`. It does not list members
-   * or return a role. `orgAuthorization.checkMembership` stays request-scoped.
+   * Story 43.30 / 73.11 — bound once at extension-load time. `isOrgMember({ organizationId,
+   * userId })` is usable only while PV dispatches a scheduled task. PV binds the check to that
+   * invocation's organization and refuses a mismatched organization; calls outside that callback
+   * are unavailable. `userId` is the stored user id, not a session id. The tri-state result never
+   * returns a role or lists members. Calls have a per-extension in-flight limit and are
+   * operationally recorded. `orgAuthorization.checkMembership` remains request-scoped.
    */
   membership: OrgMembershipHost
 }

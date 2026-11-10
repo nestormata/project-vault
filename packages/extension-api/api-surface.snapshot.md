@@ -1491,7 +1491,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.40.0"`
+- type: `"3.41.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

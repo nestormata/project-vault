@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { writeFixture } from './lib/fixture-test-helpers.js'
 import { trustedGit } from './lib/trusted-executable.js'
@@ -13,11 +14,17 @@ import {
 const SPRINT_STATUS_PATH = '_bmad-output/implementation-artifacts/sprint-status.yaml'
 const BRANCH_1_1_FOO = 'nestormata/feature/1-1-foo'
 const BRANCH_9_3_FOO = 'nestormata/feature/9-3-foo'
+const BRANCH_EPIC_20 = 'nestormata/feature/epic-20'
+const BRANCH_24_5_ID_ONLY = 'nestormata/feature/24-5'
+const BRANCH_24_5B_UPPER = 'nestormata/feature/24-5B-short'
+const KEY_24_5_PLAIN = '24-5-plain'
+const KEY_24_5B_LETTER = '24-5b-letter'
 const STATUS_REVIEW = 'review'
 const NO_DRIFT = { drifts: [], ambiguities: [] }
 const KEY_12_3_ALPHA = '12-3-alpha'
 const KEY_12_3_BETA = '12-3-beta'
 const SLUG_12_3_SHORT = '12-3-short'
+const KEY_14_8_SOME_STORY = '14-8-some-story'
 
 function git(cwd: string, args: string[]): string {
   return trustedGit(cwd, args).trim()
@@ -44,7 +51,7 @@ function writeSprintStatus(root: string, yaml: string): void {
 /** Crafts a real merge commit (two parents — `git log --merges` only matches those) with the
  * exact subject line GitHub's merge-commit UI produces. Uses a throwaway local branch + `--no-ff`
  * merge so the resulting commit has the right shape without needing a real PR/remote. */
-function mergeCommit(root: string, prNumber: number, branch: string): string {
+function mergeCommit(root: string, prNumber: number, branch: string, subjectSuffix = ''): string {
   const localBranch = `pr-${prNumber}`
   git(root, ['checkout', '-b', localBranch])
   writeFixture(root, `pr-${prNumber}.txt`, `content for PR #${prNumber}\n`)
@@ -56,11 +63,19 @@ function mergeCommit(root: string, prNumber: number, branch: string): string {
     '--no-ff',
     localBranch,
     '-m',
-    `Merge pull request #${prNumber} from ${branch}`,
+    `Merge pull request #${prNumber} from ${branch}${subjectSuffix}`,
   ])
   git(root, ['branch', '-D', localBranch])
   return git(root, ['rev-parse', 'HEAD'])
 }
+
+const DRIFT_SOURCE = readFileSync(
+  fileURLToPath(new URL('./check-post-merge-status-drift.ts', import.meta.url)),
+  'utf8'
+)
+const MERGE_SUBJECT_PATTERN_LINE = /^const MERGE_SUBJECT_PATTERN = (\/.+\/)$/m
+const ANCHORED_MERGE_SUBJECT_PATTERN =
+  '/^Merge pull request #(\\d+) from [^/]+\\/feature\\/(\\S+)$/'
 
 const tempRoots: string[] = []
 afterEach(() => {
@@ -74,6 +89,14 @@ function makeFixtureRepo(): { root: string } {
   tempRoots.push(fixture.root)
   return fixture
 }
+
+describe('MERGE_SUBJECT_PATTERN end-of-string anchor', () => {
+  it('keeps the production literal end-anchored and the comment in agreement', () => {
+    expect(DRIFT_SOURCE).toContain('anchored end-of-string')
+    const line = MERGE_SUBJECT_PATTERN_LINE.exec(DRIFT_SOURCE)
+    expect(line?.[1]).toBe(ANCHORED_MERGE_SUBJECT_PATTERN)
+  })
+})
 
 describe('getMergeCommits', () => {
   it('extracts sha + subject for merge commits only, ignoring regular commits', () => {
@@ -118,14 +141,19 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     writeSprintStatus(
       root,
       `development_status:
-  14-8-some-story: review
+  ${KEY_14_8_SOME_STORY}: review
 `
     )
-    const sha = mergeCommit(root, 243, 'nestormata/feature/14-8-some-story')
+    const sha = mergeCommit(root, 243, `nestormata/feature/${KEY_14_8_SOME_STORY}`)
 
     expect(scanPostMergeStatusDrift(root)).toEqual({
       drifts: [
-        { storyKey: '14-8-some-story', status: STATUS_REVIEW, prNumber: 243, mergeCommitSha: sha },
+        {
+          storyKey: KEY_14_8_SOME_STORY,
+          status: STATUS_REVIEW,
+          prNumber: 243,
+          mergeCommitSha: sha,
+        },
       ],
       ambiguities: [],
     })
@@ -163,6 +191,22 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     mergeCommit(root, 300, BRANCH_9_3_FOO)
     mergeCommit(root, 301, BRANCH_9_3_FOO)
 
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
+  })
+
+  it('does not match a merge subject with characters after the slug', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  1-1-foo: ${STATUS_REVIEW}
+`
+    )
+    mergeCommit(root, 100, BRANCH_1_1_FOO, ' extra-junk')
+
+    expect(getMergeCommits(root)[0]?.subject).toBe(
+      `Merge pull request #100 from ${BRANCH_1_1_FOO} extra-junk`
+    )
     expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
   })
 
@@ -256,8 +300,8 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     writeSprintStatus(
       root,
       `development_status:
-  24-5-plain: done
-  24-5b-letter: ${STATUS_REVIEW}
+  ${KEY_24_5_PLAIN}: done
+  ${KEY_24_5B_LETTER}: ${STATUS_REVIEW}
 `
     )
     mergeCommit(root, 240, 'nestormata/feature/24-5-plain-short')
@@ -266,7 +310,7 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     expect(scanPostMergeStatusDrift(root)).toEqual({
       drifts: [
         {
-          storyKey: '24-5b-letter',
+          storyKey: KEY_24_5B_LETTER,
           status: STATUS_REVIEW,
           prNumber: 241,
           mergeCommitSha: sha,
@@ -330,6 +374,36 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
   })
 })
 
+describe('scanPostMergeStatusDrift skipped slug shapes (story 74-12)', { timeout: 60_000 }, () => {
+  it('skips feature/epic-20 even when 20-1-foo is not done', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  20-1-foo: ${STATUS_REVIEW}
+`
+    )
+    mergeCommit(root, 200, BRANCH_EPIC_20)
+
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
+  })
+
+  it('skips id-only feature/24-5 and uppercase feature/24-5B-short even when 24-5-plain and 24-5b-letter are not done', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  ${KEY_24_5_PLAIN}: ${STATUS_REVIEW}
+  ${KEY_24_5B_LETTER}: ${STATUS_REVIEW}
+`
+    )
+    mergeCommit(root, 245, BRANCH_24_5_ID_ONLY)
+    mergeCommit(root, 246, BRANCH_24_5B_UPPER)
+
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
+  })
+})
+
 describe('scanPostMergeStatusDrift against the real repository', { timeout: 60_000 }, () => {
   // Task 3.3: this check may legitimately need to tolerate the real repo's actual current state
   // rather than asserting [] unconditionally. The 17-2/PR #253 drift this comment used to pin
@@ -362,5 +436,30 @@ describe('formatPostMergeDriftReport', () => {
     expect(report.stderr).toContain(KEY_12_3_ALPHA)
     expect(report.stderr).toContain(KEY_12_3_BETA)
     expect(report.stderr).toContain(SLUG_12_3_SHORT)
+  })
+
+  it('prints the drift FATAL for a drift-only report and does not mention ambiguity', () => {
+    const mergeCommitSha = 'abcdef1234567890'
+    const shortSha = mergeCommitSha.slice(0, 7)
+    const report = formatPostMergeDriftReport({
+      drifts: [
+        {
+          storyKey: KEY_14_8_SOME_STORY,
+          status: STATUS_REVIEW,
+          prNumber: 243,
+          mergeCommitSha,
+        },
+      ],
+      ambiguities: [],
+    })
+
+    expect(report.exitCode).toBe(1)
+    expect(report.stdout).toBe('')
+    expect(report.stderr).toContain(KEY_14_8_SOME_STORY)
+    expect(report.stderr).toContain(STATUS_REVIEW)
+    expect(report.stderr).toContain('243')
+    expect(report.stderr).toContain(shortSha)
+    expect(report.stderr).not.toContain(mergeCommitSha)
+    expect(report.stderr).not.toContain('refusing to guess')
   })
 })
