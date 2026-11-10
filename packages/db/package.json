@@ -59,7 +59,7 @@
     "@project-vault/crypto": "workspace:*",
     "@project-vault/shared": "workspace:*",
     "drizzle-orm": "^0.45.4",
-    "postgres": "^4.0.0"
+    "postgres": "^3.4.5"
   },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",
@@ -69,7 +69,7 @@
     "drizzle-kit": "^0.31.11",
     "eslint": "^10.14.0",
     "tsx": "4.23.15",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "vitest": "^5.1.0"
   }
 }
