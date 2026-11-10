@@ -1,7 +1,8 @@
 /**
- * Story 43.30 — out-of-request membership check. `orgAuthorization.checkMembership` answers
- * against the ambient request's organization and fails closed when no request is bound, so a
- * scheduled task (which has an organization id and no request) cannot use it.
+ * Story 43.30 / 73.11 — out-of-request membership check. `orgAuthorization.checkMembership`
+ * answers against the ambient request's organization and fails closed when no request is bound.
+ * This host method is available only while PV dispatches a scheduled task, and PV binds it to that
+ * task's organization; the explicit organizationId is checked against that binding.
  *
  * `userId` is the user id the caller stored (`users.id`). It is not a session id and not an
  * access-token `jti`. The check reads active organization membership for that user.
@@ -21,5 +22,10 @@ export type OrgMembershipResult =
   { status: 'allowed' } | { status: 'denied' } | { status: 'unavailable'; reason?: string }
 
 export type OrgMembershipHost = {
+  /**
+   * Checks active membership for the current PV-dispatched task organization. Calls outside a
+   * scheduled task or with another organization return `unavailable`; the input organization is
+   * not a scope selector.
+   */
   isOrgMember(check: OrgMembershipCheck): Promise<OrgMembershipResult>
 }

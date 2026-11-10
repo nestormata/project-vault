@@ -2,7 +2,6 @@ import { ESLint } from 'eslint'
 import { describe, expect, it, vi } from 'vitest'
 import {
   baseRules,
-  NO_AWAIT_IN_LOOP_CARVE_OUTS,
   SONAR_LOCAL_RULE_NAMES,
   SONAR_LOCAL_TYPED_RULE_NAMES,
   TEST_FILE_GLOBS,
@@ -52,16 +51,12 @@ async function ruleIdsFor(code: string, filePath: string): Promise<string[]> {
 }
 
 describe('baseRules registration (AC-6)', () => {
-  it('enables no-await-in-loop at error for production source only, with the ledgered carve-out', () => {
+  it('enables no-await-in-loop at error for production source only', () => {
     const enabling = objectsEnabling(AWAIT_RULE)
     expect(enabling).toHaveLength(1)
     const [config] = enabling
-    expect(config?.ignores).toEqual([...TEST_FILE_GLOBS, ...NO_AWAIT_IN_LOOP_CARVE_OUTS])
+    expect(config?.ignores).toEqual(TEST_FILE_GLOBS)
     expect(config?.files).toEqual(expect.arrayContaining([TS_GLOB, '**/*.js']))
-  })
-
-  it('pins the carve-out list: loader.ts is blocked by the extension-api version-bump guard (DW-582)', () => {
-    expect(NO_AWAIT_IN_LOOP_CARVE_OUTS).toEqual(['**/src/extensions/loader.ts'])
   })
 
   it('enables both test-file rules at error, scoped to the test globs', () => {
@@ -142,12 +137,11 @@ describe('baseRules registration (AC-6)', () => {
 })
 
 describe('the rules fire through the real ESLint engine (root config)', () => {
-  it('no-await-in-loop fails production source and not test files or the carve-out', async () => {
+  it('no-await-in-loop fails production source and not test files', async () => {
     const code = WRAPPED(AWAIT_IN_LOOP)
     expect(await ruleIdsFor(code, TS_FILE)).toContain(AWAIT_RULE)
     expect(await ruleIdsFor(code, TEST_FILE)).not.toContain(AWAIT_RULE)
-    expect(await ruleIdsFor(code, 'apps/api/src/extensions/loader.ts')).not.toContain(AWAIT_RULE)
-    // the carve-out is exactly one file: its neighbours are still enforced
+    expect(await ruleIdsFor(code, 'apps/api/src/extensions/loader.ts')).toContain(AWAIT_RULE)
     expect(await ruleIdsFor(code, 'apps/api/src/extensions/registry.ts')).toContain(AWAIT_RULE)
   })
 
