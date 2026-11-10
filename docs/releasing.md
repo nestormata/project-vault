@@ -427,7 +427,17 @@ tag; if this check fires, investigate before anything else.
 Each run has four jobs in the `npm-publish` environment: `publish-kit` (Node 20 and 24), then
 `publish` (Node 24 and 26). The review screen approves the jobs waiting at that moment, so a run
 normally asks twice: once for the kit legs and once for the web-host legs after the kit finishes. A
-run in "waiting" is not hung. Only the Node 24 leg of each job uploads.
+run in "waiting" is not hung. Only the Node 24 leg of each job uploads. The two `publish` legs are
+order-independent: Node 24 is the publishing leg and runs "Reject a version that is already on npm"
+before it uploads; Node 26 is verify-only and does not run that reject step. If Node 24 publishes
+first, Node 26 inspects the published tarball instead of failing because the version exists. If
+Node 26 runs first, that inspect step treats an unpublished version as success (the local pack
+inspection already ran). Do not order the legs with `needs:`.
+
+v2.0.2 (push run 41274558637) published `@project-vault/web-host@2.0.2` from Node 24, then Node 26
+failed at "Reject a version that is already on npm". `verify-npm-release.ts` was 9/9. The package
+was correct and the run was red. v2.0.0 (run 41212942564) was green because Node 26 finished
+before Node 24 published. Story 75.4 is the fix.
 
 **Before every approval**, run this and compare:
 
@@ -516,7 +526,9 @@ deprecated bootstrap placeholder. Consumers always pin the exact version.
   `.github/workflows/extension-api-release.yml`: revoke the trusted publisher, disable the
   `npm-publish` environment, publish a security advisory, and notify the CentralizeMe maintainer.
 
-Re-running the workflow after a successful publish fails the "not already on npm" gate by design.
+Re-running the workflow after a successful publish fails the "not already on npm" gate on the
+Node 24 publishing leg by design. The Node 26 verify-only leg inspects the published tarball
+and stays green.
 
 ### 9.8 Record
 
