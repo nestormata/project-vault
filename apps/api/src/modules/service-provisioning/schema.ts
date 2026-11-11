@@ -113,6 +113,86 @@ export type ProvisionServiceOrgMemberResponse = z.infer<
   typeof ProvisionServiceOrgMemberResponseSchema
 >
 
+export const ServiceOrgMemberUserParamsSchema = z.object({
+  organizationId: z.uuid(),
+  userId: z.uuid(),
+})
+
+export type ServiceOrgMemberUserParams = z.infer<typeof ServiceOrgMemberUserParamsSchema>
+
+export const ServiceOrgMemberRoleBodySchema = z
+  .object({
+    requestId: z.uuid(),
+    role: z.string().trim().min(1).max(32),
+  })
+  .strict()
+
+export type ServiceOrgMemberRoleBody = z.infer<typeof ServiceOrgMemberRoleBodySchema>
+
+export const ServiceRequestIdBodySchema = z
+  .object({
+    requestId: z.uuid(),
+  })
+  .strict()
+
+export type ServiceRequestIdBody = z.infer<typeof ServiceRequestIdBodySchema>
+
+export const ServiceOrgMemberRoleResponseSchema = z.object({
+  data: z.object({
+    userId: z.uuid(),
+    role: z.string(),
+  }),
+})
+
+export const ServiceOrgMemberRemovedResponseSchema = z.object({
+  data: z.object({
+    userId: z.uuid(),
+    removedProjectCount: z.number().int().nonnegative(),
+  }),
+})
+
+export const ServiceProjectMemberParamsSchema = z.object({
+  organizationId: z.uuid(),
+  projectId: z.uuid(),
+})
+
+export type ServiceProjectMemberParams = z.infer<typeof ServiceProjectMemberParamsSchema>
+
+export const ServiceProjectMemberUserParamsSchema = z.object({
+  organizationId: z.uuid(),
+  projectId: z.uuid(),
+  userId: z.uuid(),
+})
+
+export type ServiceProjectMemberUserParams = z.infer<typeof ServiceProjectMemberUserParamsSchema>
+
+export const ServiceProjectMemberAddBodySchema = z
+  .object({
+    requestId: z.uuid(),
+    userId: z.uuid(),
+    role: z.string().trim().min(1).max(32),
+  })
+  .strict()
+
+export type ServiceProjectMemberAddBody = z.infer<typeof ServiceProjectMemberAddBodySchema>
+
+export const ServiceProjectMemberResponseSchema = z.object({
+  data: z.object({
+    userId: z.uuid(),
+    email: z.string(),
+    displayName: z.string(),
+    role: z.string(),
+  }),
+})
+
+export const ServiceProjectMemberRoleResponseSchema = z.object({
+  data: z.object({
+    userId: z.uuid(),
+    projectId: z.uuid(),
+    role: z.string(),
+  }),
+})
+
 /**
  * Story 33.1 AC1/AC11: `:organizationId` is PV's own organization UUID (Decision 2 — same
  * direction as ProvisionServiceOrgMemberParamsSchema above, never CM's own id in the URL).

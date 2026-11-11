@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AuditEvent, DelegationEvent, HandoffEvent } from './audit-events.js'
+import { AuditEvent, DelegationEvent, HandoffEvent, RoleSecurityEvent } from './audit-events.js'
 import type { AuthAuditEventType } from './audit-events.js'
 
 function assertValidAuditEventType(value: AuthAuditEventType): AuthAuditEventType {
@@ -160,6 +160,7 @@ describe('AuditEvent', () => {
     expect(AuditEvent.NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED).toBe(
       'native_login.bootstrap_register_allowed'
     )
+    expect(AuditEvent.ORG_MEMBER_ROLE_CHANGED).toBe('org.member_role_changed')
   })
 
   it('derives AuditEventType from every current AuditEvent value (AC-J1/J3, single source of truth)', () => {
@@ -229,5 +230,20 @@ describe('DelegationEvent (Story 71.3 AC-8)', () => {
   it('is distinct from every handoff and audit event name', () => {
     const others = new Set<string>([...Object.values(HandoffEvent), ...Object.values(AuditEvent)])
     for (const value of Object.values(DelegationEvent)) expect(others.has(value)).toBe(false)
+  })
+})
+
+describe('RoleSecurityEvent (Story 73.5 D7)', () => {
+  it('exposes one platform security event type for an unrecognized role', () => {
+    expect(Object.values(RoleSecurityEvent)).toEqual(['unrecognized_role'])
+  })
+
+  it('is distinct from every handoff, delegation and audit event name', () => {
+    const others = new Set<string>([
+      ...Object.values(HandoffEvent),
+      ...Object.values(DelegationEvent),
+      ...Object.values(AuditEvent),
+    ])
+    for (const value of Object.values(RoleSecurityEvent)) expect(others.has(value)).toBe(false)
   })
 })

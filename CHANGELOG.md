@@ -9,6 +9,15 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Added
+
+- **API: CentralizeMe role provisioning (add, change-role, remove)** (Story 73.5). Trusted
+  `x-service-provisioning-token` callers can change and remove organization members and add,
+  change, and remove project members on CentralizeMe-managed orgs. PV owns the role. The grant
+  cap is never `owner`. Last-owner protection uses `FOR UPDATE`. An unrecognized requested role
+  is `400 invalid_role` plus `platform_security_events`. See
+  [docs/api-consumers.md](docs/api-consumers.md).
+
 ### Changed
 
 - **Web: auth pages and the public home read `shell_brand_tagline`** (Story 72.23). `AuthBrandHeader`

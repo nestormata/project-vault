@@ -13,8 +13,8 @@ import { cleanupExpiredSession } from '../modules/auth/session-revoke.js'
 import { extractBearerToken } from '../modules/machine-users/bearer-token.js'
 import { parseAccessTokenClaims, parseUserAccessClaims } from '../modules/auth/tokens.js'
 import { bindRequestContext, bindRequestContextLifecycle } from '../lib/request-context.js'
-
-const ORG_ROLES = new Set(['owner', 'admin', 'member', 'viewer'])
+import { isKnownOrgRole } from '../lib/org-roles.js'
+import { writeUnrecognizedRoleSecurityEvent } from '../modules/auth/unrecognized-role-security-events.js'
 
 type JwtVerifier = {
   jwt: {
@@ -38,10 +38,6 @@ function sendAuthError(reply: FastifyReply, error: AppError) {
 
 function accessTokenInvalid(): AppError {
   return new AppError('access_token_invalid', 'Access token is invalid', 401)
-}
-
-function isOrgRole(role: string): role is 'owner' | 'admin' | 'member' | 'viewer' {
-  return ORG_ROLES.has(role)
 }
 
 function assertTemporalClaims(claims: { iat?: number; exp?: number }): void {
@@ -182,16 +178,31 @@ export async function resolveActiveOrgRoleInTx(
 ): Promise<'owner' | 'admin' | 'member' | 'viewer' | null> {
   const memberships = await activeMembershipRoleQuery(tx, userId, orgId)
   const membership = memberships[0]
-  if (!membership || !isOrgRole(membership.role)) return null
+  if (!membership || !isKnownOrgRole(membership.role)) return null
   return membership.role
 }
 
-async function loadOrgRole(session: AuthSessionRow) {
-  const role = await resolveActiveOrgRole(session.userId, session.orgId)
-  if (!role) {
+async function loadOrgRole(session: AuthSessionRow, request: FastifyRequest) {
+  const memberships = await withOrg(session.orgId, (tx) =>
+    activeMembershipRoleQuery(tx, session.userId, session.orgId)
+  )
+  const membership = memberships[0]
+  if (!membership) {
     throw new AppError('account_deactivated', 'Account is deactivated', 403)
   }
-  return role
+  if (!isKnownOrgRole(membership.role)) {
+    await writeUnrecognizedRoleSecurityEvent({
+      source: 'stored',
+      role: membership.role,
+      orgId: session.orgId,
+      userId: session.userId,
+      ipAddress: request.ip,
+      userAgent:
+        typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null,
+    })
+    throw new AppError('account_deactivated', 'Account is deactivated', 403)
+  }
+  return membership.role
 }
 
 // Story 9.1 D1: users has no org_id column and no RLS policy (identity-scoped, same trust model
@@ -261,7 +272,7 @@ export async function authenticateRequest(
     await rejectRevokedToken(claims.jti)
     const session = await loadSessionForClaims(claims)
     await enforceIdleTimeout(session)
-    const orgRole = await loadOrgRole(session)
+    const orgRole = await loadOrgRole(session, request)
     const isPlatformOperator = await loadIsPlatformOperator(session.userId)
     await touchActivityWithoutBlocking(request, session)
 

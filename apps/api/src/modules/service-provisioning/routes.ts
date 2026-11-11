@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { ZodType } from 'zod/v4'
+import { z, type ZodType } from 'zod/v4'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
 import { OperationalEvent } from '@project-vault/shared'
@@ -32,7 +32,25 @@ import {
   RevokeOrgSessionsParamsSchema,
   RevokeOrgSessionsRequestSchema,
   RevokeOrgSessionsResponseSchema,
+  ServiceOrgMemberRemovedResponseSchema,
+  ServiceOrgMemberRoleBodySchema,
+  ServiceOrgMemberRoleResponseSchema,
+  ServiceOrgMemberUserParamsSchema,
+  ServiceProjectMemberAddBodySchema,
+  ServiceProjectMemberParamsSchema,
+  ServiceProjectMemberResponseSchema,
+  ServiceProjectMemberRoleResponseSchema,
+  ServiceProjectMemberUserParamsSchema,
+  ServiceRequestIdBodySchema,
 } from './schema.js'
+import {
+  addServiceProjectMember,
+  changeServiceOrgMemberRole,
+  changeServiceProjectMemberRole,
+  removeServiceOrgMember,
+  removeServiceProjectMember,
+  SoleOwnerOfProjectsError,
+} from './role-provisioning.js'
 import { createAdminAlert, deliverAdminAlertToPlatformOperator } from '../backup/alerts.js'
 
 type BossFastify = FastifyApp & { boss?: BossService }
@@ -75,10 +93,25 @@ function assertServiceRevocationAuthorized(headers: FastifyRequestHeaders): void
 }
 
 function sendAppError(reply: FastifyReply, err: unknown): FastifyReply {
+  if (err instanceof SoleOwnerOfProjectsError) {
+    return reply.status(err.statusCode).send({
+      code: err.code,
+      message: err.message,
+      projects: err.projects,
+    })
+  }
   if (err instanceof AppError) {
     return reply.status(err.statusCode).send({ code: err.code, message: err.message })
   }
   throw err
+}
+
+function serviceMutationRateLimit(key: string) {
+  return {
+    max: 30,
+    timeWindow: '1 minute' as const,
+    keyGenerator: () => key,
+  }
 }
 
 /**
@@ -438,6 +471,264 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
             dryRun: result.dryRun,
           },
         })
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
+    },
+  })
+
+  fastify.route({
+    method: 'PATCH',
+    url: '/api/v1/service/organizations/:organizationId/members/:userId',
+    config: { rateLimit: serviceMutationRateLimit('service-org-member-role') },
+    attachValidation: true,
+    schema: {
+      params: ServiceOrgMemberUserParamsSchema,
+      body: ServiceOrgMemberRoleBodySchema,
+      response: {
+        200: ServiceOrgMemberRoleResponseSchema,
+        400: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      if (
+        !authorizeOrReply(
+          reply,
+          req.headers as FastifyRequestHeaders,
+          assertServiceProvisioningAuthorized
+        )
+      )
+        return
+
+      const parsedParams = parseOrReply(
+        reply,
+        ServiceOrgMemberUserParamsSchema,
+        req.params,
+        'params'
+      )
+      if (!parsedParams) return
+      const parsedBody = parseOrReply(reply, ServiceOrgMemberRoleBodySchema, req.body, 'body')
+      if (!parsedBody) return
+
+      try {
+        const result = await changeServiceOrgMemberRole(
+          parsedParams.organizationId,
+          parsedParams.userId,
+          parsedBody
+        )
+        return reply.status(200).send({ data: result })
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
+    },
+  })
+
+  fastify.route({
+    method: 'DELETE',
+    url: '/api/v1/service/organizations/:organizationId/members/:userId',
+    config: { rateLimit: serviceMutationRateLimit('service-org-member-remove') },
+    attachValidation: true,
+    schema: {
+      params: ServiceOrgMemberUserParamsSchema,
+      body: ServiceRequestIdBodySchema,
+      response: {
+        200: ServiceOrgMemberRemovedResponseSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      if (
+        !authorizeOrReply(
+          reply,
+          req.headers as FastifyRequestHeaders,
+          assertServiceProvisioningAuthorized
+        )
+      )
+        return
+
+      const parsedParams = parseOrReply(
+        reply,
+        ServiceOrgMemberUserParamsSchema,
+        req.params,
+        'params'
+      )
+      if (!parsedParams) return
+      const parsedBody = parseOrReply(reply, ServiceRequestIdBodySchema, req.body, 'body')
+      if (!parsedBody) return
+
+      try {
+        const result = await removeServiceOrgMember(
+          parsedParams.organizationId,
+          parsedParams.userId,
+          parsedBody
+        )
+        return reply.status(200).send({ data: result })
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
+    },
+  })
+
+  fastify.route({
+    method: 'POST',
+    url: '/api/v1/service/organizations/:organizationId/projects/:projectId/members',
+    config: { rateLimit: serviceMutationRateLimit('service-project-member-add') },
+    attachValidation: true,
+    schema: {
+      params: ServiceProjectMemberParamsSchema,
+      body: ServiceProjectMemberAddBodySchema,
+      response: {
+        201: ServiceProjectMemberResponseSchema,
+        400: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      if (
+        !authorizeOrReply(
+          reply,
+          req.headers as FastifyRequestHeaders,
+          assertServiceProvisioningAuthorized
+        )
+      )
+        return
+
+      const parsedParams = parseOrReply(
+        reply,
+        ServiceProjectMemberParamsSchema,
+        req.params,
+        'params'
+      )
+      if (!parsedParams) return
+      const parsedBody = parseOrReply(reply, ServiceProjectMemberAddBodySchema, req.body, 'body')
+      if (!parsedBody) return
+
+      try {
+        const result = await addServiceProjectMember(
+          parsedParams.organizationId,
+          parsedParams.projectId,
+          parsedBody
+        )
+        return reply.status(201).send({ data: result })
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
+    },
+  })
+
+  fastify.route({
+    method: 'PATCH',
+    url: '/api/v1/service/organizations/:organizationId/projects/:projectId/members/:userId',
+    config: { rateLimit: serviceMutationRateLimit('service-project-member-role') },
+    attachValidation: true,
+    schema: {
+      params: ServiceProjectMemberUserParamsSchema,
+      body: ServiceOrgMemberRoleBodySchema,
+      response: {
+        200: ServiceProjectMemberRoleResponseSchema,
+        400: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      if (
+        !authorizeOrReply(
+          reply,
+          req.headers as FastifyRequestHeaders,
+          assertServiceProvisioningAuthorized
+        )
+      )
+        return
+
+      const parsedParams = parseOrReply(
+        reply,
+        ServiceProjectMemberUserParamsSchema,
+        req.params,
+        'params'
+      )
+      if (!parsedParams) return
+      const parsedBody = parseOrReply(reply, ServiceOrgMemberRoleBodySchema, req.body, 'body')
+      if (!parsedBody) return
+
+      try {
+        const result = await changeServiceProjectMemberRole(
+          parsedParams.organizationId,
+          parsedParams.projectId,
+          parsedParams.userId,
+          parsedBody
+        )
+        return reply.status(200).send({ data: result })
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
+    },
+  })
+
+  fastify.route({
+    method: 'DELETE',
+    url: '/api/v1/service/organizations/:organizationId/projects/:projectId/members/:userId',
+    config: { rateLimit: serviceMutationRateLimit('service-project-member-remove') },
+    attachValidation: true,
+    schema: {
+      params: ServiceProjectMemberUserParamsSchema,
+      body: ServiceRequestIdBodySchema,
+      response: {
+        204: z.null(),
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      if (
+        !authorizeOrReply(
+          reply,
+          req.headers as FastifyRequestHeaders,
+          assertServiceProvisioningAuthorized
+        )
+      )
+        return
+
+      const parsedParams = parseOrReply(
+        reply,
+        ServiceProjectMemberUserParamsSchema,
+        req.params,
+        'params'
+      )
+      if (!parsedParams) return
+      const parsedBody = parseOrReply(reply, ServiceRequestIdBodySchema, req.body, 'body')
+      if (!parsedBody) return
+
+      try {
+        await removeServiceProjectMember(
+          parsedParams.organizationId,
+          parsedParams.projectId,
+          parsedParams.userId,
+          parsedBody
+        )
+        return reply.status(204).send()
       } catch (err) {
         return sendAppError(reply, err)
       }
