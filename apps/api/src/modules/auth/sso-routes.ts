@@ -30,7 +30,12 @@ import { claimInvitation } from '../invitations/lookup.js'
 import { generateUnusablePasswordHash } from './password.js'
 import { findAuthStrategy } from './strategies.js'
 import { createPendingMfaSession } from './mfa-login.js'
-import { createLoginSessionInTx, type LoginResult, type RequestMeta } from './service.js'
+import {
+  createLoginSessionInTx,
+  type LoginResult,
+  type LoginSessionOptions,
+  type RequestMeta,
+} from './service.js'
 import { buildCookieTokens, setAuthCookies, type CookieReply, type JwtSigner } from './tokens.js'
 import { markReplacementProven } from './native-login-policy.js'
 
@@ -363,10 +368,11 @@ export async function issueSessionForUser(
   tx: Tx,
   orgId: string,
   userId: string,
-  meta: RequestMeta
+  meta: RequestMeta,
+  options?: LoginSessionOptions
 ): Promise<LoginResult> {
   const identityTokenId = await firstActorTokenIdForUser(tx, userId)
-  return createLoginSessionInTx(tx, { id: userId, identityTokenId }, orgId, meta)
+  return createLoginSessionInTx(tx, { id: userId, identityTokenId }, orgId, meta, options)
 }
 
 export async function findUserMfaEnrolledAndMembership(

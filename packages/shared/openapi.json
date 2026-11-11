@@ -25502,6 +25502,21 @@
                             "bannerMessage"
                           ],
                           "additionalProperties": false
+                        },
+                        "handoffDisplay": {
+                          "type": "object",
+                          "properties": {
+                            "organizationName": {
+                              "type": "string"
+                            },
+                            "tier": {
+                              "type": "string"
+                            },
+                            "role": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       },
                       "required": [
