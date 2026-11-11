@@ -40,8 +40,7 @@ function escapeHtml(text: string): string {
 }
 
 /** `text` with the current text of each named key (raw or HTML-escaped) replaced by its token. Name
- * only the keys the render under test really draws from the message: the same sentence written as
- * fixed text elsewhere (the auth header, the public home) is not an overlay and stays as it is. */
+ * only the keys the render under test really draws from the message. */
 export function maskOverlayable(text: string, keys: readonly OverlayableMessageKey[]): string {
   return keys.reduce((masked, key) => {
     const value = overlayableMessage(key)
