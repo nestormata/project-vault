@@ -242,7 +242,7 @@ describe('nightly flaky repeat matrix', () => {
   it('runs the suite once per leg: no for loop, no DB reset, one turbo test without --force', () => {
     expect(job).not.toMatch(/\bfor\s+\w+\s+in\b/)
     expect(job).not.toContain('DROP SCHEMA')
-    expect(job.match(/^\s+pnpm turbo test\s*$/m)).toHaveLength(1)
+    expect(job.match(/^\s+pnpm turbo test\s*$/m) ?? []).toHaveLength(1)
     expect(job).not.toMatch(/pnpm turbo test --force/)
     expect(job).not.toMatch(/--force/)
     expect(job.match(/pnpm db:migrate/g)).toHaveLength(1)
