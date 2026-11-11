@@ -2,6 +2,33 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.42.0 — 2026-11-10
+
+contract-hash: sha256:ebcdc5b588d3a084e5e5be58e83ce3aec65b3bf3e673550555ffeecf28f55b83
+
+Story 73.3. Additive. A session minted from a CentralizeMe handoff may carry read-only display
+labels on `ExtensionRequestContext.handoffDisplay`. Native login omits the field. The optional
+`role` string is informational: PV authorization still uses `identity.orgRole` from membership.
+
+### Added
+
+- `HandoffDisplayClaims` (`organizationName?`, `tier?`, `role?`) and optional
+  `ExtensionRequestContext.handoffDisplay`. Host attaches the current session's sidecar on live
+  `oauthHandoff` start context. Missing or malformed claims omit the field.
+
+### Deprecated
+
+This minor adds no deprecation. The 3.30.0 freeze still covers: types `UIPanel`, `UIPanelContext`,
+`UIPanelResult`, `ModuleAction`, `ModuleActionContext`, `ModuleActionRequest`, `ActionResult`,
+`ModuleDataRequestContext`, `ModuleDataResult`, `ModuleDataRouteHandler`,
+`ModuleDataRouteDeclaration`, `ExtensionNavItem`; fields `uiPanelSlots`, `moduleActions`,
+`navItems`, `moduleDataRoutes`; hooks `uiPanel`, `moduleAction`, `moduleData`; capability
+`'ui-panel'`. Prefer `ExtensionRequestContext`, `ExtensionActionResult`, composed UI, M7 `apiRoutes`.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.42.0 adds no deprecation).
+
 ## 3.41.0 — 2026-11-05
 
 contract-hash: sha256:4af93ab24e1d2ccbaea035b59d3ce94db9ff5f5364e0fccf7d2bef5f280dbe9a
