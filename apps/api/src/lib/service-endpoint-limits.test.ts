@@ -36,7 +36,7 @@ const openResolved = {
 function loadedState(resolver: ServiceEndpointLimitsResolver | undefined): ExtensionState {
   return {
     status: 'loaded',
-    manifest: { name: 'com.example.ext', apiVersion: '3.42.0', capabilities: [] },
+    manifest: { name: 'com.example.ext', apiVersion: '3.43.0', capabilities: [] },
     loadedAt: new Date().toISOString(),
     hooks: resolver ? { serviceEndpointLimits: resolver } : {},
   }

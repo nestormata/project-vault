@@ -1,7 +1,16 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { getDb } from '@project-vault/db'
-import { extensionOauthPendingStates, extensionRequestStates } from '@project-vault/db/schema'
-import type { ModuleActionContext, OAuthHandoffHooks } from '@project-vault/extension-api'
+import { getDb, withOrg } from '@project-vault/db'
+import { and, eq } from 'drizzle-orm'
+import {
+  extensionOauthPendingStates,
+  extensionRequestStates,
+  sessions,
+} from '@project-vault/db/schema'
+import type {
+  ExtensionRequestContext,
+  ModuleActionContext,
+  OAuthHandoffHooks,
+} from '@project-vault/extension-api'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -354,6 +363,39 @@ describe('POST /api/v1/extensions/oauth-handoff/start (Story 39.1 AC1)', () => {
     expect(seenContext?.orgId).toBe(member.orgId)
     expect(seenContext?.identity.userId).toBe(member.userId)
     expect(seenContext?.slot).toBe(OAUTH_HANDOFF_CAPABILITY)
+    expect(seenContext?.handoffDisplay).toBeUndefined()
+  })
+
+  it('Story 73.3: onOAuthStart receives session handoffDisplay labels', async () => {
+    let seenContext: ExtensionRequestContext | undefined
+    __setExtensionStateForTests(
+      defaultHandoffState(async (context) => {
+        seenContext = context
+        return { outcome: 'redirect', url: PROVIDER_AUTHORIZE_URL, state: {} }
+      })
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'oauth-display', 'member')
+    await withOrg(member.orgId, (tx) =>
+      tx
+        .update(sessions)
+        .set({
+          handoffDisplayClaims: {
+            organizationName: 'Acme Corp',
+            tier: 'pro',
+            role: 'owner',
+          },
+        })
+        .where(and(eq(sessions.orgId, member.orgId), eq(sessions.userId, member.userId)))
+    )
+
+    await postStart(suite.app, member.cookies)
+
+    expect(seenContext?.identity.orgRole).toBe('member')
+    expect(seenContext?.handoffDisplay).toEqual({
+      organizationName: 'Acme Corp',
+      tier: 'pro',
+      role: 'owner',
+    })
   })
 })
 

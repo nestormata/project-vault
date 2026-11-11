@@ -2,9 +2,9 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
-## 3.42.0 — 2026-11-10
+## 3.43.0 — 2026-11-11
 
-contract-hash: sha256:39e08406b12edf59833529ba48c9da1a63b13791d06316135c803e47065e8269
+contract-hash: sha256:d7271c28a8a91d902cc4df659f5055c3747d8ddb20dce2e540237d0502213ab7
 
 Story 73.7. Optional `serviceEndpointLimits` resolver and `'service-endpoint-limits'` capability.
 The host applies numeric health-check limits on service-endpoint create and update. Omitted fields
@@ -21,7 +21,7 @@ and on updates that raise probing intensity.
 
 ### Deprecated
 
-3.42.0 does not start a new deprecation. Marker lint still needs the 3.30.0 frozen set named here:
+3.43.0 does not start a new deprecation. Marker lint still needs the 3.30.0 frozen set named here:
 legacy panel types `UIPanel` `UIPanelContext` `UIPanelResult`; action types `ModuleAction`
 `ModuleActionContext` `ModuleActionRequest` `ActionResult`; data-route types
 `ModuleDataRequestContext` `ModuleDataResult` `ModuleDataRouteHandler` `ModuleDataRouteDeclaration`;
@@ -32,7 +32,34 @@ M7 `apiRoutes` instead.
 
 - earliest-removal: 4.0.0
 - notice-window-ends: 2027-01-14
-- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.42.0 adds none).
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.43.0 adds none).
+
+## 3.42.0 — 2026-11-10
+
+contract-hash: sha256:ebcdc5b588d3a084e5e5be58e83ce3aec65b3bf3e673550555ffeecf28f55b83
+
+Story 73.3. Additive. A session minted from a CentralizeMe handoff may carry read-only display
+labels on `ExtensionRequestContext.handoffDisplay`. Native login omits the field. The optional
+`role` string is informational: PV authorization still uses `identity.orgRole` from membership.
+
+### Added
+
+- `HandoffDisplayClaims` (`organizationName?`, `tier?`, `role?`) and optional
+  `ExtensionRequestContext.handoffDisplay`. Host attaches the current session's sidecar on live
+  `oauthHandoff` start context. Missing or malformed claims omit the field.
+
+### Deprecated
+
+This minor adds no deprecation. The 3.30.0 freeze still covers: types `UIPanel`, `UIPanelContext`,
+`UIPanelResult`, `ModuleAction`, `ModuleActionContext`, `ModuleActionRequest`, `ActionResult`,
+`ModuleDataRequestContext`, `ModuleDataResult`, `ModuleDataRouteHandler`,
+`ModuleDataRouteDeclaration`, `ExtensionNavItem`; fields `uiPanelSlots`, `moduleActions`,
+`navItems`, `moduleDataRoutes`; hooks `uiPanel`, `moduleAction`, `moduleData`; capability
+`'ui-panel'`. Prefer `ExtensionRequestContext`, `ExtensionActionResult`, composed UI, M7 `apiRoutes`.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.42.0 adds no deprecation).
 
 ## 3.41.0 — 2026-11-05
 

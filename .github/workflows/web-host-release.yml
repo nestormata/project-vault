@@ -22,11 +22,14 @@ name: Web-host release
 #   and npm provenance. There is no NPM_TOKEN. Every publish goes to the `next` dist-tag; a
 #   maintainer promotes a verified version to `latest` separately;
 # - npm versions are immutable: never --force, never unpublish. Re-running after a successful
-#   publish fails the "not already on npm" gate by design (check `npm view @project-vault/web-host
-#   versions` before treating that as a bug);
+#   publish fails the "not already on npm" gate on the Node 24 publishing leg by design (check
+#   `npm view @project-vault/web-host versions` before treating that as a bug). The Node 26
+#   verify-only leg does not run that reject step: it inspects the published tarball when the
+#   version is already on npm (Story 75.4, v2.0.2 run 41274558637);
 # - a workflow_dispatch `dry_run` (dispatched on a tag ref) runs every gate except the upload, in
 #   its own concurrency group so a rehearsal never queues behind or cancels a real release;
-# - both Node legs verify, only the Node 24 leg uploads;
+# - both Node legs verify, only the Node 24 leg uploads. The legs are order-independent: Node 26
+#   stays green if Node 24 published first;
 # - Story 68.3: `publish-kit` runs BEFORE `publish` and publishes @project-vault/composition-kit
 #   (MIT, its own semver in packages/composition-kit/package.json, same OIDC flow, always `next`)
 #   unless that exact kit version is already on npm. web-host's compatibility manifest names the kit
@@ -270,6 +273,7 @@ jobs:
           npm view "@project-vault/composition-kit@${KIT_VERSION}" version
 
       - name: Reject a version that is already on npm
+        if: matrix.node-version == 24
         shell: bash
         run: |
           set -uo pipefail
@@ -285,6 +289,29 @@ jobs:
             exit 1
           fi
           echo "@project-vault/web-host@${RELEASE_VERSION} is not on npm yet."
+
+      # Story 75.4: Node 26 does not reject an already-published version. When Node 24 published
+      # first (or the version was already on npm), inspect that registry tarball. When Node 26 ran
+      # first, npm pack of a missing version is ETARGET (npm view of the same version is E404);
+      # both mean unpublished and the local pack inspection still ran.
+      - name: Inspect the published npm tarball
+        if: matrix.node-version != 24
+        shell: bash
+        run: |
+          set -uo pipefail
+          OUTPUT="$(npm pack "@project-vault/web-host@${RELEASE_VERSION}" --dry-run --json 2>&1)" && STATUS=0 || STATUS=$?
+          if [[ $STATUS -eq 0 ]]; then
+            echo "$OUTPUT"
+            echo "Inspected the published @project-vault/web-host@${RELEASE_VERSION} tarball."
+            exit 0
+          fi
+          if grep -qE 'E404|ETARGET' <<< "$OUTPUT"; then
+            echo "@project-vault/web-host@${RELEASE_VERSION} is not on npm yet; local pack inspection already ran."
+            exit 0
+          fi
+          echo "FATAL: could not inspect the published tarball:" >&2
+          echo "$OUTPUT" >&2
+          exit 1
 
       - name: Inspect the exact npm tarball
         working-directory: .web-host-pack

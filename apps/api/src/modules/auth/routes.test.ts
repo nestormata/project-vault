@@ -231,6 +231,9 @@ describe('GET /api/v1/auth/me', () => {
 
     expect(me.statusCode).toBe(200)
     expect(me.json()).toMatchObject({ data: { orgName } })
+    expect(
+      (me.json() as { data: { handoffDisplay?: unknown } }).data.handoffDisplay
+    ).toBeUndefined()
   })
 
   it('AC-A1: returns isPlatformOperator:true for a platform operator and isPlatformOperator:false for a regular user', async () => {

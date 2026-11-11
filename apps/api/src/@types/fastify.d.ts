@@ -16,6 +16,12 @@ declare module 'fastify' {
     // Story 71.3: set only by the delegation stages. `sessionId` is then the literal 'delegation'
     // and there is no session row behind this context.
     delegation?: true
+    // Story 73.3: CM handoff display labels. Absent on native login. `role` is informational.
+    handoffDisplay?: {
+      organizationName?: string
+      tier?: string
+      role?: string
+    }
   }
 
   // Story 71.3: what a delegated handler reads as `ctx.delegation` (the extension-api
