@@ -121,6 +121,9 @@ describe('check-brand-name: mutation self-tests (Story 72.16 AC-2)', () => {
         }),
       })
     ).toHaveLength(1)
+    expect(problems({ 'static/manifest.json': '{"name":"Project\\u0020Vault"}' })).toEqual([
+      `static/manifest.json: hard-codes "${BRAND_LITERAL}"; overlay the static file or drop the literal`,
+    ])
   })
 
   it('passes SVG comments, PNGs that contain the name as bytes, and an empty static dir', () => {

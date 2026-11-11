@@ -159,17 +159,35 @@ function isStaticScanned(path: string): boolean {
   return ext === '.svg' || ext === '.webmanifest' || posix.basename(path) === 'manifest.json'
 }
 
-function staticProblems(rel: string, source: string): string[] {
-  if (posix.extname(rel) !== '.svg') {
-    try {
-      JSON.parse(source)
-    } catch {
-      return [`${rel}: not valid JSON`]
-    }
-  }
-  return htmlHits(source).map(
+function jsonStringValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (Array.isArray(value)) return value.flatMap(jsonStringValues)
+  if (value === null || typeof value !== 'object') return []
+  return Object.values(value).flatMap(jsonStringValues)
+}
+
+function literalProblems(rel: string, source: string): string[] {
+  const hits = htmlHits(source).map(
     (offset) => `${rel}:${lineOf(source, offset)}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`
   )
+  return hits.length > 0 ? hits : [`${rel}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`]
+}
+
+function staticProblems(rel: string, source: string): string[] {
+  if (posix.extname(rel) === '.svg') {
+    return htmlHits(source).map(
+      (offset) =>
+        `${rel}:${lineOf(source, offset)}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`
+    )
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return [`${rel}: not valid JSON`]
+  }
+  if (!jsonStringValues(parsed).some((text) => namesProduct(text))) return []
+  return literalProblems(rel, source)
 }
 
 function scanSource(webRoot: string): { files: number; problems: string[] } {
