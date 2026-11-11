@@ -143,7 +143,7 @@ async function insertPendingChallenge(
   input: {
     userId: string
     orgId: string
-    handoffDisplayClaims?: LoginSessionOptions['handoffDisplayClaims']
+    handoffDisplayClaims?: NonNullable<LoginSessionOptions['handoffDisplayClaims']>
   },
   meta: RequestMeta
 ): Promise<MfaChallengeResult | null> {
@@ -171,7 +171,7 @@ export function createPendingMfaSession(
   input: {
     userId: string
     orgId: string
-    handoffDisplayClaims?: LoginSessionOptions['handoffDisplayClaims']
+    handoffDisplayClaims?: NonNullable<LoginSessionOptions['handoffDisplayClaims']>
   },
   meta: RequestMeta = {}
 ): Promise<MfaChallengeResult> {
