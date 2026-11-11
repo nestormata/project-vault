@@ -203,7 +203,7 @@ jobs:
           # same starting state every normal single CI run gets, so no per-run reset is needed.
           DATABASE_URL="$SUPERUSER_DATABASE_URL" pnpm db:migrate
           psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
-          pnpm turbo test --force
+          pnpm turbo test
         env:
           # SUPERUSER_DATABASE_URL is already set at the job level and inherited here —
           # only the override for the test run itself (vault_app, not postgres) is needed.

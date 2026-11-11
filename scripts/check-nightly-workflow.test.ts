@@ -239,10 +239,12 @@ describe('nightly flaky repeat matrix', () => {
     expect(job).toContain('name: Flaky Test Repeat Run (${{ matrix.repeat }}/5)')
   })
 
-  it('runs the suite once per leg: no for loop, no DB reset, one forced turbo test', () => {
+  it('runs the suite once per leg: no for loop, no DB reset, one turbo test without --force', () => {
     expect(job).not.toMatch(/\bfor\s+\w+\s+in\b/)
     expect(job).not.toContain('DROP SCHEMA')
-    expect(job.match(/pnpm turbo test --force/g)).toHaveLength(1)
+    expect(job.match(/^\s+pnpm turbo test\s*$/m)).toHaveLength(1)
+    expect(job).not.toMatch(/pnpm turbo test --force/)
+    expect(job).not.toMatch(/--force/)
     expect(job.match(/pnpm db:migrate/g)).toHaveLength(1)
     expect(job).toContain('ALTER ROLE vault_admin')
     expect(job).toContain('=== flaky-test-repeat: run ${{ matrix.repeat }}/5 ===')
