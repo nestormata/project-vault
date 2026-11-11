@@ -4,6 +4,7 @@ import {
   index,
   inet,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -30,6 +31,11 @@ export const pendingMfaSessions = pgTable(
     userAgent: text('user_agent'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    handoffDisplayClaims: jsonb('handoff_display_claims').$type<{
+      organizationName?: string
+      tier?: string
+      role?: string
+    } | null>(),
   },
   (t) => ({
     tokenHashCheck: check(

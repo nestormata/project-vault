@@ -1491,7 +1491,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.41.0"`
+- type: `"3.42.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -1732,6 +1732,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.30.0
 - kind: type
 - type: `ExtensionRequestContext`
+- member: `handoffDisplay?`
+  - since: 3.42.0
+  - type: `HandoffDisplayClaims | undefined`
+  - union-members: `undefined`, `HandoffDisplayClaims`
 - member: `identity`
   - since: 3.30.0
   - type: `{ userId: string; orgRole: "owner" | "admin" | "member" | "viewer"; }`
@@ -1795,6 +1799,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - kind: type
 - type: `"--pv-ext-surface" | "--pv-ext-ink" | "--pv-ext-muted" | "--pv-ext-brand" | "--pv-ext-line"`
 - union-members: `"--pv-ext-surface"`, `"--pv-ext-ink"`, `"--pv-ext-muted"`, `"--pv-ext-brand"`, `"--pv-ext-line"`
+
+## export `HandoffDisplayClaims`
+
+- since: 3.42.0
+- kind: type
+- type: `HandoffDisplayClaims`
+- member: `organizationName?`
+  - since: 3.42.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `role?`
+  - since: 3.42.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `tier?`
+  - since: 3.42.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 
 ## export `HOST_SUPPORTED_EXTENSION_API_RANGE`
 

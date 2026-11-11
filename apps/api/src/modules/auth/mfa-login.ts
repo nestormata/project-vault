@@ -8,7 +8,12 @@ import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { writeHumanAuditEntry } from '../audit/human-entry.js'
 import { recordFailedAuthAttempt } from './failed-auth.js'
 import { verifyConfirmedLoginTotp } from './mfa.js'
-import { createLoginSessionInTx, type LoginResult, type RequestMeta } from './service.js'
+import {
+  createLoginSessionInTx,
+  type LoginResult,
+  type LoginSessionOptions,
+  type RequestMeta,
+} from './service.js'
 import { generatePendingMfaToken, hashPendingMfaToken } from './tokens.js'
 import { firstResultSequential } from '../../lib/first-result-sequential.js'
 
@@ -135,7 +140,11 @@ async function recordInvalidTotpFailure(
 
 async function insertPendingChallenge(
   tx: Tx,
-  input: { userId: string; orgId: string },
+  input: {
+    userId: string
+    orgId: string
+    handoffDisplayClaims?: NonNullable<LoginSessionOptions['handoffDisplayClaims']>
+  },
   meta: RequestMeta
 ): Promise<MfaChallengeResult | null> {
   const mfaToken = generatePendingMfaToken()
@@ -151,6 +160,7 @@ async function insertPendingChallenge(
       userAgent: meta.userAgent?.slice(0, 512) ?? null,
       expiresAt:
         sql`NOW() + (${env.MFA_PENDING_SESSION_TTL_SECONDS} || ' seconds')::interval` as unknown as Date,
+      handoffDisplayClaims: input.handoffDisplayClaims ?? null,
     })
     .onConflictDoNothing({ target: pendingMfaSessions.tokenHash })
     .returning({ id: pendingMfaSessions.id })
@@ -158,7 +168,11 @@ async function insertPendingChallenge(
 }
 
 export function createPendingMfaSession(
-  input: { userId: string; orgId: string },
+  input: {
+    userId: string
+    orgId: string
+    handoffDisplayClaims?: NonNullable<LoginSessionOptions['handoffDisplayClaims']>
+  },
   meta: RequestMeta = {}
 ): Promise<MfaChallengeResult> {
   return getDb().transaction(async (tx) => {
@@ -263,7 +277,8 @@ export async function verifyLogin(
       db,
       { id: row.userId, identityTokenId },
       row.orgId,
-      meta
+      meta,
+      { handoffDisplayClaims: row.handoffDisplayClaims ?? null }
     )
     await tryWriteLoginVerifiedAudit(db, row, identityTokenId, meta)
     await deletePendingSession(db, tokenHash)
