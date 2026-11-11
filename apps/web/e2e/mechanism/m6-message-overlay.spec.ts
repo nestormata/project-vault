@@ -7,10 +7,11 @@ import {
 } from '../fixtures/appearance.js'
 import { seedOrgOwner } from './fixtures.js'
 
-// Story 72.17 AC-2 (CM request R2): the shell's tagline is the `shell_brand_tagline` message, so a
-// host changes it by overlaying one key (the pack's `messages/en.json`), with no `ShellBrand`
-// replacement. The mock pack overlays the key and replaces no brand component; the composed
-// browser shows the pack text and none of PV's default.
+// Story 72.17 AC-2 (CM request R2) and 72.23: the tagline is the `shell_brand_tagline` message, so a
+// host changes it by overlaying one key (the pack's `messages/en.json`), with no brand-component
+// replacement. The mock pack overlays the key. This spec visits the signed-in shell, which still
+// mounts `ShellBrand`. It does not visit login, register, or `/`: the pack replaces the auth layout
+// (no `AuthBrandHeader`), and PV `ownLoad` 303s `/` (no `RootHomeContent`).
 
 const PACK_TAGLINE = 'mock-ui-pack:m6-tagline'
 const PV_DEFAULT_TAGLINE = 'Run complex projects. Miss nothing.'

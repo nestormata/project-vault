@@ -48,10 +48,10 @@ pv-compose  ->  paraglide compile  ->  svelte-kit sync  ->  pv-verify --only tsc
    copy; CM files get `@source` lines. A pack `messages/<locale>.json` overrides PV's own message keys
    and adds locales PV lacks. CM's own strings are not merged (ADR 0007 decision 7); a key PV does not
    define is reported as a note.
-   Keys a host overlays for branding: `shell_brand_tagline` (the tagline under the product name in
-   the shell header, `ShellBrand.svelte`; Story 72.17). The default is PV's own sentence in `en` and
-   `es`; overlaying the key replaces the text with no component replacement. It covers the shell
-   header only; the auth pages and the public home keep the fixed sentence.
+   Keys a host overlays for branding: `shell_brand_tagline` (the tagline under the product name;
+   Stories 72.17 and 72.23). The default is PV's own sentence in `en` and `es`. Overlaying the key
+   replaces the text with no component replacement. It covers the signed-in shell (`ShellBrand`),
+   the auth and vault-ready header (`AuthBrandHeader`), and the public home (`RootHomeContent`).
 
    **Overlayable message keys (Story 72.19, CentralizeMe request R4).** PV's list is
    `OVERLAYABLE_MESSAGE_KEYS` in `src/lib/i18n/overlayable-message-keys.ts` (shipped in `web-host`):

@@ -11,6 +11,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **Web: auth pages and the public home read `shell_brand_tagline`** (Story 72.23). `AuthBrandHeader`
+  (sign-in, register, vault-ready) and `RootHomeContent` (public `/`) render
+  `m.shell_brand_tagline()` instead of the hard-coded English sentence. The default in `en` and `es`
+  is unchanged, so PV still shows "Run complex projects. Miss nothing." A host overlays that one
+  key and the tagline changes in the shell, on auth pages, and on the public home. No new key.
 - **Web: `check-brand-name` also scans `static/` manifests and SVG text.** A hard-coded "Project Vault"
   in a web manifest (`manifest.webmanifest`, `manifest.json`) or in SVG text fails the guard the same way
   a hard-coded name in `src/` does. PNG files are not scanned. A host that needs its own install name
@@ -53,8 +58,8 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   request R2). `ShellBrand` renders `m.shell_brand_tagline()` instead of a hard-coded sentence; the
   default text in `en` and `es` is unchanged ("Run complex projects. Miss nothing."), so PV renders
   exactly as before. A host changes it by overlaying that one key in its pack `messages/<locale>.json`,
-  with no `ShellBrand` replacement. Only the shell header is covered: the auth pages and the public
-  home still carry the same sentence as fixed text. A host that still replaces `ShellBrand.svelte` sees its
+  with no `ShellBrand` replacement. Story 72.23 extends the same key to auth pages and the public
+  home. A host that still replaces `ShellBrand.svelte` sees its
   `hostSha256` change with this release and runs `--accept-host` until it drops the replacement.
 - **Web: the global search palette accepts results providers** (Story 72.18, CentralizeMe request R3).
   A fill of the `app.layout.search` injection point calls `registerSearchProvider(...)` (from
