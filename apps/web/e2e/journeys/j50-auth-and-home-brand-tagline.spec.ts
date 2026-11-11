@@ -8,11 +8,11 @@ import { gotoHydrated } from '../fixtures/hydration.js'
 
 const DEFAULT_TAGLINE = 'Run complex projects. Miss nothing.'
 
-// J50 (Story 72.23): auth pages read `shell_brand_tagline`. Without a host overlay the default
-// text is exactly what those pages rendered before they called the message. The overlay case,
-// including public `/` which the mock pack actually renders, runs in
-// `mechanism/m6-message-overlay.spec.ts`. PV's own `ownLoad` always 303s `/`, so this journey
-// never waits for a `Project Vault` heading on `/`.
+// J50 (Story 72.23): PV auth pages read `shell_brand_tagline`. Without a host overlay the default
+// text is what those pages rendered before they called the message. Overlay of the same key is the
+// signed-in shell case in `mechanism/m6-message-overlay.spec.ts`. The mock pack replaces
+// `(auth)/+layout.svelte`, so login and register there do not mount `AuthBrandHeader`. PV `ownLoad`
+// always 303s `/`, so this journey never waits for a public-home heading.
 
 describeEachAppearance('J50 auth and public home brand tagline', (appearance) => {
   test('AC1: the sign-in page shows the default tagline and does not overflow', async ({
