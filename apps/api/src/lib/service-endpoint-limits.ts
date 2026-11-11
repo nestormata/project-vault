@@ -264,7 +264,7 @@ function capDecision(
   if (resolved.maxEndpointsOrg !== null && counts.org >= resolved.maxEndpointsOrg) {
     return refused(
       'service_endpoint_limit_reached',
-      `This project has reached its maximum of ${resolved.maxEndpointsOrg} monitored endpoints`,
+      `This organization has reached its maximum of ${resolved.maxEndpointsOrg} monitored endpoints`,
       resolved.maxEndpointsOrg
     )
   }

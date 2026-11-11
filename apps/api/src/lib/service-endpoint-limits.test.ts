@@ -77,7 +77,12 @@ describe('decideServiceEndpointMutation (Story 73.7)', () => {
         org: 3,
         maxPerProject: 25,
       })
-    ).toMatchObject({ allowed: false, code: 'service_endpoint_limit_reached', limit: 3 })
+    ).toEqual({
+      allowed: false,
+      code: 'service_endpoint_limit_reached',
+      message: 'This organization has reached its maximum of 3 monitored endpoints',
+      limit: 3,
+    })
   })
 
   it('refuses create and resume when health checks are disabled', () => {

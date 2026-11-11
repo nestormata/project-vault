@@ -158,7 +158,11 @@ describe('service-endpoint limits enforcement (Story 73.7)', () => {
             body: { name: 'second', url: 'https://example.net/health' },
           })
         )
-      ).rejects.toBeInstanceOf(ServiceEndpointLimitReachedError)
+      ).rejects.toMatchObject({
+        name: 'ServiceEndpointLimitReachedError',
+        code: 'service_endpoint_limit_reached',
+        message: 'This organization has reached its maximum of 1 monitored endpoints',
+      })
     } finally {
       await deleteTestUser(userId)
     }

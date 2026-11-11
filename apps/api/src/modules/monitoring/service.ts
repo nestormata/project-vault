@@ -439,8 +439,8 @@ export async function deleteDomainRecord(tx: Tx, params: { domainId: string; pro
 export class ServiceEndpointLimitReachedError extends Error {
   readonly code = 'service_endpoint_limit_reached'
 
-  constructor(limit: number) {
-    super(`This project has reached its maximum of ${limit} monitored endpoints`)
+  constructor(limit: number, message?: string) {
+    super(message ?? `This project has reached its maximum of ${limit} monitored endpoints`)
     this.name = 'ServiceEndpointLimitReachedError'
   }
 }
@@ -513,7 +513,8 @@ async function applyServiceEndpointLimitsDecision(
   if (decision.allowed) return
   if (decision.code === 'service_endpoint_limit_reached') {
     throw new ServiceEndpointLimitReachedError(
-      decision.limit ?? env.MAX_SERVICE_ENDPOINTS_PER_PROJECT
+      decision.limit ?? env.MAX_SERVICE_ENDPOINTS_PER_PROJECT,
+      decision.message
     )
   }
   throwServiceEndpointLimitsDecision(decision)
