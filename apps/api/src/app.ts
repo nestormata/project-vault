@@ -86,6 +86,7 @@ import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
 import { reloadThemesWithFanout } from './modules/theming/service.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
 import { wireExtensionCapabilityGate } from './lib/capability-gate.js'
+import { wireExtensionServiceEndpointLimits } from './lib/service-endpoint-limits.js'
 import {
   wireExtensionDeliveryProvider,
   auditDeliveryProviderRegistrationOrFailClosed,
@@ -730,6 +731,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // wireExtensionAuthStrategy() exactly — reads only the already-resolved ExtensionState, no-ops
   // for every state except loaded-with-a-capabilityGate-hook, and never throws.
   wireExtensionCapabilityGate(getExtensionStatus(), fastify.log)
+  wireExtensionServiceEndpointLimits(getExtensionStatus(), fastify.log)
 
   // Story 20.11 AC1/AC5: sibling wiring step, mirroring wireExtensionCapabilityGate() exactly —
   // no-ops for every state except loaded-with-a-deliveryProvider-hook. Throws

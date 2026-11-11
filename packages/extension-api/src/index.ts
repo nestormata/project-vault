@@ -69,6 +69,11 @@ export type {
   CapabilityGateContext,
 } from './hooks/capability-gate.js'
 export type {
+  ServiceEndpointLimits,
+  ServiceEndpointLimitsContext,
+  ServiceEndpointLimitsResolver,
+} from './hooks/service-endpoint-limits.js'
+export type {
   AuditEventSourceHost,
   AuditEventSourceWriteInput,
   AuditEventSourceWriteResult,

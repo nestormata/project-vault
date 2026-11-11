@@ -441,6 +441,9 @@ export const OperationalEvent = {
   CAPABILITY_GATE_DOUBLE_CHECK: 'capability_gate.double_check',
   // AC-22: an id reaching assertCapability()/checkCapability() outside the closed CapabilityId set.
   CAPABILITY_GATE_UNKNOWN_ID: 'capability_gate.unknown_id',
+  // Story 73.7: typed service-endpoint limits resolver (apps/api/src/lib/service-endpoint-limits.ts).
+  SERVICE_ENDPOINT_LIMITS_DOUBLE_WIRE_IGNORED: 'service_endpoint_limits.double_wire_ignored',
+  SERVICE_ENDPOINT_LIMITS_UNAVAILABLE: 'service_endpoint_limits.unavailable',
   // AC-15: a check arrived over its accounting key's in-flight cap and was denied without
   // invoking the gate.
   CAPABILITY_GATE_SATURATED: 'capability_gate.saturated',

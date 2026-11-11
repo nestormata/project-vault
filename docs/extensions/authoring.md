@@ -361,6 +361,19 @@ to cosmetically gate controls. Your `message` and `reasonCode` are never surface
 reach a user only through an actual denied request's `403`. Do not treat it as a second
 distribution channel for your denial text.
 
+### Service-endpoint limits
+
+If you are implementing `serviceEndpointLimits`, the host applies your answer on every
+service-endpoint create and update (HTTP, `HostServices.monitoring`, and project import):
+
+- Return only the fields you want to restrict. Omitted fields stay default-open.
+- `maxEndpoints` is organization-wide. `MAX_SERVICE_ENDPOINTS_PER_PROJECT` still applies.
+- The host never caches the answer. A tier change is visible on the next mutation.
+- A throw, timeout (250 ms), or malformed object refuses create and any update that enables a
+  check or shortens the interval. Lowering updates still succeed. The host does not fall back to
+  static env.
+- `callId` is minted by the host. Do not treat a caller-supplied request id as the call id.
+
 ### Module actions and ActionResult
 
 > This section describes the legacy runtime UI extension API (HTML panels), which is deprecated

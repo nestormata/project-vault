@@ -38,6 +38,10 @@ export type ExtensionCapability =
   // manifest must also declare a non-empty `anonymousRoutePaths` allow-list (AC3), mirroring
   // `'oauth-handoff'`/`redirectOrigins`'s own precedent exactly.
   | 'public-route'
+  // Story 73.7 — declares that this extension's `hooksFactory()` may return a
+  // `serviceEndpointLimits` resolver so the host can apply numeric health-check limits
+  // (default open when omitted). Distinct from `'capability-gate'` (boolean entitlement).
+  | 'service-endpoint-limits'
 
 export type ExtensionManifest = {
   /** Reverse-DNS-style identifier, e.g. "com.acme.sso-extension" — validated by registerExtension (AC6). */
@@ -669,7 +673,9 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // (policy row 1). Additive. `orgAuthorization.checkMembership` is unchanged.
 // Story 73.11 — bumped as a minor (3.40.0 -> 3.41.0): scheduled-task membership checks are
 // bound to PV's current organization invocation and refuse calls outside that scope (policy row 1).
-export const EXTENSION_API_VERSION = '3.41.0'
+// Story 73.7 — bumped as a minor (3.41.0 -> 3.42.0): optional `serviceEndpointLimits` hook and
+// `'service-endpoint-limits'` capability (policy rows 1, 6, 11). Default-open when omitted.
+export const EXTENSION_API_VERSION = '3.42.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

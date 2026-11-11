@@ -2,6 +2,37 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.42.0 — 2026-11-10
+
+contract-hash: sha256:39e08406b12edf59833529ba48c9da1a63b13791d06316135c803e47065e8269
+
+Story 73.7. Optional `serviceEndpointLimits` resolver and `'service-endpoint-limits'` capability.
+The host applies numeric health-check limits on service-endpoint create and update. Omitted fields
+stay default-open. A registered resolver replaces static env and never replaces
+`MAX_SERVICE_ENDPOINTS_PER_PROJECT`. Throw, timeout, or a malformed object fail closed on create
+and on updates that raise probing intensity.
+
+### Added
+
+- Types `ServiceEndpointLimits`, `ServiceEndpointLimitsContext`, and `ServiceEndpointLimitsResolver`.
+- Optional `ExtensionHooks.serviceEndpointLimits`.
+- Manifest capability `'service-endpoint-limits'`. Declaring it without a callable resolver fails
+  registration.
+
+### Deprecated
+
+This release deprecates nothing. The 3.30.0 notice remains in force, restated for the marker check:
+types `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionContext`,
+`ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`, `ModuleDataResult`,
+`ModuleDataRouteHandler`, `ModuleDataRouteDeclaration` and `ExtensionNavItem`; manifest fields
+`uiPanelSlots`, `moduleActions`, `navItems` and `moduleDataRoutes`; hooks `uiPanel`, `moduleAction`
+and `moduleData`; and the `'ui-panel'` capability. Replacements are `ExtensionRequestContext`,
+`ExtensionActionResult`, composed UI and M7 `apiRoutes`.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; this release adds nothing to it).
+
 ## 3.41.0 — 2026-11-05
 
 contract-hash: sha256:4af93ab24e1d2ccbaea035b59d3ce94db9ff5f5364e0fccf7d2bef5f280dbe9a

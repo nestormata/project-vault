@@ -10,6 +10,8 @@ import { parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { requireCallerCanManageProject } from '../projects/routes.js'
+import { serviceEndpointLimitsHttpError } from '../../lib/service-endpoint-limits.js'
+import { ServiceEndpointLimitReachedError } from '../monitoring/service.js'
 import {
   checkExportFormatVersion,
   decryptExportFile,
@@ -28,6 +30,23 @@ import { ExportProjectParamsSchema, ImportProjectResponseSchema } from './schema
 const ImportProjectNameOverrideSchema = z.string().trim().min(1).max(128)
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
+
+async function sendImportServiceEndpointLimitsError(
+  reply: FastifyReply,
+  error: unknown,
+  auditImportFailed: (reason: string) => Promise<void>
+): Promise<boolean> {
+  if (error instanceof ServiceEndpointLimitReachedError) {
+    await auditImportFailed(error.code)
+    reply.status(422).send({ code: error.code, message: error.message })
+    return true
+  }
+  const limits = serviceEndpointLimitsHttpError(error)
+  if (!limits) return false
+  await auditImportFailed(limits.code)
+  reply.status(limits.status).send({ code: limits.code, message: limits.message })
+  return true
+}
 const EXPORT_REQUIRES_ADMIN = {
   code: 'project_export_requires_admin',
   message: 'Exporting a project requires project admin/owner or org admin/owner authorization.',
@@ -244,6 +263,7 @@ export function projectExportRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         201: ImportProjectResponseSchema,
         422: ApiErrorSchema,
+        503: ApiErrorSchema,
         ...defaultErrorResponses,
       },
     },
@@ -315,11 +335,19 @@ export function projectExportRoutes(fastify: FastifyApp): Promise<void> {
         })
       }
 
-      const result = await importProjectBundle(secureCtx, {
-        bundle: parsed.bundle,
-        ...(upload.projectName ? { projectNameOverride: upload.projectName } : {}),
-        logger: req.log,
-      })
+      let result: Awaited<ReturnType<typeof importProjectBundle>>
+      try {
+        result = await importProjectBundle(secureCtx, {
+          bundle: parsed.bundle,
+          ...(upload.projectName ? { projectNameOverride: upload.projectName } : {}),
+          logger: req.log,
+        })
+      } catch (error) {
+        if (await sendImportServiceEndpointLimitsError(reply, error, auditImportFailed)) {
+          return reply
+        }
+        throw error
+      }
       if (result.status === 'create_project_failed') {
         await auditImportFailed(`create_project_failed:${result.error.code}`)
         return reply.status(409).send(result.error)

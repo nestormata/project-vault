@@ -1491,7 +1491,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.41.0"`
+- type: `"3.42.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -1511,7 +1511,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 1.0.0
 - kind: type
 - type: `ExtensionCapability`
-- union-members: `"auth-provider"`, `"notification-channel"`, `"ui-panel"`, `"capability-gate"`, `"audit-event-source"`, `"project-lifecycle"`, `"delivery-provider"`, `"project-archive-notify"`, `"oauth-handoff"`, `"scheduled-task"`, `"public-route"`
+- union-members: `"auth-provider"`, `"notification-channel"`, `"ui-panel"`, `"capability-gate"`, `"audit-event-source"`, `"project-lifecycle"`, `"delivery-provider"`, `"project-archive-notify"`, `"oauth-handoff"`, `"scheduled-task"`, `"public-route"`, `"service-endpoint-limits"`
 
 ## export `ExtensionDbHandle`
 
@@ -1606,6 +1606,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.18.0
   - type: `ScheduledTaskHooks | undefined`
   - union-members: `undefined`, `ScheduledTaskHooks`
+- member: `serviceEndpointLimits?`
+  - since: 3.42.0
+  - type: `ServiceEndpointLimitsResolver | undefined`
+  - union-members: `undefined`, `ServiceEndpointLimitsResolver`
 - member: `uiPanel?`
   - since: 1.0.0
   - type: `UIPanel | undefined`
@@ -4019,6 +4023,49 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.18.0
   - type: `(context: ScheduledTaskContext) => Promise<void>`
   - call-signature: `(context: ScheduledTaskContext): Promise<void>`
+
+## export `ServiceEndpointLimits`
+
+- since: 3.42.0
+- kind: type
+- type: `ServiceEndpointLimits`
+- member: `healthChecksEnabled?`
+  - since: 3.42.0
+  - type: `boolean | undefined`
+  - union-members: `undefined`, `false`, `true`
+- member: `maxEndpoints?`
+  - since: 3.42.0
+  - type: `number | undefined`
+  - union-members: `undefined`, `number`
+- member: `minCheckIntervalSeconds?`
+  - since: 3.42.0
+  - type: `number | undefined`
+  - union-members: `undefined`, `number`
+
+## export `ServiceEndpointLimitsContext`
+
+- since: 3.42.0
+- kind: type
+- type: `ServiceEndpointLimitsContext`
+- member: `callId`
+  - since: 3.42.0
+  - type: `string`
+- member: `orgId`
+  - since: 3.42.0
+  - type: `string`
+- member: `projectId`
+  - since: 3.42.0
+  - type: `string`
+
+## export `ServiceEndpointLimitsResolver`
+
+- since: 3.42.0
+- kind: type
+- type: `ServiceEndpointLimitsResolver`
+- member: `onResolveServiceEndpointLimits`
+  - since: 3.42.0
+  - type: `(context: ServiceEndpointLimitsContext) => Promise<ServiceEndpointLimits>`
+  - call-signature: `(context: ServiceEndpointLimitsContext): Promise<ServiceEndpointLimits>`
 
 ## export `UI_PANEL_SLOT_NAME_PATTERN`
 

@@ -11,6 +11,12 @@ import {
 } from '@project-vault/db/schema'
 import { env } from '../../config/env.js'
 import { forEachSequential } from '../../lib/for-each-sequential.js'
+import {
+  decideServiceEndpointMutation,
+  resolveServiceEndpointLimits,
+  throwServiceEndpointLimitsDecision,
+  type ServiceEndpointMutation,
+} from '../../lib/service-endpoint-limits.js'
 import { assertUrlIsMonitorable, redactUrlForDisplay } from './url-safety.js'
 import {
   computeStatusTransition,
@@ -471,6 +477,73 @@ export async function countServiceEndpointsForProject(tx: Tx, projectId: string)
   return row?.total ?? 0
 }
 
+export async function countServiceEndpointsForOrg(tx: Tx, orgId: string): Promise<number> {
+  const [row] = await tx
+    .select({ total: count() })
+    .from(serviceEndpoints)
+    .where(eq(serviceEndpoints.orgId, orgId))
+  return row?.total ?? 0
+}
+
+function frequencyMinutesToSeconds(minutes: number): number {
+  return minutes * 60
+}
+
+type ServiceEndpointLimitsLogger = Parameters<typeof resolveServiceEndpointLimits>[0]['logger']
+
+async function applyServiceEndpointLimitsDecision(
+  tx: Tx,
+  input: {
+    orgId: string
+    projectId: string
+    mutation: ServiceEndpointMutation
+    logger?: ServiceEndpointLimitsLogger
+  }
+): Promise<void> {
+  const resolved = await resolveServiceEndpointLimits({
+    orgId: input.orgId,
+    projectId: input.projectId,
+    logger: input.logger,
+  })
+  const decision = decideServiceEndpointMutation(resolved, input.mutation, {
+    project: await countServiceEndpointsForProject(tx, input.projectId),
+    org: await countServiceEndpointsForOrg(tx, input.orgId),
+    maxPerProject: env.MAX_SERVICE_ENDPOINTS_PER_PROJECT,
+  })
+  if (decision.allowed) return
+  if (decision.code === 'service_endpoint_limit_reached') {
+    throw new ServiceEndpointLimitReachedError(
+      decision.limit ?? env.MAX_SERVICE_ENDPOINTS_PER_PROJECT
+    )
+  }
+  throwServiceEndpointLimitsDecision(decision)
+}
+
+export async function assertServiceEndpointCreateAllowed(
+  tx: Tx,
+  input: {
+    orgId: string
+    projectId: string
+    intervalSeconds: number
+    logger?: ServiceEndpointLimitsLogger
+  }
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended('svc-ep-limits:' || ${input.orgId}, 0))`
+  )
+  await applyServiceEndpointLimitsDecision(tx, {
+    orgId: input.orgId,
+    projectId: input.projectId,
+    logger: input.logger,
+    mutation: {
+      kind: 'create',
+      enablingCheck: true,
+      intervalSeconds: input.intervalSeconds,
+      previousIntervalSeconds: null,
+    },
+  })
+}
+
 export async function listServiceEndpoints(tx: Tx, projectId: string) {
   const rows = await tx
     .select()
@@ -513,19 +586,27 @@ export async function listServiceEndpointsForOrg(tx: Tx, orgId: string) {
 }
 
 /**
- * AC 1/ADR-6.2-09: checks the per-project registration cap BEFORE any SSRF validation or DB
- * write, then AC 1/2: synchronously validates the URL is not private/loopback/reserved.
+ * AC 1/ADR-6.2-09 plus Story 73.7: SSRF validation first, then org advisory lock plus
+ * per-project and org-wide limits, then insert.
  */
 export async function createServiceEndpoint(
   tx: Tx,
-  input: { orgId: string; projectId: string; userId: string; body: CreateServiceEndpointBody }
-) {
-  const existingCount = await countServiceEndpointsForProject(tx, input.projectId)
-  if (existingCount >= env.MAX_SERVICE_ENDPOINTS_PER_PROJECT) {
-    throw new ServiceEndpointLimitReachedError(env.MAX_SERVICE_ENDPOINTS_PER_PROJECT)
+  input: {
+    orgId: string
+    projectId: string
+    userId: string
+    body: CreateServiceEndpointBody
+    logger?: ServiceEndpointLimitsLogger
   }
-
+) {
   await assertUrlIsMonitorable(input.body.url)
+
+  await assertServiceEndpointCreateAllowed(tx, {
+    orgId: input.orgId,
+    projectId: input.projectId,
+    intervalSeconds: frequencyMinutesToSeconds(input.body.checkFrequencyMinutes ?? 5),
+    logger: input.logger,
+  })
 
   const [row] = await tx
     .insert(serviceEndpoints)
@@ -560,6 +641,26 @@ export async function findServiceEndpointInProject(
   return row ?? null
 }
 
+function mutationFromUpdate(
+  current: typeof serviceEndpoints.$inferSelect,
+  input: { body: UpdateServiceEndpointBody; rawBody: Record<string, unknown> }
+): ServiceEndpointMutation {
+  const enablingCheck =
+    'healthCheckPaused' in input.rawBody &&
+    input.body.healthCheckPaused === false &&
+    current.healthCheckPausedAt !== null
+  const intervalSeconds =
+    'checkFrequencyMinutes' in input.rawBody && input.body.checkFrequencyMinutes !== undefined
+      ? frequencyMinutesToSeconds(input.body.checkFrequencyMinutes)
+      : null
+  return {
+    kind: 'update',
+    enablingCheck,
+    intervalSeconds,
+    previousIntervalSeconds: frequencyMinutesToSeconds(current.checkFrequencyMinutes),
+  }
+}
+
 export async function updateServiceEndpoint(
   tx: Tx,
   input: {
@@ -568,8 +669,20 @@ export async function updateServiceEndpoint(
     userId: string
     body: UpdateServiceEndpointBody
     rawBody: Record<string, unknown>
+    logger?: ServiceEndpointLimitsLogger
   }
 ) {
+  const current = await findServiceEndpointInProject(tx, {
+    serviceEndpointId: input.serviceEndpointId,
+    projectId: input.projectId,
+  })
+  if (!current) return null
+  await applyServiceEndpointLimitsDecision(tx, {
+    orgId: current.orgId,
+    projectId: input.projectId,
+    logger: input.logger,
+    mutation: mutationFromUpdate(current, input),
+  })
   const updates = await buildServiceEndpointUpdates(input)
   const pause = await resolvePauseUpdate(tx, input)
   if (pause.notFound) return null

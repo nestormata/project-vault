@@ -39,7 +39,7 @@ acceptable. Declaring a capability is what makes the corresponding hook legal in
 
 ## Capability catalogue
 
-`manifest.capabilities` is an array of these eight literals.
+`manifest.capabilities` is an array of these literals.
 
 | Capability | Grants |
 |---|---|
@@ -51,6 +51,7 @@ acceptable. Declaring a capability is what makes the corresponding hook legal in
 | `project-lifecycle` | A `projectLifecycle` hook (`ProjectCreatePolicy`) that may veto project creation. |
 | `delivery-provider` | A `deliveryProvider` map — per-channel delivery implementations replacing the built-in transport for those channels. |
 | `project-archive-notify` | A `projectArchiveNotifier` hook — a non-vetoing notification of an already-committed archive, dispatched by a background worker. Deliberately independent of `project-lifecycle`. |
+| `service-endpoint-limits` | A `serviceEndpointLimits` resolver — numeric health-check limits (enabled, org-wide max endpoints, min interval). Distinct from `capability-gate`. Omitted means default open. |
 
 ## Hook catalogue
 
@@ -63,6 +64,7 @@ whose capability you declared.
 | `notificationChannel` | receives a `NotificationPayload` | |
 | `uiPanel` | `onRenderPanel(context) => UIPanelResult` | Fails closed on throw, timeout, or a malformed result. Part of the legacy runtime UI extension API (HTML panels; deprecated and frozen). |
 | `capabilityGate` | `onCheckCapability(context) => CapabilityDecision` | Never cached by the host: every gated check calls it. Fails closed. |
+| `serviceEndpointLimits` | `onResolveServiceEndpointLimits(context) => ServiceEndpointLimits` | Never cached. Replaces static env when registered. Throws, timeout, or a malformed object fail closed on create and on updates that raise probing intensity. Extra keys are stripped. |
 | `projectLifecycle` | `onBeforeCreateProject(...)` | May veto. Runs in-request. |
 | `projectArchiveNotifier` | notification of a committed archive | Never in-request, never vetoing. |
 | `moduleAction` | dispatch target for panel actions | Legal only when the manifest declares `moduleActions`. See [Module actions and ActionResult](authoring.md#module-actions-and-actionresult). Part of the legacy runtime UI extension API (HTML panels; deprecated and frozen). |

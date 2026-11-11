@@ -21,6 +21,11 @@ import {
   expectArchivedProjectRejected,
   expectCrossOrgProjectNotFound,
 } from './monitoring-route-test-helpers.js'
+import {
+  __resetServiceEndpointLimitsForTests,
+  __setServiceEndpointLimitsResolverForTests,
+  __setStaticServiceEndpointLimitsForTests,
+} from '../../lib/service-endpoint-limits.js'
 
 const PUBLIC_IP = '8.8.8.8'
 const lookupMock = vi.fn(async (..._args: unknown[]) => [{ address: PUBLIC_IP, family: 4 }])
@@ -101,6 +106,7 @@ describe('service-endpoints / health-history / alerts routes (Story 6.2)', () =>
   afterEach(() => {
     lookupMock.mockClear()
     lookupMock.mockImplementation(async () => [{ address: PUBLIC_IP, family: 4 }])
+    __resetServiceEndpointLimitsForTests()
   })
 
   describe('POST /:projectId/service-endpoints', () => {
@@ -204,6 +210,28 @@ describe('service-endpoints / health-history / alerts routes (Story 6.2)', () =>
       expect(overCap.statusCode).toBe(422)
       expect(overCap.json()).toMatchObject({ code: 'service_endpoint_limit_reached' })
     }, 30_000)
+
+    it('returns 403 health_checks_disabled when static config disables health checks', async () => {
+      __setStaticServiceEndpointLimitsForTests({ healthChecksEnabled: false })
+      const projectId = await createProjectViaApi(app, owner.cookies, 'se-health-off')
+      const res = await createEndpoint(app, owner.cookies, projectId)
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toMatchObject({ code: 'health_checks_disabled' })
+    })
+
+    it('returns 503 when a configured resolver throws on create', async () => {
+      __setServiceEndpointLimitsResolverForTests({
+        onResolveServiceEndpointLimits: async () => {
+          throw new Error('resolver exploded')
+        },
+      })
+      const projectId = await createProjectViaApi(app, owner.cookies, 'se-resolver-down')
+      const res = await createEndpoint(app, owner.cookies, projectId)
+      expect(res.statusCode).toBe(503)
+      const body = res.json() as { code: string; message: string }
+      expect(body).toMatchObject({ code: 'service_endpoint_limits_unavailable' })
+      expect(body.message).not.toContain('resolver exploded')
+    })
 
     it('returns 404 project_not_found for a project outside the caller org', async () => {
       await expectCrossOrgProjectNotFound(app, owner.cookies, other.cookies, 'se', createEndpoint)
