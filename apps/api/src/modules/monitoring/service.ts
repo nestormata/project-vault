@@ -489,7 +489,9 @@ function frequencyMinutesToSeconds(minutes: number): number {
   return minutes * 60
 }
 
-type ServiceEndpointLimitsLogger = Parameters<typeof resolveServiceEndpointLimits>[0]['logger']
+type ServiceEndpointLimitsLogger = NonNullable<
+  Parameters<typeof resolveServiceEndpointLimits>[0]['logger']
+>
 
 async function applyServiceEndpointLimitsDecision(
   tx: Tx,
