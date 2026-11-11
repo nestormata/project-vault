@@ -1147,8 +1147,10 @@ overlaying that single key in its pack's `messages/<locale>.json`, with no copy 
 
 `pnpm check-brand-name` (in `make ci-inner` and the CI Checks job) fails on any user-visible string in
 `apps/web/src` (markup text, attribute values, script and `.ts` string literals; comments and test files are
-not product copy) or any catalogue message other than `brand_name` that hard-codes `Project Vault`. It has no
-exemption list: a new occurrence is fixed by reading the key. Tests that assert copy read `m.brand_name()`.
+not product copy), any catalogue message other than `brand_name` that hard-codes `Project Vault`, and any
+web manifest or SVG text under `apps/web/static`. It has no exemption list: a new occurrence in source or
+a catalogue is fixed by reading the key; a new occurrence in `static/` is fixed by dropping the literal or
+overlaying that file. Tests that assert copy read `m.brand_name()`. PNG files under `static/` are not scanned.
 The mechanism spec `e2e/mechanism/m6-brand-name.spec.ts` overlays the key in the mock pack and checks the
 composed auth pages, tab titles and error page. The CM follow-up (overlay `brand_name` and delete its copies of
 these files) is a CM story, not part of this change. The next `web-host` release carries the key.

@@ -9,6 +9,9 @@
 //   - `.html`    -> HTML comments removed, the rest read as text (`src/app.html`).
 //   - `messages/<locale>.json` -> every value except the one for `brand_name` (a message that names
 //     the product takes it as the `{brand}` parameter instead).
+//   - `static/*.svg` and web manifests (`*.webmanifest`, `manifest.json`) -> SVG uses the HTML
+//     comment strip; a manifest is parsed as JSON then scanned as text. A host overlays the file.
+//     PNG and other binaries are not scanned.
 // Test files (`*.test.ts`, `*.spec.ts`) are not product copy and are not scanned; they read the
 // message function (story 72.19 pins the same rule for the overlay tests).
 //
@@ -23,6 +26,8 @@ export const BRAND_LITERAL = 'Project Vault'
 export const BRAND_MESSAGE_KEY = 'brand_name'
 const SCANNED_DIRS = ['src']
 const SCANNED_FILE = /\.(svelte|ts|js|html)$/
+const STATIC_DIR = 'static'
+const STATIC_ADVICE = 'overlay the static file or drop the literal'
 /** The name in any case, with any run of whitespace (incl. a line break or NBSP) between the words. */
 const BRAND_PATTERN = /project[\s\u00a0]+vault/i
 const TEST_FILE = /\.(test|spec)\.[cm]?[jt]s$/
@@ -31,6 +36,7 @@ const GENERATED_DIR = 'src/lib/paraglide'
 
 export interface BrandNameResult {
   files: number
+  staticFiles: number
   messageFiles: number
   problems: string[]
 }
@@ -148,7 +154,43 @@ function messageProblems(rel: string, source: string): string[] {
   return problems
 }
 
-export function checkBrandNameGuard(webRoot: string): BrandNameResult {
+function isStaticScanned(path: string): boolean {
+  const ext = posix.extname(path)
+  return ext === '.svg' || ext === '.webmanifest' || posix.basename(path) === 'manifest.json'
+}
+
+function jsonStringValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (Array.isArray(value)) return value.flatMap(jsonStringValues)
+  if (value === null || typeof value !== 'object') return []
+  return Object.values(value).flatMap(jsonStringValues)
+}
+
+function literalProblems(rel: string, source: string): string[] {
+  const hits = htmlHits(source).map(
+    (offset) => `${rel}:${lineOf(source, offset)}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`
+  )
+  return hits.length > 0 ? hits : [`${rel}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`]
+}
+
+function staticProblems(rel: string, source: string): string[] {
+  if (posix.extname(rel) === '.svg') {
+    return htmlHits(source).map(
+      (offset) =>
+        `${rel}:${lineOf(source, offset)}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`
+    )
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return [`${rel}: not valid JSON`]
+  }
+  if (!jsonStringValues(parsed).some((text) => namesProduct(text))) return []
+  return literalProblems(rel, source)
+}
+
+function scanSource(webRoot: string): { files: number; problems: string[] } {
   const problems: string[] = []
   let files = 0
   for (const dir of SCANNED_DIRS) {
@@ -157,29 +199,50 @@ export function checkBrandNameGuard(webRoot: string): BrandNameResult {
       const rel = toRepoPath(webRoot, file)
       if (TEST_FILE.test(rel) || rel.startsWith(`${GENERATED_DIR}/`)) continue
       files += 1
-      const source = readText(file)
-      let lines: number[]
       try {
-        lines = hitLines(posix.extname(rel), source)
+        for (const line of hitLines(posix.extname(rel), readText(file))) {
+          problems.push(
+            `${rel}:${line}: hard-codes "${BRAND_LITERAL}"; read m.${BRAND_MESSAGE_KEY}()`
+          )
+        }
       } catch (error) {
         problems.push(`${rel}: cannot be parsed (${(error as Error).message})`)
-        continue
-      }
-      for (const line of lines) {
-        problems.push(
-          `${rel}:${line}: hard-codes "${BRAND_LITERAL}"; read m.${BRAND_MESSAGE_KEY}()`
-        )
       }
     }
   }
+  return { files, problems }
+}
+
+function scanCatalogues(webRoot: string): { messageFiles: number; problems: string[] } {
   const messagesDir = join(webRoot, 'messages')
   const catalogues = listNames(messagesDir)
     .filter((name) => name.endsWith('.json') && statPath(join(messagesDir, name)).isFile())
     .sort((a, b) => a.localeCompare(b))
-  for (const name of catalogues) {
-    problems.push(...messageProblems(`messages/${name}`, readText(join(messagesDir, name))))
+  const problems = catalogues.flatMap((name) =>
+    messageProblems(`messages/${name}`, readText(join(messagesDir, name)))
+  )
+  return { messageFiles: catalogues.length, problems }
+}
+
+function scanStatic(webRoot: string): { staticFiles: number; problems: string[] } {
+  const files = walkFiles(join(webRoot, STATIC_DIR), isStaticScanned)
+  return {
+    staticFiles: files.length,
+    problems: files.flatMap((file) => staticProblems(toRepoPath(webRoot, file), readText(file))),
   }
-  if (files === 0) problems.push('src: no source files found (an empty scan never passes)')
-  if (catalogues.length === 0) problems.push('messages: no message catalogues found')
-  return { files, messageFiles: catalogues.length, problems }
+}
+
+export function checkBrandNameGuard(webRoot: string): BrandNameResult {
+  const source = scanSource(webRoot)
+  const catalogues = scanCatalogues(webRoot)
+  const staticScan = scanStatic(webRoot)
+  const problems = [...source.problems, ...catalogues.problems, ...staticScan.problems]
+  if (source.files === 0) problems.push('src: no source files found (an empty scan never passes)')
+  if (catalogues.messageFiles === 0) problems.push('messages: no message catalogues found')
+  return {
+    files: source.files,
+    staticFiles: staticScan.staticFiles,
+    messageFiles: catalogues.messageFiles,
+    problems,
+  }
 }
