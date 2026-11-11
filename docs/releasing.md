@@ -436,8 +436,8 @@ inspection already ran). Do not order the legs with `needs:`.
 
 v2.0.2 (push run 41274558637) published `@project-vault/web-host@2.0.2` from Node 24, then Node 26
 failed at "Reject a version that is already on npm". `verify-npm-release.ts` was 9/9. The package
-was correct and the run was red. v2.0.0 (run 41212942564) was green because Node 26 finished
-before Node 24 published. Story 75.4 is the fix.
+was correct and the run was red. v2.0.0 (run 41212942564, attempt 2) was green even though Node 24
+published before Node 26 reached the reject step. Story 75.4 fixes the unconditional reject.
 
 **Before every approval**, run this and compare:
 
