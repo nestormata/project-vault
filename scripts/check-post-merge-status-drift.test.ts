@@ -17,8 +17,11 @@ const BRANCH_9_3_FOO = 'nestormata/feature/9-3-foo'
 const BRANCH_EPIC_20 = 'nestormata/feature/epic-20'
 const BRANCH_24_5_ID_ONLY = 'nestormata/feature/24-5'
 const BRANCH_24_5B_UPPER = 'nestormata/feature/24-5B-short'
+const KEY_24_5 = '24-5'
+const KEY_24_5_OTHER = '24-5-other'
 const KEY_24_5_PLAIN = '24-5-plain'
 const KEY_24_5B_LETTER = '24-5b-letter'
+const BRANCH_24_5_PLAIN_SHORT = 'nestormata/feature/24-5-plain-short'
 const STATUS_REVIEW = 'review'
 const NO_DRIFT = { drifts: [], ambiguities: [] }
 const KEY_12_3_ALPHA = '12-3-alpha'
@@ -304,7 +307,7 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
   ${KEY_24_5B_LETTER}: ${STATUS_REVIEW}
 `
     )
-    mergeCommit(root, 240, 'nestormata/feature/24-5-plain-short')
+    mergeCommit(root, 240, BRANCH_24_5_PLAIN_SHORT)
     const sha = mergeCommit(root, 241, 'nestormata/feature/24-5b-letter-short')
 
     expect(scanPostMergeStatusDrift(root)).toEqual({
@@ -371,6 +374,67 @@ describe('scanPostMergeStatusDrift', { timeout: 60_000 }, () => {
     const root = mkdtempSync(join(tmpdir(), 'post-merge-status-drift-not-git-2-'))
     tempRoots.push(root)
     expect(() => scanPostMergeStatusDrift(root)).toThrow()
+  })
+})
+
+describe('scanPostMergeStatusDrift exact-id status keys (story 74-13)', { timeout: 60_000 }, () => {
+  it('maps a tailed branch to the unique exact-id key', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  ${KEY_24_5}: ${STATUS_REVIEW}
+`
+    )
+    const sha = mergeCommit(root, 247, BRANCH_24_5_PLAIN_SHORT)
+
+    expect(scanPostMergeStatusDrift(root)).toEqual({
+      drifts: [
+        {
+          storyKey: KEY_24_5,
+          status: STATUS_REVIEW,
+          prNumber: 247,
+          mergeCommitSha: sha,
+        },
+      ],
+      ambiguities: [],
+    })
+  })
+
+  it('does not report drift when the unique exact-id key is already done', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  ${KEY_24_5}: done
+`
+    )
+    mergeCommit(root, 248, BRANCH_24_5_PLAIN_SHORT)
+
+    expect(scanPostMergeStatusDrift(root)).toEqual(NO_DRIFT)
+  })
+
+  it('fails closed when the exact-id key and a tailed sibling both exist', () => {
+    const { root } = makeFixtureRepo()
+    writeSprintStatus(
+      root,
+      `development_status:
+  ${KEY_24_5_OTHER}: ${STATUS_REVIEW}
+  ${KEY_24_5}: done
+`
+    )
+    const sha = mergeCommit(root, 249, BRANCH_24_5_PLAIN_SHORT)
+
+    const scan = scanPostMergeStatusDrift(root)
+    expect(scan.drifts).toEqual([])
+    expect(scan.ambiguities).toEqual([
+      {
+        branchSlug: '24-5-plain-short',
+        prNumber: 249,
+        mergeCommitSha: sha,
+        candidateKeys: [KEY_24_5, KEY_24_5_OTHER],
+      },
+    ])
   })
 })
 

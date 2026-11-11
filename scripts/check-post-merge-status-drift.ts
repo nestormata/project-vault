@@ -95,7 +95,9 @@ function byText(left: string, right: string): number {
 
 function keysWithStoryId(prefix: string, statuses: Map<string, string>): string[] {
   const needle = `${prefix}-`
-  return [...statuses.keys()].filter((key) => key.startsWith(needle)).toSorted(byText)
+  return [...statuses.keys()]
+    .filter((key) => key === prefix || key.startsWith(needle))
+    .toSorted(byText)
 }
 
 type ClassifiedSlug =
@@ -103,8 +105,8 @@ type ClassifiedSlug =
   | { kind: 'drift'; storyKey: string; status: string }
   | { kind: 'ambiguous'; candidateKeys: string[] }
 
-/** A shortened `feature/<id>-<tail>` branch is the story whose key starts with `<id>-`
- * when exactly one key does. No key: skip. Two or more: fail closed, do not guess. */
+/** A shortened `feature/<id>-<tail>` branch maps to the unique status key that is
+ * exactly `<id>` or starts with `<id>-`. No key: skip. Two or more: fail closed, do not guess. */
 function classifySlug(slug: string, statuses: Map<string, string>): ClassifiedSlug {
   const prefix = storyIdPrefix(slug)
   if (prefix === null) return { kind: 'skip' }
