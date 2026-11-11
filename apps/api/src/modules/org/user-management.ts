@@ -26,7 +26,7 @@ export async function lockOrgMembershipForUpdate(
 
 /** Locks every org owner in userId order so concurrent last-owner checks serialize without deadlock. */
 export async function orgOwnersForUpdate(tx: Tx, orgId: string): Promise<{ userId: string }[]> {
-  return tx
+  return await tx
     .select({ userId: orgMemberships.userId })
     .from(orgMemberships)
     .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, 'owner')))

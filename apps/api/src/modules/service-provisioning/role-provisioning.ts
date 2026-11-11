@@ -89,7 +89,7 @@ async function withOrgContext(tx: Tx, organizationId: string): Promise<void> {
 }
 
 async function inManagedOrg<T>(organizationId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
-  return getDb().transaction(async (tx) => {
+  return await getDb().transaction(async (tx) => {
     const typedTx = tx as Tx
     await withOrgContext(typedTx, organizationId)
     await assertCentralizemeManagedOrg(typedTx, organizationId)
@@ -134,7 +134,7 @@ async function lockActiveOrgMember(
 ): Promise<{ orgRole: string; otherOwnerCount: number }> {
   const owners = await orgOwnersForUpdate(tx, organizationId)
   const target = await lockOrgMembershipForUpdate(tx, organizationId, userId)
-  if (!target || target.status !== 'active') throw userNotFoundError()
+  if (target?.status !== 'active') throw userNotFoundError()
   return {
     orgRole: target.orgRole,
     otherOwnerCount: owners.filter((row) => row.userId !== userId).length,
@@ -228,7 +228,7 @@ async function loadWritableProject(
     .where(and(eq(projects.id, projectId), eq(projects.orgId, organizationId)))
     .limit(1)
     .for('share')
-  if (!project || project.deletedAt !== null) throw projectNotFoundError()
+  if (project?.deletedAt !== null) throw projectNotFoundError()
   if (project.archivedAt !== null) throw projectArchivedError()
 }
 

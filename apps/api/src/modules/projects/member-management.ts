@@ -62,7 +62,7 @@ export async function projectOwnersForUpdate(
   tx: Tx,
   projectId: string
 ): Promise<{ userId: string }[]> {
-  return tx
+  return await tx
     .select({ userId: projectMemberships.userId })
     .from(projectMemberships)
     .where(and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.role, 'owner')))
