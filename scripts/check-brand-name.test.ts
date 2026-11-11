@@ -1,6 +1,7 @@
-// Story 72.16 AC-2: the `check-brand-name` guard fails on a hard-coded product name in markup, in a
-// script literal, in a .ts file, in app.html and in a message catalogue, and passes comments, test
-// files, the `brand_name` message and `{brand}`-parameter messages. It has no exemption list.
+// Story 72.16 AC-2 / 72.25: the `check-brand-name` guard fails on a hard-coded product name in
+// markup, in a script literal, in a .ts file, in app.html, in a message catalogue, and in static
+// web manifests and SVG text. It passes comments, test files, PNGs, the `brand_name` message and
+// `{brand}`-parameter messages. It has no exemption list.
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -93,6 +94,58 @@ describe('check-brand-name: mutation self-tests (Story 72.16 AC-2)', () => {
       'messages: no message catalogues found',
     ])
   })
+
+  it('fails a web manifest and SVG text that hard-code the product name', () => {
+    expect(
+      problems({
+        'static/manifest.webmanifest': JSON.stringify({ name: BRAND_LITERAL, icons: [] }),
+      })
+    ).toEqual([
+      `static/manifest.webmanifest:1: hard-codes "${BRAND_LITERAL}"; overlay the static file or drop the literal`,
+    ])
+    expect(
+      problems({
+        'static/logo.svg': `<svg xmlns="http://www.w3.org/2000/svg"><text>${BRAND_LITERAL}</text></svg>\n`,
+      })
+    ).toEqual([
+      `static/logo.svg:1: hard-codes "${BRAND_LITERAL}"; overlay the static file or drop the literal`,
+    ])
+    expect(problems({ 'static/logo.svg': '<svg><text>project vault</text></svg>\n' })).toHaveLength(
+      1
+    )
+    expect(
+      problems({
+        'static/manifest.json': JSON.stringify({
+          short_name: 'PV',
+          icons: [{ purpose: `any ${BRAND_LITERAL}` }],
+        }),
+      })
+    ).toHaveLength(1)
+  })
+
+  it('passes SVG comments, PNGs that contain the name as bytes, and an empty static dir', () => {
+    expect(
+      problems({
+        'static/mark.svg': `<!-- ${BRAND_LITERAL} -->\n<svg xmlns="http://www.w3.org/2000/svg"><text>Vault</text></svg>\n`,
+        'static/logo.png': `PNG ${BRAND_LITERAL} binary\n`,
+        'static/manifest.webmanifest': JSON.stringify({ name: 'Vault' }),
+      })
+    ).toEqual([])
+    const root = tree({})
+    expect(checkBrandNameGuard(root).problems).toEqual([])
+    expect(checkBrandNameGuard(root).staticFiles).toBe(0)
+  })
+
+  it('reports invalid JSON in a scanned manifest and still ignores a missing static dir', () => {
+    expect(problems({ 'static/manifest.json': '{ not json' })).toEqual([
+      'static/manifest.json: not valid JSON',
+    ])
+    expect(
+      problems({ 'static/icons/mark.svg': `<svg aria-label="${BRAND_LITERAL}"></svg>\n` })
+    ).toEqual([
+      `static/icons/mark.svg:1: hard-codes "${BRAND_LITERAL}"; overlay the static file or drop the literal`,
+    ])
+  })
 })
 
 describe('check-brand-name: the real tree and its wiring', () => {
@@ -100,6 +153,7 @@ describe('check-brand-name: the real tree and its wiring', () => {
     const result = checkBrandNameGuard(WEB)
     expect(result.problems).toEqual([])
     expect(result.files).toBeGreaterThan(300)
+    expect(result.staticFiles).toBe(0)
     expect(result.messageFiles).toBe(2)
     expect(run(['--web', WEB])).toBe(0)
   })

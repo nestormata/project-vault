@@ -11,6 +11,10 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **Web: `check-brand-name` also scans `static/` manifests and SVG text.** A hard-coded "Project Vault"
+  in a web manifest (`manifest.webmanifest`, `manifest.json`) or in SVG text fails the guard the same way
+  a hard-coded name in `src/` does. PNG files are not scanned. A host that needs its own install name
+  overlays the static file. See [docs/composition-kit.md](docs/composition-kit.md#brand-name-epic-72-story-72-16).
 - **Web: the product name is the `brand_name` message** (Story 72.16, CentralizeMe request R1). The ~35
   hard-coded "Project Vault" strings in `apps/web` (page and tab titles, the auth, home and error headers,
   the footer, the shell brand link, the error "Back to" link, vault-gate, onboarding, readiness and API-proxy
