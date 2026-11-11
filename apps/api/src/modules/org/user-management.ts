@@ -1,4 +1,4 @@
-import { and, asc, eq, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { type Tx } from '@project-vault/db'
 import { orgMemberships, projectMemberships, projects, users } from '@project-vault/db/schema'
 
@@ -24,24 +24,6 @@ export async function lockOrgMembershipForUpdate(
   return row
 }
 
-export async function otherOrgOwnersForUpdate(
-  tx: Tx,
-  orgId: string,
-  userId: string
-): Promise<{ userId: string }[]> {
-  return tx
-    .select({ userId: orgMemberships.userId })
-    .from(orgMemberships)
-    .where(
-      and(
-        eq(orgMemberships.orgId, orgId),
-        eq(orgMemberships.role, 'owner'),
-        ne(orgMemberships.userId, userId)
-      )
-    )
-    .for('update')
-}
-
 /** Locks every org owner in userId order so concurrent last-owner checks serialize without deadlock. */
 export async function orgOwnersForUpdate(tx: Tx, orgId: string): Promise<{ userId: string }[]> {
   return tx
@@ -50,6 +32,15 @@ export async function orgOwnersForUpdate(tx: Tx, orgId: string): Promise<{ userI
     .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, 'owner')))
     .orderBy(asc(orgMemberships.userId))
     .for('update')
+}
+
+export async function otherOrgOwnersForUpdate(
+  tx: Tx,
+  orgId: string,
+  userId: string
+): Promise<{ userId: string }[]> {
+  const owners = await orgOwnersForUpdate(tx, orgId)
+  return owners.filter((row) => row.userId !== userId)
 }
 
 export async function soleOwnerProjectsForUpdate(

@@ -127,6 +127,24 @@ export async function rejectUnrecognizedRequestedRole(input: {
   return input.role as GrantableRole
 }
 
+async function lockActiveOrgMember(
+  tx: Tx,
+  organizationId: string,
+  userId: string
+): Promise<{ orgRole: string; otherOwnerCount: number }> {
+  const owners = await orgOwnersForUpdate(tx, organizationId)
+  const target = await lockOrgMembershipForUpdate(tx, organizationId, userId)
+  if (!target || target.status !== 'active') throw userNotFoundError()
+  return {
+    orgRole: target.orgRole,
+    otherOwnerCount: owners.filter((row) => row.userId !== userId).length,
+  }
+}
+
+function assertNotLastOrgOwner(orgRole: string, otherOwnerCount: number): void {
+  if (orgRole === 'owner' && otherOwnerCount === 0) throw lastOrgOwnerError()
+}
+
 export async function changeServiceOrgMemberRole(
   organizationId: string,
   userId: string,
@@ -140,18 +158,13 @@ export async function changeServiceOrgMemberRole(
   })
 
   return inManagedOrg(organizationId, async (tx) => {
-    const owners = await orgOwnersForUpdate(tx, organizationId)
-    const target = await lockOrgMembershipForUpdate(tx, organizationId, userId)
-    if (!target || target.status !== 'active') throw userNotFoundError()
+    const target = await lockActiveOrgMember(tx, organizationId, userId)
 
     if (target.orgRole === role) {
       return { userId, role }
     }
 
-    if (target.orgRole === 'owner') {
-      const otherOwners = owners.filter((row) => row.userId !== userId)
-      if (otherOwners.length === 0) throw lastOrgOwnerError()
-    }
+    assertNotLastOrgOwner(target.orgRole, target.otherOwnerCount)
 
     await tx
       .update(orgMemberships)
@@ -180,14 +193,8 @@ export async function removeServiceOrgMember(
   input: { requestId: string }
 ): Promise<{ userId: string; removedProjectCount: number }> {
   return inManagedOrg(organizationId, async (tx) => {
-    const owners = await orgOwnersForUpdate(tx, organizationId)
-    const target = await lockOrgMembershipForUpdate(tx, organizationId, userId)
-    if (!target || target.status !== 'active') throw userNotFoundError()
-
-    if (target.orgRole === 'owner') {
-      const otherOwners = owners.filter((row) => row.userId !== userId)
-      if (otherOwners.length === 0) throw lastOrgOwnerError()
-    }
+    const target = await lockActiveOrgMember(tx, organizationId, userId)
+    assertNotLastOrgOwner(target.orgRole, target.otherOwnerCount)
 
     const soleOwnerRows = await soleOwnerProjectsForUpdate(tx, organizationId, userId)
     if (soleOwnerRows.length > 0) throw new SoleOwnerOfProjectsError(soleOwnerRows)
