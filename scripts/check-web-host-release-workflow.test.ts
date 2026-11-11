@@ -366,6 +366,10 @@ function inspectPublishedProblems(step: Step | undefined): string[] {
       !step.run?.includes(PACK_PUBLISHED),
       'inspect-published-tarball does not pack the registry package'
     ),
+    ...flag(
+      !(step.run?.includes('E404') && step.run?.includes('ETARGET')),
+      'inspect-published-tarball does not treat an unpublished version (E404 or ETARGET) as success'
+    ),
   ]
 }
 
@@ -1128,6 +1132,7 @@ const RELEASE_VERSION_UNDER_TEST = '1.4.0'
 const STUB_NPM = `npm() {
   case "$STUB_NPM" in
     e404) echo 'npm error code E404' >&2; return 1 ;;
+    etarget) echo 'npm error code ETARGET' >&2; return 1 ;;
     published) echo "$STUB_VERSION"; return 0 ;;
     *) echo 'npm error code EAI_AGAIN' >&2; return 1 ;;
   esac
@@ -1143,7 +1148,10 @@ status=$?
 echo "github_output:$(tr '\\n' ' ' < "$out")" >&2
 exit $status`
 
-function runNpmViewStep(script: string, npm: 'e404' | 'published' | 'network'): ScriptResult {
+function runNpmViewStep(
+  script: string,
+  npm: 'e404' | 'etarget' | 'published' | 'network'
+): ScriptResult {
   const run = spawnSync('bash', ['-c', NPM_VIEW_STEP_RUNNER], {
     encoding: 'utf8',
     env: {
@@ -1266,6 +1274,14 @@ describe('web-host release workflow: Node 24 and Node 26 legs are order-independ
       'publish has no inspect-published-tarball step'
     )
   })
+
+  it('dropping ETARGET from inspect-published-tarball fails the contract', () => {
+    expect(WORKFLOW).toContain("grep -qE 'E404|ETARGET'")
+    const dropped = WORKFLOW.replace("grep -qE 'E404|ETARGET'", "grep -q 'E404'")
+    expect(publishLegOrderProblems(dropped)).toContain(
+      'inspect-published-tarball does not treat an unpublished version (E404 or ETARGET) as success'
+    )
+  })
 })
 
 describe('web-host release workflow: inspect the published tarball under the runner flags (Story 75.4)', () => {
@@ -1279,6 +1295,12 @@ describe('web-host release workflow: inspect the published tarball under the run
 
   it('succeeds when the version is not on npm yet (E404)', () => {
     const result = runNpmViewStep(inspectRun ?? '', 'e404')
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(NOT_ON_NPM_YET)
+  })
+
+  it('succeeds when npm pack reports ETARGET for a missing version', () => {
+    const result = runNpmViewStep(inspectRun ?? '', 'etarget')
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain(NOT_ON_NPM_YET)
   })
