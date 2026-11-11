@@ -32,4 +32,23 @@ describeEachAppearance('M6 message overlay: shell tagline', (appearance) => {
     await expect(page.locator('header').getByRole('link', { name: 'Mock Brand' })).toBeVisible()
     await expectNoHorizontalOverflow(page)
   })
+
+  // Story 72.23: the same key also drives auth pages and the public home.
+  test('works: the pack overlay of shell_brand_tagline replaces the tagline on auth pages and home', async ({
+    page,
+  }) => {
+    await gotoHydrated(page, '/login', page.getByRole('heading', { name: 'Sign in' }))
+    await expectAppearanceApplied(page, appearance)
+    await expect(page.getByText(PACK_TAGLINE, { exact: true })).toBeVisible()
+    await expect(page.getByText(PV_DEFAULT_TAGLINE)).toHaveCount(0)
+    await expectNoHorizontalOverflow(page)
+
+    await gotoHydrated(page, '/register', page.getByRole('heading', { name: 'Register' }))
+    await expect(page.getByText(PACK_TAGLINE, { exact: true })).toBeVisible()
+    await expect(page.getByText(PV_DEFAULT_TAGLINE)).toHaveCount(0)
+
+    await gotoHydrated(page, '/', page.getByRole('heading', { name: 'Mock Product' }))
+    await expect(page.getByText(PACK_TAGLINE, { exact: true })).toBeVisible()
+    await expect(page.getByText(PV_DEFAULT_TAGLINE)).toHaveCount(0)
+  })
 })
