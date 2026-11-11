@@ -88,6 +88,26 @@ async function withOrgContext(tx: Tx, organizationId: string): Promise<void> {
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${organizationId}, true)`)
 }
 
+async function inManagedOrg<T>(organizationId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return getDb().transaction(async (tx) => {
+    const typedTx = tx as Tx
+    await withOrgContext(typedTx, organizationId)
+    await assertCentralizemeManagedOrg(typedTx, organizationId)
+    return fn(typedTx)
+  })
+}
+
+async function inManagedWritableProject<T>(
+  organizationId: string,
+  projectId: string,
+  fn: (tx: Tx) => Promise<T>
+): Promise<T> {
+  return inManagedOrg(organizationId, async (tx) => {
+    await loadWritableProject(tx, organizationId, projectId)
+    return fn(tx)
+  })
+}
+
 export async function rejectUnrecognizedRequestedRole(input: {
   role: string
   organizationId: string
@@ -119,12 +139,8 @@ export async function changeServiceOrgMemberRole(
     requestId: input.requestId,
   })
 
-  return getDb().transaction(async (tx) => {
-    const typedTx = tx as Tx
-    await withOrgContext(typedTx, organizationId)
-    await assertCentralizemeManagedOrg(typedTx, organizationId)
-
-    const target = await lockOrgMembershipForUpdate(typedTx, organizationId, userId)
+  return inManagedOrg(organizationId, async (tx) => {
+    const target = await lockOrgMembershipForUpdate(tx, organizationId, userId)
     if (!target || target.status !== 'active') throw userNotFoundError()
 
     if (target.orgRole === role) {
@@ -132,16 +148,16 @@ export async function changeServiceOrgMemberRole(
     }
 
     if (target.orgRole === 'owner') {
-      const otherOwners = await otherOrgOwnersForUpdate(typedTx, organizationId, userId)
+      const otherOwners = await otherOrgOwnersForUpdate(tx, organizationId, userId)
       if (otherOwners.length === 0) throw lastOrgOwnerError()
     }
 
-    await typedTx
+    await tx
       .update(orgMemberships)
       .set({ role })
       .where(and(eq(orgMemberships.orgId, organizationId), eq(orgMemberships.userId, userId)))
 
-    await writeSystemAuditEntry(typedTx, {
+    await writeSystemAuditEntry(tx, {
       orgId: organizationId,
       eventType: AuditEvent.ORG_MEMBER_ROLE_CHANGED,
       resourceId: userId,
@@ -162,29 +178,21 @@ export async function removeServiceOrgMember(
   userId: string,
   input: { requestId: string }
 ): Promise<{ userId: string; removedProjectCount: number }> {
-  return getDb().transaction(async (tx) => {
-    const typedTx = tx as Tx
-    await withOrgContext(typedTx, organizationId)
-    await assertCentralizemeManagedOrg(typedTx, organizationId)
-
-    const target = await lockOrgMembershipForUpdate(typedTx, organizationId, userId)
+  return inManagedOrg(organizationId, async (tx) => {
+    const target = await lockOrgMembershipForUpdate(tx, organizationId, userId)
     if (!target || target.status !== 'active') throw userNotFoundError()
 
     if (target.orgRole === 'owner') {
-      const otherOwners = await otherOrgOwnersForUpdate(typedTx, organizationId, userId)
+      const otherOwners = await otherOrgOwnersForUpdate(tx, organizationId, userId)
       if (otherOwners.length === 0) throw lastOrgOwnerError()
     }
 
-    const soleOwnerRows = await soleOwnerProjectsForUpdate(typedTx, organizationId, userId)
+    const soleOwnerRows = await soleOwnerProjectsForUpdate(tx, organizationId, userId)
     if (soleOwnerRows.length > 0) throw new SoleOwnerOfProjectsError(soleOwnerRows)
 
-    const { removedProjectCount } = await removeUserFromOrgMemberships(
-      typedTx,
-      organizationId,
-      userId
-    )
+    const { removedProjectCount } = await removeUserFromOrgMemberships(tx, organizationId, userId)
 
-    await writeSystemAuditEntry(typedTx, {
+    await writeSystemAuditEntry(tx, {
       orgId: organizationId,
       eventType: AuditEvent.ORG_USER_REMOVED,
       resourceId: userId,
@@ -227,13 +235,8 @@ export async function addServiceProjectMember(
     requestId: input.requestId,
   })
 
-  return getDb().transaction(async (tx) => {
-    const typedTx = tx as Tx
-    await withOrgContext(typedTx, organizationId)
-    await assertCentralizemeManagedOrg(typedTx, organizationId)
-    await loadWritableProject(typedTx, organizationId, projectId)
-
-    const result = await addExistingOrgUserToProject(typedTx, {
+  return inManagedWritableProject(organizationId, projectId, async (tx) => {
+    const result = await addExistingOrgUserToProject(tx, {
       orgId: organizationId,
       projectId,
       userId: input.userId,
@@ -244,7 +247,7 @@ export async function addServiceProjectMember(
     if (result.status === 'already_member') throw alreadyMemberError()
     if (result.status === 'role_above_caller') throw unrecognizedRequestedRoleError()
 
-    await writeSystemAuditEntry(typedTx, {
+    await writeSystemAuditEntry(tx, {
       orgId: organizationId,
       eventType: AuditEvent.PROJECT_MEMBER_ADDED,
       resourceId: input.userId,
@@ -270,13 +273,8 @@ export async function changeServiceProjectMemberRole(
     requestId: input.requestId,
   })
 
-  return getDb().transaction(async (tx) => {
-    const typedTx = tx as Tx
-    await withOrgContext(typedTx, organizationId)
-    await assertCentralizemeManagedOrg(typedTx, organizationId)
-    await loadWritableProject(typedTx, organizationId, projectId)
-
-    const membershipRole = await getProjectMembershipRole(typedTx, {
+  return inManagedWritableProject(organizationId, projectId, async (tx) => {
+    const membershipRole = await getProjectMembershipRole(tx, {
       orgId: organizationId,
       projectId,
       userId,
@@ -287,14 +285,14 @@ export async function changeServiceProjectMemberRole(
       return { userId, projectId, role }
     }
 
-    await typedTx
+    await tx
       .update(projectMemberships)
       .set({ role })
       .where(
         and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.userId, userId))
       )
 
-    await writeSystemAuditEntry(typedTx, {
+    await writeSystemAuditEntry(tx, {
       orgId: organizationId,
       eventType: AuditEvent.PROJECT_MEMBER_ROLE_CHANGED,
       resourceId: userId,
@@ -317,13 +315,8 @@ export async function removeServiceProjectMember(
   userId: string,
   input: { requestId: string }
 ): Promise<void> {
-  return getDb().transaction(async (tx) => {
-    const typedTx = tx as Tx
-    await withOrgContext(typedTx, organizationId)
-    await assertCentralizemeManagedOrg(typedTx, organizationId)
-    await loadWritableProject(typedTx, organizationId, projectId)
-
-    const membershipRole = await getProjectMembershipRole(typedTx, {
+  return inManagedWritableProject(organizationId, projectId, async (tx) => {
+    const membershipRole = await getProjectMembershipRole(tx, {
       orgId: organizationId,
       projectId,
       userId,
@@ -331,13 +324,13 @@ export async function removeServiceProjectMember(
     if (!membershipRole) throw membershipNotFoundError()
 
     if (membershipRole === 'owner') {
-      const otherOwners = await otherProjectOwnersForUpdate(typedTx, projectId, userId)
+      const otherOwners = await otherProjectOwnersForUpdate(tx, projectId, userId)
       if (otherOwners.length === 0) throw lastProjectOwnerError()
     }
 
-    await removeProjectMembership(typedTx, projectId, userId)
+    await removeProjectMembership(tx, projectId, userId)
 
-    await writeSystemAuditEntry(typedTx, {
+    await writeSystemAuditEntry(tx, {
       orgId: organizationId,
       eventType: AuditEvent.PROJECT_MEMBER_REMOVED,
       resourceId: userId,

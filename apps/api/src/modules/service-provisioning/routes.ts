@@ -155,6 +155,40 @@ function parseOrReply<T>(
   return parsed.data
 }
 
+const SERVICE_CLIENT_ERRORS = {
+  403: ApiErrorSchema,
+  404: ApiErrorSchema,
+  409: ApiErrorSchema,
+  422: ApiErrorSchema,
+  429: ApiErrorSchema,
+}
+
+async function runAuthorizedServiceCall<P, B>(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  paramsSchema: ZodType<P>,
+  bodySchema: ZodType<B>,
+  run: (params: P, body: B) => Promise<void>
+): Promise<void> {
+  if (
+    !authorizeOrReply(
+      reply,
+      req.headers as FastifyRequestHeaders,
+      assertServiceProvisioningAuthorized
+    )
+  )
+    return
+  const parsedParams = parseOrReply(reply, paramsSchema, req.params, 'params')
+  if (!parsedParams) return
+  const parsedBody = parseOrReply(reply, bodySchema, req.body, 'body')
+  if (!parsedBody) return
+  try {
+    await run(parsedParams, parsedBody)
+  } catch (err) {
+    sendAppError(reply, err)
+  }
+}
+
 /**
  * Story 31.1 Decision 5/AC14.46/AC14.47 — fires a real-time operator-facing alert on
  * EVERY successful call to the revocation route (even at zero counts), reusing this codebase's
@@ -488,44 +522,24 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
       response: {
         200: ServiceOrgMemberRoleResponseSchema,
         400: ApiErrorSchema,
-        403: ApiErrorSchema,
-        404: ApiErrorSchema,
-        409: ApiErrorSchema,
-        422: ApiErrorSchema,
-        429: ApiErrorSchema,
+        ...SERVICE_CLIENT_ERRORS,
       },
     },
-    handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      if (
-        !authorizeOrReply(
-          reply,
-          req.headers as FastifyRequestHeaders,
-          assertServiceProvisioningAuthorized
-        )
-      )
-        return
-
-      const parsedParams = parseOrReply(
+    handler: async (req: FastifyRequest, reply: FastifyReply) =>
+      runAuthorizedServiceCall(
+        req,
         reply,
         ServiceOrgMemberUserParamsSchema,
-        req.params,
-        'params'
-      )
-      if (!parsedParams) return
-      const parsedBody = parseOrReply(reply, ServiceOrgMemberRoleBodySchema, req.body, 'body')
-      if (!parsedBody) return
-
-      try {
-        const result = await changeServiceOrgMemberRole(
-          parsedParams.organizationId,
-          parsedParams.userId,
-          parsedBody
-        )
-        return reply.status(200).send({ data: result })
-      } catch (err) {
-        return sendAppError(reply, err)
-      }
-    },
+        ServiceOrgMemberRoleBodySchema,
+        async (params, body) => {
+          const result = await changeServiceOrgMemberRole(
+            params.organizationId,
+            params.userId,
+            body
+          )
+          await reply.status(200).send({ data: result })
+        }
+      ),
   })
 
   fastify.route({
@@ -538,44 +552,20 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
       body: ServiceRequestIdBodySchema,
       response: {
         200: ServiceOrgMemberRemovedResponseSchema,
-        403: ApiErrorSchema,
-        404: ApiErrorSchema,
-        409: ApiErrorSchema,
-        422: ApiErrorSchema,
-        429: ApiErrorSchema,
+        ...SERVICE_CLIENT_ERRORS,
       },
     },
-    handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      if (
-        !authorizeOrReply(
-          reply,
-          req.headers as FastifyRequestHeaders,
-          assertServiceProvisioningAuthorized
-        )
-      )
-        return
-
-      const parsedParams = parseOrReply(
+    handler: async (req: FastifyRequest, reply: FastifyReply) =>
+      runAuthorizedServiceCall(
+        req,
         reply,
         ServiceOrgMemberUserParamsSchema,
-        req.params,
-        'params'
-      )
-      if (!parsedParams) return
-      const parsedBody = parseOrReply(reply, ServiceRequestIdBodySchema, req.body, 'body')
-      if (!parsedBody) return
-
-      try {
-        const result = await removeServiceOrgMember(
-          parsedParams.organizationId,
-          parsedParams.userId,
-          parsedBody
-        )
-        return reply.status(200).send({ data: result })
-      } catch (err) {
-        return sendAppError(reply, err)
-      }
-    },
+        ServiceRequestIdBodySchema,
+        async (params, body) => {
+          const result = await removeServiceOrgMember(params.organizationId, params.userId, body)
+          await reply.status(200).send({ data: result })
+        }
+      ),
   })
 
   fastify.route({
@@ -589,45 +579,25 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
       response: {
         201: ServiceProjectMemberResponseSchema,
         400: ApiErrorSchema,
-        403: ApiErrorSchema,
-        404: ApiErrorSchema,
-        409: ApiErrorSchema,
         410: ApiErrorSchema,
-        422: ApiErrorSchema,
-        429: ApiErrorSchema,
+        ...SERVICE_CLIENT_ERRORS,
       },
     },
-    handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      if (
-        !authorizeOrReply(
-          reply,
-          req.headers as FastifyRequestHeaders,
-          assertServiceProvisioningAuthorized
-        )
-      )
-        return
-
-      const parsedParams = parseOrReply(
+    handler: async (req: FastifyRequest, reply: FastifyReply) =>
+      runAuthorizedServiceCall(
+        req,
         reply,
         ServiceProjectMemberParamsSchema,
-        req.params,
-        'params'
-      )
-      if (!parsedParams) return
-      const parsedBody = parseOrReply(reply, ServiceProjectMemberAddBodySchema, req.body, 'body')
-      if (!parsedBody) return
-
-      try {
-        const result = await addServiceProjectMember(
-          parsedParams.organizationId,
-          parsedParams.projectId,
-          parsedBody
-        )
-        return reply.status(201).send({ data: result })
-      } catch (err) {
-        return sendAppError(reply, err)
-      }
-    },
+        ServiceProjectMemberAddBodySchema,
+        async (params, body) => {
+          const result = await addServiceProjectMember(
+            params.organizationId,
+            params.projectId,
+            body
+          )
+          await reply.status(201).send({ data: result })
+        }
+      ),
   })
 
   fastify.route({
@@ -641,46 +611,26 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
       response: {
         200: ServiceProjectMemberRoleResponseSchema,
         400: ApiErrorSchema,
-        403: ApiErrorSchema,
-        404: ApiErrorSchema,
-        409: ApiErrorSchema,
         410: ApiErrorSchema,
-        422: ApiErrorSchema,
-        429: ApiErrorSchema,
+        ...SERVICE_CLIENT_ERRORS,
       },
     },
-    handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      if (
-        !authorizeOrReply(
-          reply,
-          req.headers as FastifyRequestHeaders,
-          assertServiceProvisioningAuthorized
-        )
-      )
-        return
-
-      const parsedParams = parseOrReply(
+    handler: async (req: FastifyRequest, reply: FastifyReply) =>
+      runAuthorizedServiceCall(
+        req,
         reply,
         ServiceProjectMemberUserParamsSchema,
-        req.params,
-        'params'
-      )
-      if (!parsedParams) return
-      const parsedBody = parseOrReply(reply, ServiceOrgMemberRoleBodySchema, req.body, 'body')
-      if (!parsedBody) return
-
-      try {
-        const result = await changeServiceProjectMemberRole(
-          parsedParams.organizationId,
-          parsedParams.projectId,
-          parsedParams.userId,
-          parsedBody
-        )
-        return reply.status(200).send({ data: result })
-      } catch (err) {
-        return sendAppError(reply, err)
-      }
-    },
+        ServiceOrgMemberRoleBodySchema,
+        async (params, body) => {
+          const result = await changeServiceProjectMemberRole(
+            params.organizationId,
+            params.projectId,
+            params.userId,
+            body
+          )
+          await reply.status(200).send({ data: result })
+        }
+      ),
   })
 
   fastify.route({
@@ -693,45 +643,25 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
       body: ServiceRequestIdBodySchema,
       response: {
         204: z.null(),
-        403: ApiErrorSchema,
-        404: ApiErrorSchema,
-        409: ApiErrorSchema,
         410: ApiErrorSchema,
-        422: ApiErrorSchema,
-        429: ApiErrorSchema,
+        ...SERVICE_CLIENT_ERRORS,
       },
     },
-    handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      if (
-        !authorizeOrReply(
-          reply,
-          req.headers as FastifyRequestHeaders,
-          assertServiceProvisioningAuthorized
-        )
-      )
-        return
-
-      const parsedParams = parseOrReply(
+    handler: async (req: FastifyRequest, reply: FastifyReply) =>
+      runAuthorizedServiceCall(
+        req,
         reply,
         ServiceProjectMemberUserParamsSchema,
-        req.params,
-        'params'
-      )
-      if (!parsedParams) return
-      const parsedBody = parseOrReply(reply, ServiceRequestIdBodySchema, req.body, 'body')
-      if (!parsedBody) return
-
-      try {
-        await removeServiceProjectMember(
-          parsedParams.organizationId,
-          parsedParams.projectId,
-          parsedParams.userId,
-          parsedBody
-        )
-        return reply.status(204).send()
-      } catch (err) {
-        return sendAppError(reply, err)
-      }
-    },
+        ServiceRequestIdBodySchema,
+        async (params, body) => {
+          await removeServiceProjectMember(
+            params.organizationId,
+            params.projectId,
+            params.userId,
+            body
+          )
+          await reply.status(204).send()
+        }
+      ),
   })
 }
