@@ -16,6 +16,7 @@ describe('auth session schema', () => {
   it('exposes Story 1.6 session and refresh token columns', () => {
     expect(sessions.jti).toBeDefined()
     expect(sessions.revokedAt).toBeDefined()
+    expect(sessions.handoffDisplayClaims).toBeDefined()
 
     expect(refreshTokens.id).toBeDefined()
     expect(refreshTokens.sessionId).toBeDefined()
@@ -90,6 +91,7 @@ describe('auth session schema', () => {
     expect(pendingMfaSessions.userAgent).toBeDefined()
     expect(pendingMfaSessions.expiresAt).toBeDefined()
     expect(pendingMfaSessions.createdAt).toBeDefined()
+    expect(pendingMfaSessions.handoffDisplayClaims).toBeDefined()
 
     expect(EXCLUDED_TABLES.has('pending_mfa_sessions')).toBe(true)
   })

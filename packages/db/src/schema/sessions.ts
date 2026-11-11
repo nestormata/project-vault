@@ -1,4 +1,13 @@
-import { pgTable, uuid, integer, timestamp, text, index, uniqueIndex } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  integer,
+  timestamp,
+  text,
+  jsonb,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core'
 import { orgScoped } from './helpers.js'
 import { users } from './users.js'
 
@@ -18,6 +27,12 @@ export const sessions = pgTable(
     lastActiveAt: timestamp('last_active_at', { withTimezone: true }).notNull().defaultNow(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
+    // Story 73.3: optional CM handoff display sidecar. Null for native login.
+    handoffDisplayClaims: jsonb('handoff_display_claims').$type<{
+      organizationName?: string
+      tier?: string
+      role?: string
+    } | null>(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
