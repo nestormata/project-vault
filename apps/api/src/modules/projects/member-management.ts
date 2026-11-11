@@ -1,4 +1,4 @@
-import { and, count, eq, ne } from 'drizzle-orm'
+import { and, asc, count, eq, ne } from 'drizzle-orm'
 import { type Tx } from '@project-vault/db'
 import { orgMemberships, projectMemberships, users } from '@project-vault/db/schema'
 import type { OrgRole } from '../../plugins/require-org-role.js'
@@ -60,6 +60,38 @@ export async function otherProjectOwnersForUpdate(
       )
     )
     .for('update')
+}
+
+/** Locks every project owner in userId order so concurrent last-owner checks serialize without deadlock. */
+export async function projectOwnersForUpdate(
+  tx: Tx,
+  projectId: string
+): Promise<{ userId: string }[]> {
+  return tx
+    .select({ userId: projectMemberships.userId })
+    .from(projectMemberships)
+    .where(and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.role, 'owner')))
+    .orderBy(asc(projectMemberships.userId))
+    .for('update')
+}
+
+export async function lockProjectMembershipForUpdate(
+  tx: Tx,
+  { orgId, projectId, userId }: { orgId: string; projectId: string; userId: string }
+): Promise<string | undefined> {
+  const [membership] = await tx
+    .select({ role: projectMemberships.role })
+    .from(projectMemberships)
+    .where(
+      and(
+        eq(projectMemberships.projectId, projectId),
+        eq(projectMemberships.userId, userId),
+        eq(projectMemberships.orgId, orgId)
+      )
+    )
+    .for('update')
+    .limit(1)
+  return membership?.role
 }
 
 /**

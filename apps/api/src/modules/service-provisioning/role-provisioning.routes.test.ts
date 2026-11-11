@@ -308,6 +308,46 @@ describe('Story 73.5 service role provisioning routes', () => {
       await app.close()
     })
 
+    it('concurrent last-two org owner removes leave one owner', async () => {
+      const app = await freshApp()
+      const { organizationId, ownerUserId } = await createOrg(app)
+      const otherUserId = await addOrgMember(app, organizationId)
+      await withOrg(organizationId, (tx) =>
+        tx
+          .update(orgMemberships)
+          .set({ role: 'owner' })
+          .where(
+            and(eq(orgMemberships.orgId, organizationId), eq(orgMemberships.userId, otherUserId))
+          )
+      )
+
+      const [first, second] = await Promise.all([
+        app.inject({
+          method: 'DELETE',
+          url: `${ORG_URL}/${organizationId}/members/${ownerUserId}`,
+          headers: { [TOKEN_HEADER]: TOKEN },
+          payload: { requestId: randomUUID() },
+        }),
+        app.inject({
+          method: 'DELETE',
+          url: `${ORG_URL}/${organizationId}/members/${otherUserId}`,
+          headers: { [TOKEN_HEADER]: TOKEN },
+          payload: { requestId: randomUUID() },
+        }),
+      ])
+      const statuses = [first.statusCode, second.statusCode]
+      expect(statuses.filter((code) => code === 200)).toHaveLength(1)
+      expect(statuses.some((code) => code === 409 || code === 404)).toBe(true)
+      const remaining = await withOrg(organizationId, (tx) =>
+        tx
+          .select({ userId: orgMemberships.userId })
+          .from(orgMemberships)
+          .where(and(eq(orgMemberships.orgId, organizationId), eq(orgMemberships.role, 'owner')))
+      )
+      expect(remaining).toHaveLength(1)
+      await app.close()
+    })
+
     it('refuses removing the last org owner with 409 last_org_owner', async () => {
       const app = await freshApp()
       const { organizationId, ownerUserId } = await createOrg(app)
@@ -479,6 +519,49 @@ describe('Story 73.5 service role provisioning routes', () => {
       expect(res.statusCode).toBe(409)
       expect(errorBody(res).code).toBe('last_owner')
       expect(await projectRoleOf(organizationId, projectId, ownerUserId)).toBe('owner')
+      await app.close()
+    })
+
+    it('concurrent last-two project owner removes leave one owner', async () => {
+      const app = await freshApp()
+      const { organizationId, ownerUserId } = await createOrg(app)
+      const projectId = await seedProject(organizationId, ownerUserId)
+      const otherUserId = await addOrgMember(app, organizationId)
+      await withOrg(organizationId, (tx) =>
+        tx.insert(projectMemberships).values({
+          orgId: organizationId,
+          projectId,
+          userId: otherUserId,
+          role: 'owner',
+        })
+      )
+
+      const [first, second] = await Promise.all([
+        app.inject({
+          method: 'DELETE',
+          url: `${ORG_URL}/${organizationId}/projects/${projectId}/members/${ownerUserId}`,
+          headers: { [TOKEN_HEADER]: TOKEN },
+          payload: { requestId: randomUUID() },
+        }),
+        app.inject({
+          method: 'DELETE',
+          url: `${ORG_URL}/${organizationId}/projects/${projectId}/members/${otherUserId}`,
+          headers: { [TOKEN_HEADER]: TOKEN },
+          payload: { requestId: randomUUID() },
+        }),
+      ])
+      const statuses = [first.statusCode, second.statusCode]
+      expect(statuses.filter((code) => code === 204)).toHaveLength(1)
+      expect(statuses.some((code) => code === 409 || code === 404)).toBe(true)
+      const remaining = await withOrg(organizationId, (tx) =>
+        tx
+          .select({ userId: projectMemberships.userId })
+          .from(projectMemberships)
+          .where(
+            and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.role, 'owner'))
+          )
+      )
+      expect(remaining).toHaveLength(1)
       await app.close()
     })
 

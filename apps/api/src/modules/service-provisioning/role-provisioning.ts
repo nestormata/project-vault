@@ -7,14 +7,14 @@ import { writeSystemAuditEntry } from '../audit/machine-entry.js'
 import { writeUnrecognizedRoleSecurityEvent } from '../auth/unrecognized-role-security-events.js'
 import {
   lockOrgMembershipForUpdate,
-  otherOrgOwnersForUpdate,
+  orgOwnersForUpdate,
   removeUserFromOrgMemberships,
   soleOwnerProjectsForUpdate,
 } from '../org/user-management.js'
 import {
   addExistingOrgUserToProject,
-  getProjectMembershipRole,
-  otherProjectOwnersForUpdate,
+  lockProjectMembershipForUpdate,
+  projectOwnersForUpdate,
   removeProjectMembership,
   type AddMemberRole,
 } from '../projects/member-management.js'
@@ -140,6 +140,7 @@ export async function changeServiceOrgMemberRole(
   })
 
   return inManagedOrg(organizationId, async (tx) => {
+    const owners = await orgOwnersForUpdate(tx, organizationId)
     const target = await lockOrgMembershipForUpdate(tx, organizationId, userId)
     if (!target || target.status !== 'active') throw userNotFoundError()
 
@@ -148,7 +149,7 @@ export async function changeServiceOrgMemberRole(
     }
 
     if (target.orgRole === 'owner') {
-      const otherOwners = await otherOrgOwnersForUpdate(tx, organizationId, userId)
+      const otherOwners = owners.filter((row) => row.userId !== userId)
       if (otherOwners.length === 0) throw lastOrgOwnerError()
     }
 
@@ -179,11 +180,12 @@ export async function removeServiceOrgMember(
   input: { requestId: string }
 ): Promise<{ userId: string; removedProjectCount: number }> {
   return inManagedOrg(organizationId, async (tx) => {
+    const owners = await orgOwnersForUpdate(tx, organizationId)
     const target = await lockOrgMembershipForUpdate(tx, organizationId, userId)
     if (!target || target.status !== 'active') throw userNotFoundError()
 
     if (target.orgRole === 'owner') {
-      const otherOwners = await otherOrgOwnersForUpdate(tx, organizationId, userId)
+      const otherOwners = owners.filter((row) => row.userId !== userId)
       if (otherOwners.length === 0) throw lastOrgOwnerError()
     }
 
@@ -274,7 +276,8 @@ export async function changeServiceProjectMemberRole(
   })
 
   return inManagedWritableProject(organizationId, projectId, async (tx) => {
-    const membershipRole = await getProjectMembershipRole(tx, {
+    await projectOwnersForUpdate(tx, projectId)
+    const membershipRole = await lockProjectMembershipForUpdate(tx, {
       orgId: organizationId,
       projectId,
       userId,
@@ -316,7 +319,8 @@ export async function removeServiceProjectMember(
   input: { requestId: string }
 ): Promise<void> {
   return inManagedWritableProject(organizationId, projectId, async (tx) => {
-    const membershipRole = await getProjectMembershipRole(tx, {
+    const owners = await projectOwnersForUpdate(tx, projectId)
+    const membershipRole = await lockProjectMembershipForUpdate(tx, {
       orgId: organizationId,
       projectId,
       userId,
@@ -324,7 +328,7 @@ export async function removeServiceProjectMember(
     if (!membershipRole) throw membershipNotFoundError()
 
     if (membershipRole === 'owner') {
-      const otherOwners = await otherProjectOwnersForUpdate(tx, projectId, userId)
+      const otherOwners = owners.filter((row) => row.userId !== userId)
       if (otherOwners.length === 0) throw lastProjectOwnerError()
     }
 
