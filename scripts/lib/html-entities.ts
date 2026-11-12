@@ -26,7 +26,7 @@ const NAMED = new Map<string, string>([
   ['shy', '\u00AD'],
 ])
 
-const ENTITY = /&(?:#x([0-9a-fA-F]+)|#([0-9]+)|([a-zA-Z][a-zA-Z0-9]*));/g
+const ENTITY = /&(?:#x([\da-fA-F]+)|#(\d+)|([a-zA-Z][a-zA-Z\d]*));/g
 
 function decodeCodePoint(value: number): string {
   const invalid =
