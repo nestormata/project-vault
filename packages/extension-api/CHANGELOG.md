@@ -2,6 +2,38 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.43.0 — 2026-11-11
+
+contract-hash: sha256:d7271c28a8a91d902cc4df659f5055c3747d8ddb20dce2e540237d0502213ab7
+
+Story 73.7. Optional `serviceEndpointLimits` resolver and `'service-endpoint-limits'` capability.
+The host applies numeric health-check limits on service-endpoint create and update. Omitted fields
+stay default-open. A registered resolver replaces static env and never replaces
+`MAX_SERVICE_ENDPOINTS_PER_PROJECT`. Throw, timeout, or a malformed object fail closed on create
+and on updates that raise probing intensity.
+
+### Added
+
+- Types `ServiceEndpointLimits`, `ServiceEndpointLimitsContext`, and `ServiceEndpointLimitsResolver`.
+- Optional `ExtensionHooks.serviceEndpointLimits`.
+- Manifest capability `'service-endpoint-limits'`. Declaring it without a callable resolver fails
+  registration.
+
+### Deprecated
+
+3.43.0 does not start a new deprecation. Marker lint still needs the 3.30.0 frozen set named here:
+legacy panel types `UIPanel` `UIPanelContext` `UIPanelResult`; action types `ModuleAction`
+`ModuleActionContext` `ModuleActionRequest` `ActionResult`; data-route types
+`ModuleDataRequestContext` `ModuleDataResult` `ModuleDataRouteHandler` `ModuleDataRouteDeclaration`;
+nav type `ExtensionNavItem`. Frozen manifest keys remain `uiPanelSlots`, `moduleActions`,
+`navItems`, `moduleDataRoutes`. Frozen hooks remain `uiPanel`, `moduleAction`, `moduleData`, plus
+capability `'ui-panel'`. Use `ExtensionRequestContext` / `ExtensionActionResult`, composed UI, or
+M7 `apiRoutes` instead.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.43.0 adds none).
+
 ## 3.42.0 — 2026-11-10
 
 contract-hash: sha256:ebcdc5b588d3a084e5e5be58e83ce3aec65b3bf3e673550555ffeecf28f55b83

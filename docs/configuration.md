@@ -181,6 +181,9 @@ and no scheduling happens at all. Configure exactly one destination (path **xor*
 | `CLI_DEVICE_CODE_HMAC_SECRET` | dev value | **required** | Keys the browser-approved CLI sign-in codes. It must differ from the other auth secrets. |
 | `STATUS_DISK_MIN_FREE_PERCENT` | `10` | | Free-disk percentage below which `GET /status` reports disk pressure. |
 | `MAX_SERVICE_ENDPOINTS_PER_PROJECT` | `25` | | Cap on monitored HTTP endpoints per project. |
+| `SERVICE_ENDPOINT_HEALTH_CHECKS_ENABLED` | unset | | Optional overlay. `true`/`false`. Unset or empty leaves health checks allowed. A registered `serviceEndpointLimits` resolver replaces this. |
+| `SERVICE_ENDPOINT_MAX_ENDPOINTS` | unset | | Optional organization-wide cap. Unset or empty means no org-wide cap. Does not replace `MAX_SERVICE_ENDPOINTS_PER_PROJECT`. |
+| `SERVICE_ENDPOINT_MIN_CHECK_INTERVAL_SECONDS` | unset | | Optional floor, in seconds, compared to `checkFrequencyMinutes * 60`. Unset or empty allows any legal frequency. |
 | `HEALTH_CHECK_MAX_CONCURRENCY` | `20` | | Parallelism of the endpoint health-check sweep. |
 
 ## Extensions & theming
