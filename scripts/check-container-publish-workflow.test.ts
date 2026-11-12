@@ -272,6 +272,8 @@ describe('container publish workflow contract', () => {
 
 const BUILD_PUBLISH = 'build-publish'
 const BUILD_PLATFORM = 'build-platform'
+const STUB_DOCKER_LOG = 'docker.log'
+const STUB_GITHUB_OUTPUT = 'github-output'
 
 type PublishJob = {
   needs?: unknown
@@ -587,8 +589,8 @@ describe('Story 75.1: native platform builds and a tag-after-both-platforms merg
         const digestDir = join(dir, 'digests')
         mkdirSync(digestDir)
         for (const digest of options.digests) writeFileSync(join(digestDir, digest), '')
-        const dockerLog = join(dir, 'docker.log')
-        const githubOutput = join(dir, 'github-output')
+        const dockerLog = join(dir, STUB_DOCKER_LOG)
+        const githubOutput = join(dir, STUB_GITHUB_OUTPUT)
         writeFileSync(dockerLog, '')
         writeFileSync(githubOutput, '')
         // A shell function shadows the docker CLI: it logs every call and answers `inspect`.
@@ -626,9 +628,280 @@ describe('Story 75.1: native platform builds and a tag-after-both-platforms merg
   })
 })
 
+// Story 75.2: the reject guard may reuse an existing :X.Y.Z digest only on a rerun of the same
+// GitHub Actions run when the image revision label matches the tag commit and the tag has not
+// moved. Every other existing-tag case still fails with the original message.
+describe('Story 75.2: same-run rerun may complete a partial publish', () => {
+  const COMMIT = 'c'.repeat(40)
+  const OTHER_COMMIT = 'd'.repeat(40)
+  const VERSION_DIGEST = `sha256:${'a'.repeat(64)}`
+  const OTHER_DIGEST = `sha256:${'b'.repeat(64)}`
+  const EXISTING_MESSAGE = 'Immutable release tag already exists:'
+
+  it('keeps reject before create, and the first-attempt path still refuses an existing tag', () => {
+    const publishSteps = jobNamed(BUILD_PUBLISH)?.steps ?? []
+    const rejectIndex = publishSteps.findIndex((step) =>
+      /Reject existing immutable release tag/.test(step.name ?? '')
+    )
+    const createIndex = publishSteps.findIndex((step) => step.id === 'push')
+    expect(rejectIndex).toBeGreaterThan(-1)
+    expect(createIndex).toBeGreaterThan(rejectIndex)
+    const reject = publishSteps.at(rejectIndex)
+    expect(reject?.id).toBe('reject')
+    expect(String(reject?.['continue-on-error'] ?? '')).toBe('')
+  })
+
+  it('a same-run rerun with matching revision reuses the existing digest and does not retag', () => {
+    const result = runRejectStep({
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+      shaInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.githubOutput).toMatch(/reuse=true/)
+    expect(result.githubOutput).toContain(`digest=${VERSION_DIGEST}`)
+    expect(result.output).toMatch(/Reusing existing immutable release tag/)
+    expect(result.docker).not.toMatch(/\bcreate\b/)
+    expect(result.docker).not.toMatch(/\bpush\b/)
+  })
+
+  it('the accepted path does not imagetools-create or docker-push :X.Y.Z', () => {
+    const result = runReuseCreateStep({
+      existingDigest: VERSION_DIGEST,
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.docker).not.toContain('create')
+    expect(result.docker).not.toContain('push')
+    expect(result.githubOutput).toBe(`digest=${VERSION_DIGEST}\n`)
+  })
+
+  it('a new run (attempt 1, new run_id) fails even when the revision label matches', () => {
+    const result = runRejectStep({
+      runAttempt: '1',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+      shaInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(EXISTING_MESSAGE)
+    expect(result.githubOutput).not.toMatch(/reuse=true/)
+  })
+
+  it('attempt 1 fails when RUN_ATTEMPT is missing or not an integer greater than 1', () => {
+    for (const runAttempt of ['', '0', '1', 'nope']) {
+      const result = runRejectStep({
+        runAttempt,
+        versionExists: true,
+        shaExists: true,
+        versionInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+        shaInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+      })
+      expect(result.status, `RUN_ATTEMPT=${runAttempt}`).toBe(1)
+      expect(result.output).toContain(EXISTING_MESSAGE)
+    }
+  })
+
+  it('a mismatching revision label fails with the current message', () => {
+    const result = runRejectStep({
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, OTHER_COMMIT),
+      shaInspect: inspectDoc(VERSION_DIGEST, OTHER_COMMIT),
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(EXISTING_MESSAGE)
+  })
+
+  it('a missing revision label fails with the current message', () => {
+    const result = runRejectStep({
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, null),
+      shaInspect: inspectDoc(VERSION_DIGEST, null),
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(EXISTING_MESSAGE)
+  })
+
+  it('a moved tag (version digest differs from sha-<commit>) fails with the current message', () => {
+    const result = runRejectStep({
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+      shaInspect: inspectDoc(OTHER_DIGEST, COMMIT),
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(EXISTING_MESSAGE)
+  })
+
+  it('removing the revision-label comparison makes a mismatching label pass (mutation)', () => {
+    expect(mismatchingRevisionRejected(workflowText())).toBe(true)
+
+    const mutated = workflowText().replace(/\[\[ "\$LABEL_REVISION" != "\$COMMIT" \]\]/g, 'false')
+    expect(mutated, 'workflow must contain the revision-label comparison').not.toBe(workflowText())
+    expect(mismatchingRevisionRejected(mutated)).toBe(false)
+  })
+
+  it('an absent tag still exits 0 so the first-attempt create path can run', () => {
+    const result = runRejectStep({
+      runAttempt: '1',
+      versionExists: false,
+      shaExists: false,
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.githubOutput).not.toMatch(/reuse=true/)
+  })
+})
+
+function runReuseCreateStep(options: { existingDigest: string }): {
+  status: number
+  output: string
+  docker: string
+  githubOutput: string
+} {
+  const body = stepRunBody('- name: Create multi-platform manifest and push immutable tags')
+  const dir = mkdtempSync(join(tmpdir(), 'pv-reuse-create-'))
+  try {
+    const digestDir = join(dir, 'digests')
+    mkdirSync(digestDir)
+    const dockerLog = join(dir, STUB_DOCKER_LOG)
+    const githubOutput = join(dir, STUB_GITHUB_OUTPUT)
+    writeFileSync(dockerLog, '')
+    writeFileSync(githubOutput, '')
+    const stub = 'docker() { echo "$*" >> "$DOCKER_LOG"; }\n'
+    const run = spawnSync('bash', ['-c', stub + body], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        IMAGE: 'ghcr.io/example/p/api',
+        VERSION: '2.0.3',
+        TAGS: 'ghcr.io/example/p/api:2.0.3',
+        DIGEST_DIR: digestDir,
+        EXPECTED_DIGESTS: '2',
+        DOCKER_LOG: dockerLog,
+        GITHUB_OUTPUT: githubOutput,
+        REUSE: 'true',
+        EXISTING_DIGEST: options.existingDigest,
+      },
+    })
+    return {
+      status: run.status ?? -1,
+      output: `${run.stdout}${run.stderr}`,
+      docker: readFileSync(dockerLog, 'utf8'),
+      githubOutput: readFileSync(githubOutput, 'utf8'),
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+function inspectDoc(digest: string, revision: string | null): unknown {
+  const labels =
+    revision === null ? {} : { Labels: { 'org.opencontainers.image.revision': revision } }
+  return {
+    manifest: { digest },
+    image: {
+      'linux/amd64': { config: labels },
+      'linux/arm64': { config: labels },
+      'unknown/unknown': { config: {} },
+    },
+  }
+}
+
+function mismatchingRevisionRejected(text: string): boolean {
+  const result = runRejectStep(
+    {
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(`sha256:${'a'.repeat(64)}`, 'd'.repeat(40)),
+      shaInspect: inspectDoc(`sha256:${'a'.repeat(64)}`, 'd'.repeat(40)),
+    },
+    text
+  )
+  return result.status === 1 && result.output.includes('Immutable release tag already exists:')
+}
+
+function runRejectStep(
+  options: {
+    runAttempt: string
+    versionExists: boolean
+    shaExists: boolean
+    versionInspect?: unknown
+    shaInspect?: unknown
+  },
+  text: string = workflowText()
+): { status: number; output: string; docker: string; githubOutput: string } {
+  let body = stepRunBody('- name: Reject existing immutable release tag', text)
+  body = body.replace(/\$\{\{\s*matrix\.name\s*\}\}/g, '${IMAGE_NAME}')
+  const dir = mkdtempSync(join(tmpdir(), 'pv-reject-step-'))
+  try {
+    const dockerLog = join(dir, STUB_DOCKER_LOG)
+    const githubOutput = join(dir, STUB_GITHUB_OUTPUT)
+    writeFileSync(dockerLog, '')
+    writeFileSync(githubOutput, '')
+    const stub =
+      'docker() {\n' +
+      '  echo "$*" >> "$DOCKER_LOG"\n' +
+      '  local ref=""\n' +
+      '  local arg\n' +
+      '  for arg in "$@"; do\n' +
+      '    case "$arg" in\n' +
+      '      *":sha-"*) ref="sha" ;;\n' +
+      '      ghcr.io/*) ref="version" ;;\n' +
+      '    esac\n' +
+      '  done\n' +
+      '  if [[ "${3:-}" != "inspect" ]]; then return 0; fi\n' +
+      '  if [[ "$ref" == "sha" ]]; then\n' +
+      '    if [[ "${STUB_SHA_EXISTS}" == "1" ]]; then printf "%s" "$STUB_SHA_JSON"; return 0; fi\n' +
+      '    return 1\n' +
+      '  fi\n' +
+      '  if [[ "${STUB_VERSION_EXISTS}" == "1" ]]; then printf "%s" "$STUB_VERSION_JSON"; return 0; fi\n' +
+      '  return 1\n' +
+      '}\n'
+    const run = spawnSync('bash', ['-c', stub + body], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        IMAGE_NAMESPACE: 'ghcr.io/example/project-vault',
+        IMAGE_NAME: 'api',
+        VERSION: '2.0.3',
+        COMMIT: 'c'.repeat(40),
+        RUN_ATTEMPT: options.runAttempt,
+        DOCKER_LOG: dockerLog,
+        GITHUB_OUTPUT: githubOutput,
+        STUB_VERSION_EXISTS: options.versionExists ? '1' : '0',
+        STUB_SHA_EXISTS: options.shaExists ? '1' : '0',
+        STUB_VERSION_JSON: JSON.stringify(options.versionInspect ?? {}),
+        STUB_SHA_JSON: JSON.stringify(options.shaInspect ?? {}),
+      },
+    })
+    return {
+      status: run.status ?? -1,
+      output: `${run.stdout}${run.stderr}`,
+      docker: readFileSync(dockerLog, 'utf8'),
+      githubOutput: readFileSync(githubOutput, 'utf8'),
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 /** The `run:` body of the step starting at `stepMarker`, de-indented from 10 spaces. */
-function stepRunBody(stepMarker: string): string {
-  const workflow = workflowText()
+function stepRunBody(stepMarker: string, workflow: string = workflowText()): string {
   const stepStart = workflow.indexOf(stepMarker)
   expect(stepStart, `${stepMarker} must exist in the workflow`).toBeGreaterThan(-1)
 
