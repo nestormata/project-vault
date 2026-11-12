@@ -167,6 +167,11 @@ describe('check-brand-name: mutation self-tests (Story 72.16 AC-2)', () => {
     ).toEqual([])
     expect(
       problems({
+        'static/manifest.json': JSON.stringify({ name: 'Project&nbsp;Vault' }),
+      })
+    ).toEqual([])
+    expect(
+      problems({
         'static/mark.svg': '<!-- Project&nbsp;Vault -->\n<svg><text>Vault</text></svg>\n',
       })
     ).toEqual([])
