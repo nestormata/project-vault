@@ -80,6 +80,7 @@ describe('decodeHtmlEntities', () => {
     expect(SMALL_MAP_72_29.has('ThinSpace')).toBe(false)
     expect(decodeHtmlEntities('&ohm;')).toBe('\u03A9')
     expect(decodeHtmlEntities('&ZeroWidthSpace;')).toBe('\u200B')
+    expect(decodeHtmlEntities('&ThickSpace;')).toBe('\u205F\u200A')
     expect(decodeHtmlEntities(ENCODED_THIN_SPACE)).toBe('Project\u2009Vault')
     expect(BRAND_PATTERN.test(ENCODED_THIN_SPACE)).toBe(false)
     expect(BRAND_PATTERN.test(decodeHtmlEntities(ENCODED_THIN_SPACE))).toBe(true)
