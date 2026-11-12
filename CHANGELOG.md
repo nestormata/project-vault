@@ -11,6 +11,10 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **Web: `check-brand-name` decodes HTML entities in static SVG and HTML text** (Story 72.29). A product
+  name hidden as `Project&nbsp;Vault` or a numeric character reference in `src/*.html` or `static/*.svg`
+  fails the guard. JSON manifests are still parsed as JSON, not HTML-decoded. See
+  [docs/composition-kit.md](docs/composition-kit.md#brand-name-epic-72-story-72-16).
 - **Web: auth pages and the public home read `shell_brand_tagline`** (Story 72.23). `AuthBrandHeader`
   (sign-in, register, vault-ready) and `RootHomeContent` (public `/`) render
   `m.shell_brand_tagline()` instead of the hard-coded English sentence. The default in `en` and `es`
