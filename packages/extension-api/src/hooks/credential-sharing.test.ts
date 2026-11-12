@@ -5,6 +5,7 @@ import {
   CredentialSharingNotAuthorizedError,
   CredentialSharingStepUpRequiredError,
   CredentialSharingTotpEnrollmentRequiredError,
+  type CredentialSharingHost,
   type CredentialSharingShareRecord,
 } from './credential-sharing.js'
 
@@ -24,6 +25,21 @@ describe('credential-sharing acting-user and step-up contract (Stories 65.6, 72.
     expect(error.name).toBe(ErrorClass.name)
     expect(error.message).toContain('HostServices.credentialSharing.revokeShare()')
     expect(error.message).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/)
+  })
+
+  it('Story 65.8: externalShareMissMinResponseMs is optional and must not be inferred as 0', () => {
+    const withoutSignal: CredentialSharingHost = {
+      createExternalShare: async () => ({ status: 'credential_not_found' }),
+      findShareByToken: async () => ({ status: 'not_found' }),
+      revealShare: async () => ({ status: 'not_found' }),
+      revokeShare: async () => ({ status: 'not_found' }),
+      supersedeSharesForRotation: async () => ({ supersededShares: [] }),
+      listSharesForCredential: async () => ({ status: 'ok', items: [], total: 0 }),
+      listSharesForOrganization: async () => ({ status: 'ok', items: [], total: 0 }),
+      provisionMachineUser: async () => ({ machineUserId: 'machine-user-1', created: false }),
+    }
+    expect(withoutSignal.externalShareMissMinResponseMs).toBeUndefined()
+    expect('externalShareMissMinResponseMs' in withoutSignal).toBe(false)
   })
 
   it('a share record always carries sharedBy, string or null, and it survives JSON', () => {

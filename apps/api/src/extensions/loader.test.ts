@@ -12,6 +12,7 @@ import {
   readVersionFromPackageDir,
 } from './loader.js'
 import type { LoadExtensionDeps } from './loader.js'
+import { EXTERNAL_SHARE_MISS_FLOOR_MS } from '../modules/credential-shares/schema.js'
 
 const VALID_MANIFEST: ExtensionManifest = {
   name: 'com.acme.sso-extension',
@@ -271,6 +272,7 @@ describe('loadExtension — valid package (AC-2)', () => {
     ]) {
       expect(credentialSharing).toHaveProperty([method], expect.any(Function))
     }
+    expect(credentialSharing.externalShareMissMinResponseMs).toBe(EXTERNAL_SHARE_MISS_FLOOR_MS)
   })
 
   // Story 37.1 AC7 — same "actually wired, not just typed" precedent as every field above.
@@ -551,12 +553,13 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     // 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, Story 37.1 AC1.3, Story
     // 39.1 AC8, Story 41.1, Story 56.1 AC1/AC4, Story 40.1 AC1/AC2/AC3/AC10, Story 57.1, Story
     // 58.1, Story 20.12, Story 20.13, Story 59.1, Story 70.1, Story 68.8, Story 68.14, Story 68.11, Story 70.3, Story 69.18 and Story 73.9 — host
-    // EXTENSION_API_VERSION is now 3.42.0 (see manifest.ts's EXTENSION_API_VERSION doc comment for
-    // the full version-bump history); '3.43.0' is the above-host, same-major escape-eligible version. Kept one minor version
+    // EXTENSION_API_VERSION is now 3.44.0 (see manifest.ts's EXTENSION_API_VERSION doc comment for
+    // the full version-bump history); '3.45.0' is the above-host, same-major escape-eligible version. Kept one minor version
     // above whatever EXTENSION_API_VERSION currently is — a future bump must move this value
     // forward again the same way this story just did, or this test silently stops exercising the
-    // above-host path once EXTENSION_API_VERSION catches up to a stale hardcoded value.
-    const aboveHostApiVersion = '3.43.0'
+    // above-host path once EXTENSION_API_VERSION catches up to a stale hardcoded value. 3.43.0 is
+    // reserved for open PR #697; 3.44.0 is story 65-8.
+    const aboveHostApiVersion = '3.45.0'
     const importFn = vi.fn().mockResolvedValue({
       default: {
         manifest: { ...VALID_MANIFEST, apiVersion: aboveHostApiVersion },

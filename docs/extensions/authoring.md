@@ -661,6 +661,14 @@ key; without one each call throws `CredentialSharingNoMachineUserError`. When th
 - `checkCredentialSharingMachineUserMode(manifest)` returns `host-managed` or
   `admin-provisioned-only` with the reason; assert the mode you expect in your CI.
 
+**External-share miss hold (since 3.44.0).** When the running host holds every miss of
+`findShareByToken` and `revealShare` to a minimum response time,
+`credentialSharing.externalShareMissMinResponseMs` is that duration in milliseconds (copied from
+the host's `EXTERNAL_SHARE_MISS_FLOOR_MS`). If the field is **missing**, the host does not hold
+those methods natively: keep your own floor. Do not treat `0` as a signal, and do not infer a hold
+from `apiVersion`, the installed package version, or a timing probe. This is not
+`anonymousRouteMinResponseMs` (that is a per-route declaration you opt into).
+
 **Handler context.** An authenticated, organization-scoped route gets
 `ctx = { auth, tx, onPostCommit, audit }`. `ctx.tx` is Project Vault's request transaction (a
 drizzle `PgTransaction` at runtime, with `app.current_org_id` set, so RLS limits every query to
@@ -861,7 +869,7 @@ session. The declaration is plain data and is validated at registration:
 - A write that carries an `idempotencyKey` is limited to a 1 MiB audit entry (the payload as stored); over it the write
   fails with `payload_too_large`, even though the same payload without a key is accepted. Split or trim large payloads.
 
-##### Host version compatibility of the audit-write contract (3.28.0 to 3.39.0)
+##### Host version compatibility of the audit-write contract (3.28.0 to 3.44.0)
 
 What a consumer gets in each release, and what an older host does with it. "Ignores" means the field is accepted
 and has no effect.
@@ -877,6 +885,7 @@ and has no effect.
 | 3.37.0 | `security.minimumProjectRole`, the project-role default, `checkProjectWriteRoles`                                           | An older host ignores the field and gates no extension route: check the host version.  |
 | 3.38.0 | `createExternalShare({ totpCode })`, `CredentialSharingStepUpRequiredError`, `CredentialSharingTotpEnrollmentRequiredError` | An older host ignores `totpCode` and checks no step-up: check the host version.        |
 | 3.39.0 | `provisionMachineUser`, lazy host-managed machine user, `checkCredentialSharingMachineUserMode`                             | No `provisionMachineUser`; writes need an admin key.                                   |
+| 3.44.0 | `CredentialSharingHost.externalShareMissMinResponseMs?`                                                                     | Field absent: not held natively; keep your own floor. Never infer from version.        |
 
 ```ts
 import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'
