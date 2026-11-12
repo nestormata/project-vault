@@ -11,6 +11,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **Web: `check-brand-name` decodes the full HTML5 named-entity table** (Story 72.31). HTML and SVG
+  readers use the WHATWG named character references (semicolon required), so a name hidden as
+  `Project&ThinSpace;Vault` or `&ohm;` still fails the guard. Optional-semicolon forms (`&nbsp`
+  without `;`) stay encoded. JSON manifests are still parsed as JSON, not HTML-decoded. See
+  [docs/composition-kit.md](docs/composition-kit.md#brand-name-epic-72-story-72-16).
 - **Web: `check-brand-name` decodes HTML entities in static SVG and HTML text** (Story 72.29). A product
   name hidden as `Project&nbsp;Vault` or a numeric character reference in `src/*.html` or `static/*.svg`
   fails the guard. JSON manifests are still parsed as JSON, not HTML-decoded. See
