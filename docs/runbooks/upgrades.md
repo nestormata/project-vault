@@ -129,9 +129,11 @@ stays a permanent `0.0.1` development placeholder and is never read as release i
 ### If that verification step fails
 
 The alias tags are correctly left untouched, but the immutable `:VERSION` tag has **already been
-pushed** (verification runs post-push, on the published digest). A plain re-run of the workflow will
-therefore stop at its "Reject existing immutable release tag" guard, which is working as designed —
-release tags are never silently overwritten. After fixing the underlying wiring, recover one of two
+pushed** (verification runs post-push, on the published digest). A **new** `workflow_dispatch` or
+`release` run still stops at "Reject existing immutable release tag" — release tags are never
+silently overwritten. A rerun of the **same** GitHub Actions run may reuse that digest (matching
+`org.opencontainers.image.revision`, tag not moved) and re-run verification on it; if the image
+is actually wrong, verification fails again. After fixing the underlying wiring, recover one of two
 ways:
 
 1. **Preferred** — publish the next patch release (`v1.2.4`). The bad `1.2.3` tag exists but no alias

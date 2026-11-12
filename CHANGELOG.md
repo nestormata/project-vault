@@ -11,6 +11,14 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **Release: a same-run rerun of `container-publish` can finish a partial `:X.Y.Z` publish**
+  (Story 75.2). "Reject existing immutable release tag" now passes only when this job is a rerun of
+  the same GitHub Actions run (`github.run_attempt > 1`), the existing image's
+  `org.opencontainers.image.revision` equals the tag commit, and the tag has not moved. That path
+  reuses the existing digest for attestation, version verification and both Trivy scans; it does
+  not push a different digest under `:X.Y.Z`. A new `workflow_dispatch`/`release` run, attempt 1, a
+  missing or mismatching revision label, and a moved tag still fail; recovery there remains
+  `vX.Y.(Z+1)`. See [docs/releasing.md](docs/releasing.md) §4 and §9.2.
 - **Web: `check-brand-name` decodes HTML entities in static SVG and HTML text** (Story 72.29). A product
   name hidden as `Project&nbsp;Vault` or a numeric character reference in `src/*.html` or `static/*.svg`
   fails the guard. JSON manifests are still parsed as JSON, not HTML-decoded. See
