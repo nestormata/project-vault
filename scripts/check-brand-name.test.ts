@@ -139,6 +139,45 @@ describe('check-brand-name: mutation self-tests (Story 72.16 AC-2)', () => {
     expect(checkBrandNameGuard(root).staticFiles).toBe(0)
   })
 
+  it('fails SVG and HTML that hide the product name behind HTML entities', () => {
+    expect(
+      problems({
+        'static/logo.svg':
+          '<svg xmlns="http://www.w3.org/2000/svg"><text>Project&nbsp;Vault</text></svg>\n',
+      })
+    ).toEqual([
+      `static/logo.svg:1: hard-codes "${BRAND_LITERAL}"; overlay the static file or drop the literal`,
+    ])
+    expect(problems({ 'src/app.html': '<title>Project&nbsp;Vault</title>' })).toEqual([
+      `src/app.html:1: hard-codes "${BRAND_LITERAL}"; read m.brand_name()`,
+    ])
+    expect(
+      problems({ 'static/logo.svg': '<svg><text>Project&#160;Vault</text></svg>\n' })
+    ).toHaveLength(1)
+    expect(
+      problems({ 'static/logo.svg': '<svg><text>Project&#xA0;Vault</text></svg>\n' })
+    ).toHaveLength(1)
+    expect(
+      problems({ 'static/logo.svg': '<svg><text>Projec&#116; Vault</text></svg>\n' })
+    ).toHaveLength(1)
+    expect(
+      problems({
+        'static/logo.svg': '<svg><text>Project&amp;nbsp;Vault</text></svg>\n',
+      })
+    ).toEqual([])
+    expect(
+      problems({
+        'static/manifest.json': JSON.stringify({ name: 'Project&nbsp;Vault' }),
+      })
+    ).toEqual([])
+    expect(
+      problems({
+        'static/mark.svg': '<!-- Project&nbsp;Vault -->\n<svg><text>Vault</text></svg>\n',
+      })
+    ).toEqual([])
+    expect(problems({ 'src/a.svelte': '<p>Project&nbsp;Vault</p>\n' })).toHaveLength(1)
+  })
+
   it('reports invalid JSON in a scanned manifest and still ignores a missing static dir', () => {
     expect(problems({ 'static/manifest.json': '{ not json' })).toEqual([
       'static/manifest.json: not valid JSON',
