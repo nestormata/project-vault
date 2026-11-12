@@ -11,6 +11,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **Web: `check-brand-name` decodes the full HTML5 named-entity table** (Story 72.31). HTML and SVG
+  readers use the WHATWG named character references (semicolon required), so a name hidden as
+  `Project&ThinSpace;Vault` or `&ohm;` still fails the guard. Optional-semicolon forms (`&nbsp`
+  without `;`) stay encoded. JSON manifests are still parsed as JSON, not HTML-decoded. See
+  [docs/composition-kit.md](docs/composition-kit.md#brand-name-epic-72-story-72-16).
 - **Release: a same-run rerun of `container-publish` can finish a partial `:X.Y.Z` publish**
   (Story 75.2). "Reject existing immutable release tag" now passes only when this job is a rerun of
   the same GitHub Actions run (`github.run_attempt > 1`), the existing image's

@@ -176,6 +176,17 @@ describe('check-brand-name: mutation self-tests (Story 72.16 AC-2)', () => {
       })
     ).toEqual([])
     expect(problems({ 'src/a.svelte': '<p>Project&nbsp;Vault</p>\n' })).toHaveLength(1)
+    expect(
+      problems({
+        'static/logo.svg':
+          '<svg xmlns="http://www.w3.org/2000/svg"><text>Project&ThinSpace;Vault</text></svg>\n',
+      })
+    ).toEqual([
+      `static/logo.svg:1: hard-codes "${BRAND_LITERAL}"; overlay the static file or drop the literal`,
+    ])
+    expect(problems({ 'src/app.html': '<title>Project&ThinSpace;Vault</title>' })).toEqual([
+      `src/app.html:1: hard-codes "${BRAND_LITERAL}"; read m.brand_name()`,
+    ])
   })
 
   it('reports invalid JSON in a scanned manifest and still ignores a missing static dir', () => {
