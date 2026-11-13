@@ -764,6 +764,70 @@ describe('Story 75.2: same-run rerun may complete a partial publish', () => {
     expect(result.status).toBe(0)
     expect(result.githubOutput).not.toMatch(/reuse=true/)
   })
+
+  // Story 75.6: pin reject-step branches that 75-2 implemented but did not fixture.
+  describe('Story 75.6: extra reuse contract fixtures', () => {
+    it('a missing sha tag reuses the version digest (not treated as moved)', () => {
+      const result = runRejectStep({
+        runAttempt: '2',
+        versionExists: true,
+        shaExists: false,
+        versionInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+      })
+
+      expect(result.status).toBe(0)
+      expect(result.githubOutput).toMatch(/reuse=true/)
+      expect(result.githubOutput).toContain(`digest=${VERSION_DIGEST}`)
+      expect(result.output).toMatch(/Reusing existing immutable release tag/)
+      expect(result.docker).not.toMatch(/\bcreate\b/)
+      expect(result.docker).not.toMatch(/\bpush\b/)
+    })
+
+    it('an empty revision label fails with the current message', () => {
+      const result = runRejectStep({
+        runAttempt: '2',
+        versionExists: true,
+        shaExists: true,
+        versionInspect: inspectDoc(VERSION_DIGEST, ''),
+        shaInspect: inspectDoc(VERSION_DIGEST, ''),
+      })
+
+      expect(result.status).toBe(1)
+      expect(result.output).toContain(EXISTING_MESSAGE)
+      expect(result.githubOutput).not.toMatch(/reuse=true/)
+    })
+
+    it('a one-platform revision mismatch fails with the current message', () => {
+      const result = runRejectStep({
+        runAttempt: '2',
+        versionExists: true,
+        shaExists: true,
+        versionInspect: inspectDoc(VERSION_DIGEST, COMMIT, {
+          'linux/amd64': COMMIT,
+          'linux/arm64': OTHER_COMMIT,
+        }),
+        shaInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+      })
+
+      expect(result.status).toBe(1)
+      expect(result.output).toContain(EXISTING_MESSAGE)
+      expect(result.githubOutput).not.toMatch(/reuse=true/)
+    })
+
+    it('a malformed version digest fails closed', () => {
+      for (const digest of ['', 'sha256:dead', `SHA256:${'a'.repeat(64)}`, 'a'.repeat(64)]) {
+        const result = runRejectStep({
+          runAttempt: '2',
+          versionExists: true,
+          shaExists: false,
+          versionInspect: inspectDoc(digest, COMMIT),
+        })
+        expect(result.status, `digest=${digest}`).toBe(1)
+        expect(result.output).toContain(EXISTING_MESSAGE)
+        expect(result.githubOutput).not.toMatch(/reuse=true/)
+      }
+    })
+  })
 })
 
 function runReuseCreateStep(options: { existingDigest: string }): {
@@ -808,14 +872,18 @@ function runReuseCreateStep(options: { existingDigest: string }): {
   }
 }
 
-function inspectDoc(digest: string, revision: string | null): unknown {
-  const labels =
-    revision === null ? {} : { Labels: { 'org.opencontainers.image.revision': revision } }
+function inspectDoc(
+  digest: string,
+  revision: string | null,
+  platformRevisions?: Readonly<Record<string, string | null>>
+): unknown {
+  const labelsFor = (rev: string | null) =>
+    rev === null ? {} : { Labels: { 'org.opencontainers.image.revision': rev } }
   return {
     manifest: { digest },
     image: {
-      'linux/amd64': { config: labels },
-      'linux/arm64': { config: labels },
+      'linux/amd64': { config: labelsFor(platformRevisions?.['linux/amd64'] ?? revision) },
+      'linux/arm64': { config: labelsFor(platformRevisions?.['linux/arm64'] ?? revision) },
       'unknown/unknown': { config: {} },
     },
   }
