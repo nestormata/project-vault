@@ -621,6 +621,7 @@ export function buildCredentialSharingHost(
     )
 
   return {
+    externalShareMissMinResponseMs: EXTERNAL_SHARE_MISS_FLOOR_MS,
     async createExternalShare(params) {
       return callOutOfRequestMethod('createExternalShare', params.organizationId, hostContext, () =>
         withOrg(params.organizationId, async (tx) => {

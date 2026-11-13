@@ -2,6 +2,36 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.44.0 — 2026-11-11
+
+contract-hash: sha256:40045daa8ce8166d0308f3eba5655a9cf9000d4860d8c55c244dcc187214d7e6
+
+Story 65.8. Additive. Hosts that natively hold external-share miss timing publish the hold in
+milliseconds on `HostServices.credentialSharing`. Older hosts omit the field. Consumers must keep
+their own floor when it is missing; never treat 0 as a published hold, and never infer from
+package version or a timing probe. 3.43.0 is reserved for PR #697.
+
+### Added
+
+- `CredentialSharingHost.externalShareMissMinResponseMs?: number`. Set from the host's
+  `EXTERNAL_SHARE_MISS_FLOOR_MS`. Every non-ok outcome of `findShareByToken` and `revealShare`
+  (including a non-active share and the per-org 429) is held to at least that many ms from call
+  start; hits are never held.
+
+### Deprecated
+
+No additional freeze in this release. The 3.30.0 markers remain: the panel types (`UIPanel` and
+siblings `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionContext`,
+`ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`, `ModuleDataResult`,
+`ModuleDataRouteHandler`, `ModuleDataRouteDeclaration`, `ExtensionNavItem`), the manifest keys
+`uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`, the hooks `uiPanel`,
+`moduleAction`, `moduleData`, and the `'ui-panel'` capability. Use composed UI, M7 `apiRoutes`,
+`ExtensionRequestContext` and `ExtensionActionResult` instead.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.44.0 adds no deprecation).
+
 ## 3.42.0 — 2026-11-10
 
 contract-hash: sha256:ebcdc5b588d3a084e5e5be58e83ce3aec65b3bf3e673550555ffeecf28f55b83

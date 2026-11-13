@@ -671,7 +671,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // bound to PV's current organization invocation and refuse calls outside that scope (policy row 1).
 // Story 73.3 — bumped as a minor (3.41.0 -> 3.42.0): optional `HandoffDisplayClaims` on
 // `ExtensionRequestContext` (policy row 1). Additive. `identity.orgRole` is unchanged.
-export const EXTENSION_API_VERSION = '3.42.0'
+// Story 65.8 — bumped as a minor (3.42.0 -> 3.44.0): optional
+// `CredentialSharingHost.externalShareMissMinResponseMs` (policy row 1). 3.43.0 is allocated to
+// open PR #697; this story does not reuse it. Additive. Absent means the host does not hold
+// external-share misses natively.
+export const EXTENSION_API_VERSION = '3.44.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

@@ -13,6 +13,7 @@ import {
 } from '@project-vault/extension-api'
 import { OperationalEvent } from '@project-vault/shared'
 import { firstRejection, redeemInBatches } from '../__tests__/helpers/redeem-in-batches.js'
+import { EXTERNAL_SHARE_MISS_FLOOR_MS } from '../modules/credential-shares/schema.js'
 import { runWithRequestContext } from './request-context.js'
 
 /**
@@ -963,8 +964,16 @@ describe('buildCredentialSharingHost — AC5 per-extension in-flight rate limiti
   })
 })
 
+describe('buildCredentialSharingHost miss-hold signal (Story 65.8)', () => {
+  it('exposes EXTERNAL_SHARE_MISS_FLOOR_MS as externalShareMissMinResponseMs, never 0', () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    expect(host.externalShareMissMinResponseMs).toBe(EXTERNAL_SHARE_MISS_FLOOR_MS)
+    expect(host.externalShareMissMinResponseMs).toBeGreaterThan(0)
+  })
+})
+
 describe('buildCredentialSharingHost miss floor (Story 65.4 AC1)', () => {
-  const FLOOR = 100
+  const FLOOR = EXTERNAL_SHARE_MISS_FLOOR_MS
 
   beforeEach(() => {
     vi.useFakeTimers()
@@ -991,6 +1000,7 @@ describe('buildCredentialSharingHost miss floor (Story 65.4 AC1)', () => {
   it('findShareByToken holds a not_found until the floor and returns the same value', async () => {
     findExternalShareByTokenHash.mockResolvedValue({ status: 'not_found' })
     const host = buildCredentialSharingHost(MANIFEST)
+    expect(host.externalShareMissMinResponseMs).toBe(FLOOR)
     const call = host.findShareByToken('garbage')
     expect((await settleWithin(call, FLOOR - 1)).settled).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
