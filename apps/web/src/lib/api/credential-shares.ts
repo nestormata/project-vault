@@ -172,6 +172,7 @@ export type ExternalShareMetadata = {
   credentialId?: string
   credentialName: string
   sharedByDisplayName: string
+  organizationName: string
   fieldKey?: string | null
   attributeKeys?: string[] | null
   action?: ShareAction

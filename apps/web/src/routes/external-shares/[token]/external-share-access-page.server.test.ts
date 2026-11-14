@@ -32,6 +32,7 @@ describe('/external-shares/[token] +page.server.ts', () => {
       credentialId: 'cred-1',
       credentialName: 'Stripe Secret Key',
       sharedByDisplayName: 'morgan',
+      organizationName: 'Acme',
       fieldKey: null,
       expiresAt: '2026-08-01T00:00:00.000Z',
       status: 'active',
@@ -51,6 +52,7 @@ describe('/external-shares/[token] +page.server.ts', () => {
       credentialId: 'cred-1',
       credentialName: 'Stripe Secret Key',
       sharedByDisplayName: 'morgan',
+      organizationName: 'Acme',
       fieldKey: null,
       expiresAt: '2026-08-01T00:00:00.000Z',
       status: 'active',
@@ -68,6 +70,7 @@ describe('/external-shares/[token] +page.server.ts', () => {
     getExternalShareMetadataMock.mockResolvedValue({
       credentialName: 'Stripe Secret Key',
       sharedByDisplayName: 'morgan',
+      organizationName: 'Acme',
       expiresAt: '2026-08-01T00:00:00.000Z',
       status: 'active',
       verificationRequired: true,

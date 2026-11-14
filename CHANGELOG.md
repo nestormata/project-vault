@@ -11,6 +11,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **API/Web: recipient share metadata names the owning organization** (Story 73.13).
+  `GET /api/v1/external-shares/access/{token}` includes required `organizationName` (current
+  `organizations.name`). The native guest page shows it before verification. No organization id.
+  A renamed org is reflected on the next fetch; a missing or empty org name is `404 share_not_found`.
+  CentralizeMe consumes the field via `openapi.composed.json`.
 - **Web: `check-brand-name` decodes the full HTML5 named-entity table** (Story 72.31). HTML and SVG
   readers use the WHATWG named character references (semicolon required), so a name hidden as
   `Project&ThinSpace;Vault` or `&ohm;` still fails the guard. Optional-semicolon forms (`&nbsp`

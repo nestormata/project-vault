@@ -57,6 +57,7 @@
   <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
     <SharedCredentialSummary
       sharedByLabel={metadata.sharedByDisplayName}
+      organizationName={metadata.organizationName}
       credentialName={metadata.credentialName}
       fieldKey={metadata.fieldKey ?? null}
       attributeKeys={metadata.attributeKeys ?? null}

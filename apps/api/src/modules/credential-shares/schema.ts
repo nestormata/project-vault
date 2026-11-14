@@ -200,11 +200,13 @@ const boundedShareScopeResponseShape = {
 // credential name, sharer display name, expiry and status, plus `verificationRequired: true` and
 // the masked recipient address; `credentialId` and the scope fields are omitted (optional here).
 // A link-only share keeps the full shape above plus `verificationRequired: false`.
+// Story 73-13: `organizationName` is the owning org's current display name (live join). No org id.
 export const ExternalShareMetadataResponseSchema = z.object({
   data: z.object({
     credentialId: z.uuid().optional(),
     credentialName: z.string(),
     sharedByDisplayName: z.string(),
+    organizationName: z.string(),
     fieldKey: boundedShareScopeResponseShape.fieldKey.optional(),
     attributeKeys: boundedShareScopeResponseShape.attributeKeys.optional(),
     action: boundedShareScopeResponseShape.action.optional(),

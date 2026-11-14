@@ -359,6 +359,7 @@
   "share_reason_revoke_forbidden": "Only the person who shared this, or an organization admin, can revoke it.",
   "share_reason_already_closed": "This share is already closed.",
   "share_reason_generic": "Could not complete the share request.",
+  "guest_share_from_org": "{sharer} from {organization} shared {credential}{scope} with you.",
   "guest_verify_heading": "Verify your email address",
   "guest_verify_intro": "We will send a 6-digit code to {address}. Enter it here to open the secret.",
   "guest_verify_send": "Send code",
