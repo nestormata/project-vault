@@ -5,6 +5,7 @@ import { registerAndLoginViaApi } from '../fixtures/auth.js'
 import { createProjectViaApi } from '../fixtures/api.js'
 import { createLoginTemplateCredentialViaUi } from '../fixtures/credentials-ui.js'
 import {
+  APPEARANCES,
   describeEachAppearance,
   expectAppearanceApplied,
   expectNoHorizontalOverflow,
@@ -282,5 +283,49 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
     await anonymousPage.goto('/shares')
     await expect(anonymousPage).toHaveURL(/\/login/)
     await anonymous.close()
+  })
+})
+
+// Story 73-14: j41 appearances assert the org name in the default locale. The Spanish
+// `guest_share_from_org` sentence is a separate load with PARAGLIDE_LOCALE=es (the guest page
+// has no language switcher). One appearance is enough; overflow/order at 390 px stay in the
+// block above and were looked at in a real Chrome window.
+test.describe('J41 guest share Spanish summary', () => {
+  const appearance = APPEARANCES.find((item) => item.name === 'desktop light')
+  if (!appearance) throw new Error('desktop light appearance is required')
+  test.use({ viewport: { ...appearance.viewport }, colorScheme: appearance.colorScheme })
+
+  test('guest summary uses Spanish guest_share_from_org before Enviar código', async ({
+    page,
+    context,
+    browser,
+  }) => {
+    test.slow()
+    const sharer = await startAsSharer(page, context)
+    const recipientEmail = `j41-es-${randomUUID().slice(0, 8)}@vendor.example`
+    const token = tokenFromShareUrl(
+      await createExternalShareViaUi(page, { recipientEmail, password: OWNER_PASSWORD })
+    )
+    const guestContext = await newGuest(browser, appearance)
+    await guestContext.addCookies([
+      { name: 'PARAGLIDE_LOCALE', value: 'es', domain: 'localhost', path: '/' },
+    ])
+    const guest = await guestContext.newPage()
+    await openGuestShare(guest, token, { sendCodeName: 'Enviar código' })
+    const summary = guest.getByText(
+      `de ${sharer.orgName} compartió ${sharer.credentialName} contigo.`
+    )
+    await expect(summary).toBeVisible()
+    const send = guest.getByRole('button', { name: 'Enviar código' })
+    await expect(send).toBeVisible()
+    const summaryBox = await summary.boundingBox()
+    const sendBox = await send.boundingBox()
+    expect(summaryBox, 'summary is laid out').toBeTruthy()
+    expect(sendBox, 'Enviar código is laid out').toBeTruthy()
+    expect(summaryBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(
+      sendBox?.y ?? Number.NEGATIVE_INFINITY
+    )
+    await expectNoHorizontalOverflow(guest)
+    await guestContext.close()
   })
 })
