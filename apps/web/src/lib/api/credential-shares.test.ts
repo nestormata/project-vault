@@ -142,6 +142,7 @@ describe('credential-shares API wrapper (Story 17.1)', () => {
       credentialId,
       credentialName: 'Stripe API Key',
       sharedByDisplayName: 'morgan',
+      organizationName: 'Acme',
       fieldKey: null,
       expiresAt: '2026-01-02T00:00:00.000Z',
       status: 'active' as const,

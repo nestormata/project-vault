@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { auditLogEntries, credentialShares, notificationQueue } from '@project-vault/db/schema'
+import {
+  auditLogEntries,
+  credentialShares,
+  notificationQueue,
+  organizations,
+} from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { bootstrapRouteIntegrationTest } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
@@ -122,7 +127,7 @@ describe('external share guest verification (Story 72-11)', () => {
     return { ...share, proof }
   }
 
-  it('AC7: the metadata of a gated share is trimmed to name, sharer, expiry, status and the mask', async () => {
+  it('AC7: the metadata of a gated share is trimmed to name, sharer, org, expiry, status and the mask', async () => {
     const { token } = await seeder.seedShare(GATED)
     const response = await app.inject({ method: 'GET', url: accessUrl(token) })
     expect(response.statusCode).toBe(200)
@@ -132,6 +137,7 @@ describe('external share guest verification (Story 72-11)', () => {
         'credentialName',
         'expiresAt',
         'maskedRecipient',
+        'organizationName',
         'sharedByDisplayName',
         'status',
         'verificationRequired',
@@ -139,9 +145,13 @@ describe('external share guest verification (Story 72-11)', () => {
     )
     expect(data['verificationRequired']).toBe(true)
     expect(data['maskedRecipient']).toBe('v***@v***')
+    expect(typeof data['organizationName']).toBe('string')
+    expect(data['organizationName']).not.toBe('')
+    expect(data).not.toHaveProperty('organizationId')
+    expect(JSON.stringify(data)).not.toContain(seeder.orgId)
   })
 
-  it('a link-only share keeps its metadata shape plus verificationRequired: false', async () => {
+  it('a link-only share keeps its metadata shape plus verificationRequired: false and organizationName', async () => {
     const { token } = await seeder.seedShare()
     const data = (await app.inject({ method: 'GET', url: accessUrl(token) })).json<{
       data: Record<string, unknown>
@@ -152,6 +162,52 @@ describe('external share guest verification (Story 72-11)', () => {
     expect(data).toHaveProperty('fieldKey')
     expect(data).toHaveProperty('attributeKeys')
     expect(data).toHaveProperty('action')
+    expect(typeof data['organizationName']).toBe('string')
+    expect(data['organizationName']).not.toBe('')
+    expect(data).not.toHaveProperty('organizationId')
+  })
+
+  it('Story 73-13: a renamed org is returned as the current name, not a snapshot', async () => {
+    const { token } = await seeder.seedShare(GATED)
+    const renamed = `Renamed Verify Org ${crypto.randomUUID()}`
+    await withOrg(seeder.orgId, (tx) =>
+      tx.update(organizations).set({ name: renamed }).where(eq(organizations.id, seeder.orgId))
+    )
+    const data = (await app.inject({ method: 'GET', url: accessUrl(token) })).json<{
+      data: { organizationName: string }
+    }>().data
+    expect(data.organizationName).toBe(renamed)
+  })
+
+  it('Story 73-13: an empty org name collapses to the same 404 as an unknown token', async () => {
+    const { token } = await seeder.seedShare(GATED)
+    const [before] = await withOrg(seeder.orgId, (tx) =>
+      tx
+        .select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, seeder.orgId))
+    )
+    if (!before) throw new Error('expected the seeded org')
+    try {
+      await withOrg(seeder.orgId, (tx) =>
+        tx.update(organizations).set({ name: '' }).where(eq(organizations.id, seeder.orgId))
+      )
+      const missing = await app.inject({ method: 'GET', url: accessUrl(token) })
+      const unknown = await app.inject({
+        method: 'GET',
+        url: accessUrl(generateAndHashShareToken().rawToken),
+      })
+      expect(missing.statusCode).toBe(404)
+      expect(missing.json()).toEqual(unknown.json())
+      expect(missing.json()).toEqual({ code: 'share_not_found', message: 'Share not found' })
+    } finally {
+      await withOrg(seeder.orgId, (tx) =>
+        tx
+          .update(organizations)
+          .set({ name: before.name })
+          .where(eq(organizations.id, seeder.orgId))
+      )
+    }
   })
 
   describe('send route (V5)', () => {

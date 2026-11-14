@@ -40,14 +40,16 @@ interface Sharer {
   projectId: string
   credentialId: string
   credentialName: string
+  orgName: string
 }
 
 /** A signed-in owner with one login-template credential, left open on its detail page. */
 async function startAsSharer(page: Page, context: BrowserContext): Promise<Sharer> {
+  const orgName = uniqueOrgName('J41 Org')
   await registerAndLoginViaApi(context, {
     email: uniqueEmail('j41-owner'),
     password: OWNER_PASSWORD,
-    orgName: uniqueOrgName('J41 Org'),
+    orgName,
   })
   const project = await createProjectViaApi(context, {
     name: uniqueProjectName('J41 Project'),
@@ -62,7 +64,7 @@ async function startAsSharer(page: Page, context: BrowserContext): Promise<Share
   // `createLoginTemplateCredentialViaUi` resolves on `/credentials/new` already: wait for the id.
   await expect(page).toHaveURL(/\/credentials\/[0-9a-f-]{36}$/)
   const credentialId = new URL(page.url()).pathname.split('/').pop() as string
-  return { projectId: project.id, credentialId, credentialName }
+  return { projectId: project.id, credentialId, credentialName, orgName }
 }
 
 /** A recipient's own browser context, with the same appearance as the sharer's. */
@@ -130,6 +132,7 @@ describeEachAppearance('J41 shares index and guest verification', (appearance) =
 
     // The link alone shows no credential id and no value, only the masked address shape.
     await expect(guest.getByText(MASKED_ADDRESS).first()).toBeVisible()
+    await expect(guest.getByText(sharer.orgName)).toBeVisible()
     expect(await guest.content()).not.toContain(sharer.credentialId)
     await expect(guest.getByText(USERNAME_VALUE)).toHaveCount(0)
     await expect(guest.getByRole('button', { name: REVEAL_BUTTON })).toHaveCount(0)

@@ -199,6 +199,7 @@ beforeEach(() => {
       credentialName: CREDENTIAL_NAME,
       credentialProjectId: PROJECT_ID,
       sharedByDisplayName: DISPLAY_NAME,
+      organizationName: 'Acme',
     },
   })
   revealExternalShare.mockResolvedValue({
@@ -452,6 +453,7 @@ describe('buildCredentialSharingHost.findShareByToken / revealShare (AC3)', () =
         credentialName: 'Other',
         credentialProjectId: PROJECT_ID,
         sharedByDisplayName: 'Someone',
+        organizationName: 'Other Org',
       },
     })
     await expect(host.findShareByToken('token-in-other-org')).resolves.toMatchObject({
@@ -1367,6 +1369,7 @@ describe('Story 65.6 AC3/AC3b: sharedBy on every extension share record', () => 
         credentialName: CREDENTIAL_NAME,
         credentialProjectId: PROJECT_ID,
         sharedByDisplayName: DISPLAY_NAME,
+        organizationName: 'Acme',
       },
     })
     revealExternalShare.mockResolvedValue({
@@ -1599,6 +1602,7 @@ describe('buildCredentialSharingHost org budget charges only ACTIVE shares (Stor
         credentialName: CREDENTIAL_NAME,
         credentialProjectId: PROJECT_ID,
         sharedByDisplayName: DISPLAY_NAME,
+        organizationName: 'Acme',
       },
     }
   }

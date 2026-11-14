@@ -435,12 +435,21 @@ describe('external credential-shares routes', () => {
       expect(get.statusCode).toBe(200)
       expect(get.headers['referrer-policy']).toBe('no-referrer')
       const body = get.json<{
-        data: { credentialName: string; sharedByDisplayName: string; maskedRecipient?: string }
+        data: {
+          credentialName: string
+          sharedByDisplayName: string
+          organizationName: string
+          maskedRecipient?: string
+        }
       }>()
       expect(body.data.credentialName).toEqual(expect.any(String))
+      expect(body.data.organizationName).toEqual(expect.any(String))
+      expect(body.data.organizationName).not.toBe('')
+      expect(body.data).not.toHaveProperty('organizationId')
       // AC-9: sharer email is never leaked to an unauthenticated party. Story 72-11 V6: the one
       // `@` allowed is the masked RECIPIENT address, which carries one letter on each side.
-      const { maskedRecipient, ...rest } = body.data
+      const { maskedRecipient, organizationName, ...rest } = body.data
+      expect(organizationName.length).toBeGreaterThan(0)
       expect(JSON.stringify(rest)).not.toContain('@')
       expect(maskedRecipient).toMatch(/^.\*\*\*@.\*\*\*$/)
     }
