@@ -43,6 +43,7 @@ export const AuditEvent = {
   PROJECT_INVITATION_ACCEPTED: 'project.invitation_accepted',
   PROJECT_INVITATION_REVOKED: 'project.invitation_revoked',
   ORG_USER_REMOVED: 'org.user_removed',
+  ORG_MEMBER_ROLE_CHANGED: 'org.member_role_changed',
   // Story 31.1 AC7.24: written once per call to the machine-authenticated org-wide
   // handoff-session-revocation route (revokeAllSessionsForOrg), inside the SAME transaction as
   // the bulk session/refresh-token/revoked-token/api-key revoke statements, always — even at
@@ -314,3 +315,13 @@ export const DelegationEvent = {
 } as const
 
 export type DelegationEventType = (typeof DelegationEvent)[keyof typeof DelegationEvent]
+
+/**
+ * Story 73.5 D7: unknown requested or stored role. Written to platform_security_events, never
+ * an org audit_log_entries row (a key holder must not fill tenant audit storage).
+ */
+export const RoleSecurityEvent = {
+  UNRECOGNIZED_ROLE: 'unrecognized_role',
+} as const
+
+export type RoleSecurityEventType = (typeof RoleSecurityEvent)[keyof typeof RoleSecurityEvent]

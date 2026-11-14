@@ -192,7 +192,7 @@ type OrgCentralizemeLinkRow = { id: string; centralizemeOrganizationId: string |
  * the target inside a transaction (Story 33.1 AC17's same-org concurrent-write race); omit it for a
  * read-only (dry-run) lookup, which never mutates and therefore never needs the lock.
  */
-async function selectOrgForCentralizemeLink(
+export async function selectOrgForCentralizemeLink(
   typedTx: Tx,
   organizationId: string,
   options: { forUpdate?: boolean } = {}
