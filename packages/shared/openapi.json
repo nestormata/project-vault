@@ -36690,7 +36690,8 @@
                           "type": "string"
                         },
                         "organizationName": {
-                          "type": "string"
+                          "type": "string",
+                          "minLength": 1
                         },
                         "fieldKey": {
                           "nullable": true,

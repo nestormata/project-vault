@@ -206,7 +206,7 @@ export const ExternalShareMetadataResponseSchema = z.object({
     credentialId: z.uuid().optional(),
     credentialName: z.string(),
     sharedByDisplayName: z.string(),
-    organizationName: z.string(),
+    organizationName: z.string().min(1),
     fieldKey: boundedShareScopeResponseShape.fieldKey.optional(),
     attributeKeys: boundedShareScopeResponseShape.attributeKeys.optional(),
     action: boundedShareScopeResponseShape.action.optional(),
