@@ -7,6 +7,7 @@ const listRotationsMock = vi.hoisted(() => vi.fn())
 const listCredentialSharesMock = vi.hoisted(() => vi.fn())
 const listRotationRecommendedNudgesMock = vi.hoisted(() => vi.fn())
 const listOrgUsersMock = vi.hoisted(() => vi.fn())
+const requireUserMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/credentials.js', () => ({
   getCredential: getCredentialMock,
@@ -30,7 +31,7 @@ vi.mock('$lib/api/org-users.js', () => ({
 }))
 
 vi.mock('$lib/server/require-user.js', () => ({
-  requireUser: () => ({ orgRole: 'admin', userId: 'admin-user-id' }),
+  requireUser: requireUserMock,
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
@@ -62,6 +63,8 @@ describe('credential detail +page.server.ts rotation section', () => {
     listCredentialSharesMock.mockReset()
     listRotationRecommendedNudgesMock.mockReset()
     listOrgUsersMock.mockReset()
+    requireUserMock.mockReset()
+    requireUserMock.mockReturnValue({ orgRole: 'admin', userId: 'admin-user-id' })
     getCredentialMock.mockResolvedValue({ id: credentialId, name: 'Stripe Secret Key' })
     listCredentialVersionsMock.mockResolvedValue({ items: [] })
     listCredentialDependenciesMock.mockResolvedValue({ items: [], hasDependencies: false })
@@ -384,6 +387,87 @@ describe('credential detail +page.server.ts rotation section', () => {
     getCredentialMock.mockRejectedValueOnce(new ApiClientError(500, null, 'boom'))
 
     await expect(load(makeEvent())).rejects.toThrow('boom')
+  })
+
+  function mockEmptyRotationPages() {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [],
+      page: 1,
+      limit: 1,
+      total: 0,
+      hasMore: false,
+    })
+    listRotationsMock.mockResolvedValueOnce({
+      items: [],
+      page: 1,
+      limit: 10,
+      total: 0,
+      hasMore: false,
+    })
+  }
+
+  // Story 73.18 / DW-536: GET /api/v1/org/users is admin-only. The load used to Promise.all it
+  // for every role, so a member session 403'd and handleCredentialLoadError rethrew as a 500.
+  describe('Story 73.18: org directory is admin-only', () => {
+    it.each(['member', 'viewer'] as const)(
+      'does not call listOrgUsers for an org %s and still returns the credential',
+      async (orgRole) => {
+        requireUserMock.mockReturnValue({ orgRole, userId: `${orgRole}-user-id` })
+        listOrgUsersMock.mockRejectedValue(
+          new ApiClientError(403, { code: 'forbidden' }, 'forbidden')
+        )
+        mockEmptyRotationPages()
+
+        const result = expectLoaded(await load(makeEvent()))
+
+        expect(listOrgUsersMock).not.toHaveBeenCalled()
+        expect(result.credential).toEqual({ id: credentialId, name: 'Stripe Secret Key' })
+        expect(result.orgMembers).toEqual([])
+        expect(result.notFound).toBeUndefined()
+        expect(result.vaultSealed).toBeUndefined()
+      }
+    )
+
+    it.each(['admin', 'owner'] as const)(
+      'still loads the share typeahead for an org %s',
+      async (orgRole) => {
+        requireUserMock.mockReturnValue({ orgRole, userId: `${orgRole}-user-id` })
+        listOrgUsersMock.mockResolvedValue([
+          {
+            userId: `${orgRole}-user-id`,
+            email: 'self@example.com',
+            displayName: 'Self',
+            orgRole,
+            status: 'active',
+            projects: [],
+          },
+          {
+            userId: 'teammate-id',
+            email: 'teammate@example.com',
+            displayName: 'Teammate',
+            orgRole: 'member',
+            status: 'active',
+            projects: [],
+          },
+          {
+            userId: 'gone-id',
+            email: 'gone@example.com',
+            displayName: 'Gone',
+            orgRole: 'member',
+            status: 'deactivated',
+            projects: [],
+          },
+        ])
+        mockEmptyRotationPages()
+
+        const result = expectLoaded(await load(makeEvent()))
+
+        expect(listOrgUsersMock).toHaveBeenCalledTimes(1)
+        expect(result.orgMembers).toEqual([
+          expect.objectContaining({ userId: 'teammate-id', status: 'active' }),
+        ])
+      }
+    )
   })
 
   // Story 18.2 AC-2: the credential share link is built client-side from the request's own
