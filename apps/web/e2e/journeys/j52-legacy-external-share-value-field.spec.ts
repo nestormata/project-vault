@@ -19,25 +19,25 @@ import { gotoHydrated } from '../fixtures/hydration.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
-const SECRET_VALUE = 'j51-legacy-share-secret'
+const SECRET_VALUE = 'j52-legacy-share-secret'
 const GUARD_COPY = /every field on this secret is sensitive/i
 
-describeEachAppearance('J51 legacy single-value external share field selection', (appearance) => {
+describeEachAppearance('J52 legacy single-value external share field selection', (appearance) => {
   test(`checking value creates a share whose guest reveal is the secret [${appearance.name}]`, async ({
     page,
     context,
     browser,
   }) => {
     test.slow()
-    const credentialName = `j51-secret-${randomUUID().slice(0, 8)}`
+    const credentialName = `j52-secret-${randomUUID().slice(0, 8)}`
     await registerAndLoginViaApi(context, {
-      email: uniqueEmail(`j51-${appearance.name.replace(/\s+/g, '-')}`),
+      email: uniqueEmail(`j52-${appearance.name.replace(/\s+/g, '-')}`),
       password: OWNER_PASSWORD,
-      orgName: uniqueOrgName('J51 Org'),
+      orgName: uniqueOrgName('J52 Org'),
     })
     const project = await createProjectViaApi(context, {
-      name: uniqueProjectName('J51 Project'),
-      slug: `j51-${randomUUID().slice(0, 12)}`,
+      name: uniqueProjectName('J52 Project'),
+      slug: `j52-${randomUUID().slice(0, 12)}`,
     })
     const credential = await createCredentialViaApi(context, project.id, {
       name: credentialName,
@@ -57,13 +57,13 @@ describeEachAppearance('J51 legacy single-value external share field selection',
     await expect(valueCheckbox).not.toBeChecked()
 
     await page.getByRole('button', { name: 'External (email)' }).click()
-    await page.getByPlaceholder('vendor@invalid').fill(uniqueEmail('j51-blocked'))
+    await page.getByPlaceholder('vendor@invalid').fill(uniqueEmail('j52-blocked'))
     await page.getByLabel('Confirm your password').fill(OWNER_PASSWORD)
     await page.getByRole('button', { name: 'Create share link' }).click()
     await expect(page.getByText(GUARD_COPY)).toBeVisible()
 
     await valueCheckbox.check()
-    const recipientEmail = uniqueEmail('j51-guest')
+    const recipientEmail = uniqueEmail('j52-guest')
     await page.getByPlaceholder('vendor@invalid').fill(recipientEmail)
     await page.getByLabel('Confirm your password').fill(OWNER_PASSWORD)
     await page.getByRole('button', { name: 'Create share link' }).click()
