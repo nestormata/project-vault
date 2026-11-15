@@ -175,7 +175,7 @@ existing `vX.Y.Z` tag and still runs only from `main`. Agents do not dispatch th
 GHCR proof is a human item (story 75-5).
 
 ```bash
-! gh workflow run container-publish.yml --ref <branch-or-main> -f dry_run=true
+gh workflow run container-publish.yml --ref <branch-or-main> -f dry_run=true
 ```
 
 Post-publish verification:
