@@ -37,6 +37,14 @@ export function tokenFromShareUrl(shareUrl: string): string {
   return token
 }
 
+/** Reads the one-time link after the credential page shows "Share link created". */
+export async function createdExternalShareLinkFromPage(page: Page): Promise<string> {
+  await expect(page.getByText('Share link created')).toBeVisible()
+  const link = await page.locator('code', { hasText: '/external-shares/' }).textContent()
+  if (!link) throw new Error('the share link was not shown')
+  return link
+}
+
 interface PlantOptions {
   recipientEmail: string
   rawToken: string
@@ -201,8 +209,5 @@ export async function createExternalShareViaUi(
   }
   await page.getByLabel('Confirm your password').fill(form.password)
   await page.getByRole('button', { name: 'Create share link' }).click()
-  await expect(page.getByText('Share link created')).toBeVisible()
-  const link = await page.locator('code', { hasText: '/external-shares/' }).textContent()
-  if (!link) throw new Error('the share link was not shown')
-  return link
+  return createdExternalShareLinkFromPage(page)
 }

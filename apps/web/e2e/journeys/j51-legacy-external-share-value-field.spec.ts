@@ -11,6 +11,7 @@ import {
 } from '../fixtures/appearance.js'
 import {
   completeGuestCodeStep,
+  createdExternalShareLinkFromPage,
   openGuestShare,
   tokenFromShareUrl,
 } from '../fixtures/guest-verification.js'
@@ -66,10 +67,7 @@ describeEachAppearance('J51 legacy single-value external share field selection',
     await page.getByPlaceholder('vendor@invalid').fill(recipientEmail)
     await page.getByLabel('Confirm your password').fill(OWNER_PASSWORD)
     await page.getByRole('button', { name: 'Create share link' }).click()
-    await expect(page.getByText('Share link created')).toBeVisible()
-    const link = await page.locator('code', { hasText: '/external-shares/' }).textContent()
-    if (!link) throw new Error('the share link was not shown')
-    const token = tokenFromShareUrl(link)
+    const token = tokenFromShareUrl(await createdExternalShareLinkFromPage(page))
 
     const guestContext = await newGuest(browser, appearance)
     const guest = await guestContext.newPage()
