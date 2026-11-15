@@ -100,6 +100,7 @@ describe('container publish workflow contract', () => {
     expect(workflow).toMatch(
       /org\.opencontainers\.image\.revision=\$\{\{\s*needs\.prepare\.outputs\.commit\s*\}\}/
     )
+    expect(workflow).toMatch(/com\.github\.actions\.run-id=\$\{\{\s*github\.run_id\s*\}\}/)
   })
 
   it('includes BuildKit caching and supply-chain metadata', () => {
@@ -636,7 +637,6 @@ describe('Story 75.2: same-run rerun may complete a partial publish', () => {
   const OTHER_COMMIT = 'd'.repeat(40)
   const VERSION_DIGEST = `sha256:${'a'.repeat(64)}`
   const OTHER_DIGEST = `sha256:${'b'.repeat(64)}`
-  const EXISTING_MESSAGE = 'Immutable release tag already exists:'
 
   it('keeps reject before create, and the first-attempt path still refuses an existing tag', () => {
     const publishSteps = jobNamed(BUILD_PUBLISH)?.steps ?? []
@@ -830,6 +830,123 @@ describe('Story 75.2: same-run rerun may complete a partial publish', () => {
   })
 })
 
+// Story 75.7: published images carry github.run_id as com.github.actions.run-id.
+// The 75-2 accept path requires that label to equal github.run_id, on top of
+// attempt>1, matching revision, and an unmoved tag.
+describe('Story 75.7: OCI run_id label on published images', () => {
+  const COMMIT = 'c'.repeat(40)
+  const VERSION_DIGEST = `sha256:${'a'.repeat(64)}`
+  const OTHER_RUN_ID = '99999999999'
+
+  it('stamps com.github.actions.run-id from github.run_id and keeps revision as the commit', () => {
+    const workflow = workflowText()
+    expect(workflow).toMatch(/com\.github\.actions\.run-id=\$\{\{\s*github\.run_id\s*\}\}/)
+    expect(workflow).toMatch(
+      /org\.opencontainers\.image\.revision=\$\{\{\s*needs\.prepare\.outputs\.commit\s*\}\}/
+    )
+    expect(workflow).toMatch(/RUN_ID:\s*\$\{\{\s*github\.run_id\s*\}\}/)
+  })
+
+  it('a same-run rerun with matching run_id reuses the existing digest', () => {
+    const result = runRejectStep({
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+      shaInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.githubOutput).toMatch(/reuse=true/)
+    expect(result.githubOutput).toContain(`digest=${VERSION_DIGEST}`)
+    expect(result.docker).not.toMatch(/\bcreate\b/)
+    expect(result.docker).not.toMatch(/\bpush\b/)
+  })
+
+  it('a mismatching run_id label fails with the current message', () => {
+    const result = runRejectStep({
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, COMMIT, undefined, OTHER_RUN_ID),
+      shaInspect: inspectDoc(VERSION_DIGEST, COMMIT, undefined, OTHER_RUN_ID),
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(EXISTING_MESSAGE)
+    expect(result.githubOutput).not.toMatch(/reuse=true/)
+  })
+
+  it('a missing run_id label fails with the current message', () => {
+    const result = runRejectStep({
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, COMMIT, undefined, null),
+      shaInspect: inspectDoc(VERSION_DIGEST, COMMIT, undefined, null),
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(EXISTING_MESSAGE)
+    expect(result.githubOutput).not.toMatch(/reuse=true/)
+  })
+
+  it('an empty run_id label fails with the current message', () => {
+    const result = runRejectStep({
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, COMMIT, undefined, ''),
+      shaInspect: inspectDoc(VERSION_DIGEST, COMMIT, undefined, ''),
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(EXISTING_MESSAGE)
+    expect(result.githubOutput).not.toMatch(/reuse=true/)
+  })
+
+  it('a one-platform run_id mismatch fails with the current message', () => {
+    const result = runRejectStep({
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(VERSION_DIGEST, COMMIT, undefined, DEFAULT_RUN_ID, {
+        'linux/amd64': DEFAULT_RUN_ID,
+        'linux/arm64': OTHER_RUN_ID,
+      }),
+      shaInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(EXISTING_MESSAGE)
+    expect(result.githubOutput).not.toMatch(/reuse=true/)
+  })
+
+  it('RUN_ID missing or not a positive integer fails closed', () => {
+    for (const runId of ['', '0', 'nope']) {
+      const result = runRejectStep({
+        runAttempt: '2',
+        runId,
+        versionExists: true,
+        shaExists: true,
+        versionInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+        shaInspect: inspectDoc(VERSION_DIGEST, COMMIT),
+      })
+      expect(result.status, `RUN_ID=${runId}`).toBe(1)
+      expect(result.output).toContain(EXISTING_MESSAGE)
+      expect(result.githubOutput).not.toMatch(/reuse=true/)
+    }
+  })
+
+  it('removing the run_id-label comparison makes a mismatching label pass (mutation)', () => {
+    expect(mismatchingRunIdRejected(workflowText())).toBe(true)
+
+    const mutated = workflowText().replace(/\[\[ "\$LABEL_RUN_ID" != "\$RUN_ID" \]\]/g, 'false')
+    expect(mutated, 'workflow must contain the run_id-label comparison').not.toBe(workflowText())
+    expect(mismatchingRunIdRejected(mutated)).toBe(false)
+  })
+})
+
 function runReuseCreateStep(options: { existingDigest: string }): {
   status: number
   output: string
@@ -872,18 +989,38 @@ function runReuseCreateStep(options: { existingDigest: string }): {
   }
 }
 
+const DEFAULT_RUN_ID = '41269218945'
+const EXISTING_MESSAGE = 'Immutable release tag already exists:'
+
 function inspectDoc(
   digest: string,
   revision: string | null,
-  platformRevisions?: Readonly<Record<string, string | null>>
+  platformRevisions?: Readonly<Record<string, string | null>>,
+  runId: string | null = DEFAULT_RUN_ID,
+  platformRunIds?: Readonly<Record<string, string | null>>
 ): unknown {
-  const labelsFor = (rev: string | null) =>
-    rev === null ? {} : { Labels: { 'org.opencontainers.image.revision': rev } }
+  const labelsFor = (rev: string | null, rid: string | null) => {
+    if (rev === null && rid === null) return {}
+    const Labels: Record<string, string> = {}
+    if (rev !== null) Labels['org.opencontainers.image.revision'] = rev
+    if (rid !== null) Labels['com.github.actions.run-id'] = rid
+    return { Labels }
+  }
   return {
     manifest: { digest },
     image: {
-      'linux/amd64': { config: labelsFor(platformRevisions?.['linux/amd64'] ?? revision) },
-      'linux/arm64': { config: labelsFor(platformRevisions?.['linux/arm64'] ?? revision) },
+      'linux/amd64': {
+        config: labelsFor(
+          platformRevisions?.['linux/amd64'] ?? revision,
+          platformRunIds?.['linux/amd64'] ?? runId
+        ),
+      },
+      'linux/arm64': {
+        config: labelsFor(
+          platformRevisions?.['linux/arm64'] ?? revision,
+          platformRunIds?.['linux/arm64'] ?? runId
+        ),
+      },
       'unknown/unknown': { config: {} },
     },
   }
@@ -900,12 +1037,32 @@ function mismatchingRevisionRejected(text: string): boolean {
     },
     text
   )
-  return result.status === 1 && result.output.includes('Immutable release tag already exists:')
+  return result.status === 1 && result.output.includes(EXISTING_MESSAGE)
+}
+
+function mismatchingRunIdRejected(text: string): boolean {
+  const result = runRejectStep(
+    {
+      runAttempt: '2',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(
+        `sha256:${'a'.repeat(64)}`,
+        'c'.repeat(40),
+        undefined,
+        '99999999999'
+      ),
+      shaInspect: inspectDoc(`sha256:${'a'.repeat(64)}`, 'c'.repeat(40), undefined, '99999999999'),
+    },
+    text
+  )
+  return result.status === 1
 }
 
 function runRejectStep(
   options: {
     runAttempt: string
+    runId?: string
     versionExists: boolean
     shaExists: boolean
     versionInspect?: unknown
@@ -949,6 +1106,7 @@ function runRejectStep(
         VERSION: '2.0.3',
         COMMIT: 'c'.repeat(40),
         RUN_ATTEMPT: options.runAttempt,
+        RUN_ID: options.runId ?? DEFAULT_RUN_ID,
         DOCKER_LOG: dockerLog,
         GITHUB_OUTPUT: githubOutput,
         STUB_VERSION_EXISTS: options.versionExists ? '1' : '0',

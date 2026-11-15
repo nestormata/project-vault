@@ -132,9 +132,9 @@ The alias tags are correctly left untouched, but the immutable `:VERSION` tag ha
 pushed** (verification runs post-push, on the published digest). A **new** `workflow_dispatch` or
 `release` run still stops at "Reject existing immutable release tag" — release tags are never
 silently overwritten. A rerun of the **same** GitHub Actions run may reuse that digest (matching
-`org.opencontainers.image.revision`, tag not moved) and re-run verification on it; if the image
-is actually wrong, verification fails again. After fixing the underlying wiring, recover one of two
-ways:
+`org.opencontainers.image.revision`, matching `com.github.actions.run-id`, tag not moved) and
+re-run verification on it; if the image is actually wrong, verification fails again. After fixing
+the underlying wiring, recover one of two ways:
 
 1. **Preferred** — publish the next patch release (`v1.2.4`). The bad `1.2.3` tag exists but no alias
    ever pointed at it, so no `latest`/major/minor consumer was exposed to it.
