@@ -90,12 +90,16 @@ export async function plantVerificationCode(options: PlantOptions): Promise<void
   }
 }
 
-/** Opens the public guest page of a gated share and waits until its "Send code" button is live. */
-export async function openGuestShare(page: Page, rawToken: string): Promise<void> {
+/** Opens the public guest page of a gated share and waits until its send-code button is live. */
+export async function openGuestShare(
+  page: Page,
+  rawToken: string,
+  options?: { sendCodeName?: string }
+): Promise<void> {
   await gotoHydrated(
     page,
     `/external-shares/${rawToken}`,
-    page.getByRole('button', { name: 'Send code' })
+    page.getByRole('button', { name: options?.sendCodeName ?? 'Send code' })
   )
 }
 

@@ -147,6 +147,14 @@ user, and audits with `keyId: null`. No key is ever issued for it. `checkCredent
 tells you which rule the host applies. See [docs/extensions/authoring.md](../../docs/extensions/authoring.md)
 "Host-managed machine user".
 
+### External-share miss hold (since 3.44.0)
+
+When the **running** host holds misses of `credentialSharing.findShareByToken` and `revealShare`,
+it sets `credentialSharing.externalShareMissMinResponseMs` to that hold in milliseconds. If the
+field is missing, the host does not hold those methods natively: keep your own floor. Never treat
+`0` as a hold, and never infer from package version or a timing probe. See
+[docs/extensions/authoring.md](../../docs/extensions/authoring.md) "External-share miss hold".
+
 ### Delegated routes (`apiRoutes` `security.delegation`)
 
 A route can declare `security.delegation` to accept a service-delegated actor assertion

@@ -513,6 +513,24 @@ still gets the plain `404`/`403` body with no `reason`. Branch on `reason` when 
 Consumers: a CentralizeMe `openapi.composed.json` needs the `GET /api/v1/shares` route, the three summary fields,
 the `displayStatus` query parameter and the `reason` property on the share error bodies (`ShareApiError`).
 
+## Recipient verification metadata: organization name
+
+Story 73-13 (additive; no breaking change).
+
+`GET /api/v1/external-shares/access/{token}` (unauthenticated) includes `organizationName`: the owning
+organization's **current** display name (`organizations.name` at fetch time, not a snapshot from share
+creation). It is required on the 200 body for both gated shares (`verificationRequired: true`) and
+link-only shares. The native `/external-shares/{token}` page shows it before the guest code step.
+
+The body does **not** include `organizationId`, slug, or CentralizeMe's directory id. PV organizations
+have no soft-delete column; if the org row is missing or its name is empty, the GET is the same
+`404 share_not_found` as an unknown token.
+
+Pre-verification disclosure of the org name to a share-link holder is intentional (Nestor, CM 16-43
+decision 6). The page already named `sharedByDisplayName`.
+
+Consumers: a CentralizeMe `openapi.composed.json` needs the new required `organizationName` field.
+
 ## Dashboard attention list
 
 Story 72-12 (additive; no breaking change; `GET /api/v1/dashboard` is unchanged).

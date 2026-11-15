@@ -151,12 +151,19 @@ then creates `:X.Y.Z` and `:sha-<commit>`. So a failed platform build (for examp
 dependency install) leaves no `:X.Y.Z` tag, and **re-running the failed jobs** recovers the run.
 
 **Never cancel a release `container-publish` run because one job failed.** A cancel kills sibling
-jobs part-way, and a job that already created its immutable tag then makes every re-run die at
-"Reject existing immutable release tag" (v2.0.1: the run was cancelled after `migrate` and `web` had
-pushed `:2.0.1`, and the release was abandoned for v2.0.2). `gh run rerun --failed` is refused while
-the run is still `in_progress`, so wait until every job has finished, then run
-`gh run rerun <run-id> --failed`. Do not use "re-run all jobs": it repeats the jobs that already
-succeeded.
+jobs part-way, and a job that already created its immutable tag then used to make every re-run die
+at "Reject existing immutable release tag" (v2.0.1: the run was cancelled after `migrate` and `web`
+had pushed `:2.0.1`, and the release was abandoned for v2.0.2). Story 75-2 narrowed that guard: a
+**rerun of the same GitHub Actions run** (`github.run_id` unchanged, `github.run_attempt > 1`)
+passes only when the existing image's `org.opencontainers.image.revision` equals the tag commit and
+the tag has not moved; the job then finishes attestation, version verification and both Trivy scans
+on the **existing** digest and does not `imagetools create` / `docker push` a different digest under
+`:X.Y.Z`. A new `workflow_dispatch` or `release` run has a new `run_id` and still fails; so do
+attempt 1, a missing or mismatching revision label, and a moved tag. Those recoveries stay
+fix-forward `vX.Y.(Z+1)`. `gh run rerun --failed` is refused while the run is still `in_progress`,
+so wait until every job has finished, then run `gh run rerun <run-id> --failed`. Do not use
+"re-run all jobs" unless you intend to rebuild the untagged platform blobs: it repeats jobs that
+already succeeded. The version tag is still not overwritten.
 
 Post-publish verification:
 
@@ -406,10 +413,15 @@ Recovery depends on where the Release-triggered `container-publish` run failed:
   cancel the run**, then **re-run its failed jobs** (that keeps the `release` event). Platform
   builds push by digest only, so a failed platform build always falls in this case. Once the run is
   green, **re-run failed jobs** on the waiting web-host run.
-- **Anything else**: a failure after the push (version verification, or a vulnerability scan that
-  left `X.Y.Z` published but not promoted), a workflow bug fixed after the tag, or a run older than
-  the re-run window. A re-run cannot help: "Reject existing immutable release tag" stops it after
-  the push, and a re-run uses the tagged commit's workflow file. Fix forward with `vX.Y.(Z+1)`;
+- **After `:X.Y.Z` exists, still inside GitHub's re-run window, same run:** attestation, version
+  verification or a Trivy scan failed (or the run was cancelled after some images were tagged).
+  **Re-run failed jobs** on that same run. The reject guard reuses the existing digest when the
+  revision label matches the tag commit and the tag has not moved; it does not push a different
+  digest. If verify/scan fail again because the image is actually wrong, cut `vX.Y.(Z+1)`.
+- **Anything else**: a new `workflow_dispatch` or `release` run (new `run_id`, attempt 1), a
+  missing or mismatching revision label, a moved tag, a workflow bug fixed after the tag (the
+  re-run still uses the tagged commit's workflow file), or a run older than the re-run window.
+  "Reject existing immutable release tag" still stops those. Fix forward with `vX.Y.(Z+1)`;
   web-host `X.Y.Z` is skipped and never published. Precedent: v1.0.1's `container-publish` hit a
   workflow bug (run 31212977824), and v1.0.2 shipped the next day.
 
@@ -427,7 +439,17 @@ tag; if this check fires, investigate before anything else.
 Each run has four jobs in the `npm-publish` environment: `publish-kit` (Node 20 and 24), then
 `publish` (Node 24 and 26). The review screen approves the jobs waiting at that moment, so a run
 normally asks twice: once for the kit legs and once for the web-host legs after the kit finishes. A
-run in "waiting" is not hung. Only the Node 24 leg of each job uploads.
+run in "waiting" is not hung. Only the Node 24 leg of each job uploads. The two `publish` legs are
+order-independent: Node 24 is the publishing leg and runs "Reject a version that is already on npm"
+before it uploads; Node 26 is verify-only and does not run that reject step. If Node 24 publishes
+first, Node 26 inspects the published tarball instead of failing because the version exists. If
+Node 26 runs first, that inspect step treats an unpublished version as success (the local pack
+inspection already ran). Do not order the legs with `needs:`.
+
+v2.0.2 (push run 41274558637) published `@project-vault/web-host@2.0.2` from Node 24, then Node 26
+failed at "Reject a version that is already on npm". `verify-npm-release.ts` was 9/9. The package
+was correct and the run was red. v2.0.0 (run 41212942564, attempt 2) was green even though Node 24
+published before Node 26 reached the reject step. Story 75.4 fixes the unconditional reject.
 
 **Before every approval**, run this and compare:
 
@@ -516,7 +538,9 @@ deprecated bootstrap placeholder. Consumers always pin the exact version.
   `.github/workflows/extension-api-release.yml`: revoke the trusted publisher, disable the
   `npm-publish` environment, publish a security advisory, and notify the CentralizeMe maintainer.
 
-Re-running the workflow after a successful publish fails the "not already on npm" gate by design.
+Re-running the workflow after a successful publish fails the "not already on npm" gate on the
+Node 24 publishing leg by design. The Node 26 verify-only leg inspects the published tarball
+and stays green.
 
 ### 9.8 Record
 

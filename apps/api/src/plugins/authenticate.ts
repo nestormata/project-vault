@@ -12,6 +12,7 @@ import {
 import { cleanupExpiredSession } from '../modules/auth/session-revoke.js'
 import { extractBearerToken } from '../modules/machine-users/bearer-token.js'
 import { parseAccessTokenClaims, parseUserAccessClaims } from '../modules/auth/tokens.js'
+import { sanitizeHandoffDisplayClaims } from '../modules/auth/handoff-verify.js'
 import { bindRequestContext, bindRequestContextLifecycle } from '../lib/request-context.js'
 import { isKnownOrgRole } from '../lib/org-roles.js'
 import { writeUnrecognizedRoleSecurityEvent } from '../modules/auth/unrecognized-role-security-events.js'
@@ -30,6 +31,7 @@ type AuthSessionRow = {
   sessionVersion: number
   revokedAt: Date | null
   lastActiveAt: Date
+  handoffDisplayClaims: unknown
 }
 
 function sendAuthError(reply: FastifyReply, error: AppError) {
@@ -111,6 +113,7 @@ async function loadSessionForClaims(claims: ParsedAccessClaims): Promise<AuthSes
         sessionVersion: sessions.sessionVersion,
         revokedAt: sessions.revokedAt,
         lastActiveAt: sessions.lastActiveAt,
+        handoffDisplayClaims: sessions.handoffDisplayClaims,
       })
       .from(sessions)
       .where(eq(sessions.jti, claims.jti))
@@ -275,6 +278,7 @@ export async function authenticateRequest(
     const orgRole = await loadOrgRole(session, request)
     const isPlatformOperator = await loadIsPlatformOperator(session.userId)
     await touchActivityWithoutBlocking(request, session)
+    const handoffDisplay = sanitizeHandoffDisplayClaims(session.handoffDisplayClaims)
 
     request.authContext = {
       userId: session.userId,
@@ -284,6 +288,7 @@ export async function authenticateRequest(
       sessionVersion: session.sessionVersion,
       orgRole,
       isPlatformOperator,
+      ...(handoffDisplay ? { handoffDisplay } : {}),
     }
 
     // Story 23.11 AC2/AC9 — bind the ambient per-request context immediately after

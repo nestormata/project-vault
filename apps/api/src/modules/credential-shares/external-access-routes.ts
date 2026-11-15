@@ -64,10 +64,11 @@ function optionalBodyField<T>(
 /** Story 72-11 AC7: the metadata answer. A gated share shows only what the guest needs before the
  *  code step; a link-only share keeps its pre-72-11 shape. */
 function externalShareMetadataBody(metadata: ExternalShareMetadata) {
-  const { share, credentialName, sharedByDisplayName } = metadata
+  const { share, credentialName, sharedByDisplayName, organizationName } = metadata
   const common = {
     credentialName,
     sharedByDisplayName,
+    organizationName,
     expiresAt: share.expiresAt.toISOString(),
     status: share.status as 'active' | 'viewed' | 'revoked' | 'expired' | 'superseded',
   }

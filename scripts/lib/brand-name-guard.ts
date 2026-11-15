@@ -6,12 +6,13 @@
 //   - `.svelte`  -> `svelte/compiler`'s modern AST: markup text, attribute values and every string or
 //     template literal of the script. Comments are not nodes, so a comment may name the product.
 //   - `.ts`      -> TypeScript's compiler API: string, no-substitution-template and template parts.
-//   - `.html`    -> HTML comments removed, the rest read as text (`src/app.html`).
+//   - `.html`    -> HTML comments removed, entities decoded, the rest read as text (`src/app.html`).
 //   - `messages/<locale>.json` -> every value except the one for `brand_name` (a message that names
 //     the product takes it as the `{brand}` parameter instead).
 //   - `static/*.svg` and web manifests (`*.webmanifest`, `manifest.json`) -> SVG uses the HTML
-//     comment strip; a manifest is parsed as JSON then scanned as text. A host overlays the file.
-//     PNG and other binaries are not scanned.
+//     comment strip then the same entity decode as `.html`; a manifest is parsed as JSON then
+//     scanned as text (JSON is not HTML-decoded). A host overlays the file. PNG and other
+//     binaries are not scanned.
 // Test files (`*.test.ts`, `*.spec.ts`) are not product copy and are not scanned; they read the
 // message function (story 72.19 pins the same rule for the overlay tests).
 //
@@ -19,6 +20,7 @@
 import { join, posix } from 'node:path'
 import ts from 'typescript'
 import { readText, listNames, statPath } from './fs-access.js'
+import { decodeHtmlEntities } from './html-entities.js'
 import { svelteCompiler } from './route-files.js'
 import { toRepoPath, walkFiles } from './scan-utils.js'
 
@@ -114,19 +116,31 @@ function svelteNodeText(node: Record<string, unknown>): string | null {
   return null
 }
 
-function htmlHits(source: string): number[] {
-  const stripped = source.replaceAll(/<!--[\s\S]*?-->/g, (comment) =>
-    comment.replaceAll(/[^\n]/g, ' ')
-  )
+function stripHtmlComments(source: string): string {
+  return source.replaceAll(/<!--[\s\S]*?-->/g, (comment) => comment.replaceAll(/[^\n]/g, ' '))
+}
+
+function rawBrandOffsets(source: string): number[] {
   const offsets: number[] = []
-  for (const match of stripped.matchAll(new RegExp(BRAND_PATTERN, 'gi'))) offsets.push(match.index)
+  for (const match of stripHtmlComments(source).matchAll(new RegExp(BRAND_PATTERN, 'gi'))) {
+    offsets.push(match.index)
+  }
   return offsets
+}
+
+function htmlHitLines(source: string): number[] {
+  const decoded = decodeHtmlEntities(stripHtmlComments(source))
+  const lines: number[] = []
+  for (const match of decoded.matchAll(new RegExp(BRAND_PATTERN, 'gi'))) {
+    lines.push(lineOf(decoded, match.index))
+  }
+  return lines
 }
 
 function hitLines(extension: string, source: string): number[] {
   if (extension === '.ts') return tsHits(source)
-  const offsets = extension === '.svelte' ? svelteHits(source) : htmlHits(source)
-  return offsets.map((offset) => lineOf(source, offset))
+  if (extension === '.svelte') return svelteHits(source).map((offset) => lineOf(source, offset))
+  return htmlHitLines(source)
 }
 
 function messageProblems(rel: string, source: string): string[] {
@@ -167,7 +181,7 @@ function jsonStringValues(value: unknown): string[] {
 }
 
 function literalProblems(rel: string, source: string): string[] {
-  const hits = htmlHits(source).map(
+  const hits = rawBrandOffsets(source).map(
     (offset) => `${rel}:${lineOf(source, offset)}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`
   )
   return hits.length > 0 ? hits : [`${rel}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`]
@@ -175,9 +189,8 @@ function literalProblems(rel: string, source: string): string[] {
 
 function staticProblems(rel: string, source: string): string[] {
   if (posix.extname(rel) === '.svg') {
-    return htmlHits(source).map(
-      (offset) =>
-        `${rel}:${lineOf(source, offset)}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`
+    return htmlHitLines(source).map(
+      (line) => `${rel}:${line}: hard-codes "${BRAND_LITERAL}"; ${STATIC_ADVICE}`
     )
   }
   let parsed: unknown

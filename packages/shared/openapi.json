@@ -26278,6 +26278,21 @@
                             "bannerMessage"
                           ],
                           "additionalProperties": false
+                        },
+                        "handoffDisplay": {
+                          "type": "object",
+                          "properties": {
+                            "organizationName": {
+                              "type": "string"
+                            },
+                            "tier": {
+                              "type": "string"
+                            },
+                            "role": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -37450,6 +37465,10 @@
                         "sharedByDisplayName": {
                           "type": "string"
                         },
+                        "organizationName": {
+                          "type": "string",
+                          "minLength": 1
+                        },
                         "fieldKey": {
                           "nullable": true,
                           "type": "string"
@@ -37492,6 +37511,7 @@
                       "required": [
                         "credentialName",
                         "sharedByDisplayName",
+                        "organizationName",
                         "expiresAt",
                         "status",
                         "verificationRequired"

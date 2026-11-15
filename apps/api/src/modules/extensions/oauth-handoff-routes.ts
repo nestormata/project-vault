@@ -396,8 +396,12 @@ async function handleStart(
   // only ever resolve `{kind: 'ok'}` here — this branch exists purely to satisfy its return type.
   if (base.kind === 'denied') return sendNotFound(reply)
 
+  const hookContext = {
+    ...base.context,
+    ...(ctx.auth.handoffDisplay ? { handoffDisplay: ctx.auth.handoffDisplay } : {}),
+  }
   const result = await raceAndValidateOutcome(
-    () => extension.onOAuthStart(base.context, { action: body }),
+    () => extension.onOAuthStart(hookContext, { action: body }),
     reply,
     request.log,
     'start'

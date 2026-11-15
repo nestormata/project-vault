@@ -14,6 +14,7 @@ import {
   bootstrapRouteIntegrationTest,
   initVaultForTest,
   parseSetCookies,
+  cookieHeader,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import {
   b64url,
@@ -578,6 +579,119 @@ describe('handoff routes (Story 73.1 nonce-bound handoff)', () => {
         expect(res.json()).toEqual(GENERIC_REJECTION)
       })
       expect((await nonceRow(nonce))?.consumedAt).toBeNull()
+    })
+  })
+
+  describe('Story 73.3 display claims', () => {
+    const AUTH_ME_URL = '/api/v1/auth/me'
+    const AUDIT_VERIFY_URL = '/api/v1/org/audit/verify'
+
+    it('exposes organizationName, tier and informational role on /me without changing orgRole', async () => {
+      const app = await newApp()
+      const { orgId, userId, workosUserId, cmOrgId } = await linkedUser('display')
+      const nonce = await start(app)
+      const token = signToken({
+        workosUserId,
+        organizationId: cmOrgId,
+        nonce,
+        organizationName: 'Acme Corp',
+        role: 'owner',
+        tier: 'enterprise',
+      })
+      const { res } = await claim(app, { token, nonce })
+      expect(res.statusCode).toBe(200)
+      const cookies = parseSetCookies(res.headers['set-cookie'])
+      const me = await app.inject({
+        method: 'GET',
+        url: AUTH_ME_URL,
+        headers: { cookie: cookieHeader(cookies) },
+      })
+      expect(me.statusCode).toBe(200)
+      const data = me.json<{
+        data: {
+          orgRole: string
+          orgId: string
+          userId: string
+          handoffDisplay?: { organizationName?: string; tier?: string; role?: string }
+        }
+      }>().data
+      expect(data.userId).toBe(userId)
+      expect(data.orgId).toBe(orgId)
+      expect(data.orgRole).toBe('member')
+      expect(data.handoffDisplay).toEqual({
+        organizationName: 'Acme Corp',
+        tier: 'enterprise',
+        role: 'owner',
+      })
+      const gated = await app.inject({
+        method: 'GET',
+        url: AUDIT_VERIFY_URL,
+        headers: { cookie: cookieHeader(cookies) },
+      })
+      expect(gated.statusCode).toBe(403)
+    })
+
+    it('omits malformed optional claims and still mints a session', async () => {
+      const app = await newApp()
+      const { workosUserId, cmOrgId } = await linkedUser('malformed-display')
+      const nonce = await start(app)
+      const token = signToken({
+        workosUserId,
+        organizationId: cmOrgId,
+        nonce,
+        organizationName: 1,
+        role: '',
+      })
+      const { res } = await claim(app, { token, nonce })
+      expect(res.statusCode).toBe(200)
+      const cookies = parseSetCookies(res.headers['set-cookie'])
+      const me = await app.inject({
+        method: 'GET',
+        url: AUTH_ME_URL,
+        headers: { cookie: cookieHeader(cookies) },
+      })
+      expect(me.statusCode).toBe(200)
+      const data = me.json<{
+        data: { handoffDisplay?: { organizationName?: string; tier?: string; role?: string } }
+      }>().data
+      expect(data.handoffDisplay).toEqual({ tier: 'pro' })
+      expect(data.handoffDisplay).not.toHaveProperty('organizationName')
+      expect(data.handoffDisplay).not.toHaveProperty('role')
+    })
+
+    it('a tampered stored role claim does not grant owner routes', async () => {
+      const app = await newApp()
+      const { orgId, userId, workosUserId, cmOrgId } = await linkedUser('tamper-role')
+      const nonce = await start(app)
+      const token = signToken({ workosUserId, organizationId: cmOrgId, nonce, role: 'billing' })
+      const { res } = await claim(app, { token, nonce })
+      expect(res.statusCode).toBe(200)
+      await withOrg(orgId, (tx) =>
+        (tx as Tx)
+          .update(sessions)
+          .set({
+            handoffDisplayClaims: { organizationName: 'X', tier: 'pro', role: 'owner' },
+          })
+          .where(and(eq(sessions.orgId, orgId), eq(sessions.userId, userId)))
+      )
+      const cookies = parseSetCookies(res.headers['set-cookie'])
+      const me = await app.inject({
+        method: 'GET',
+        url: AUTH_ME_URL,
+        headers: { cookie: cookieHeader(cookies) },
+      })
+      expect(
+        me.json<{ data: { orgRole: string; handoffDisplay?: { role?: string } } }>().data
+      ).toMatchObject({
+        orgRole: 'member',
+        handoffDisplay: { role: 'owner' },
+      })
+      const gated = await app.inject({
+        method: 'GET',
+        url: AUDIT_VERIFY_URL,
+        headers: { cookie: cookieHeader(cookies) },
+      })
+      expect(gated.statusCode).toBe(403)
     })
   })
 

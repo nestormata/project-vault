@@ -232,6 +232,21 @@ describe('nightly job gating', () => {
 
 describe('nightly flaky repeat matrix', () => {
   const job = jobText('flaky-test-repeat')
+  type FlakyStep = { name?: string; run?: string; env?: Record<string, string> }
+  const parsedFlakyJob = () => {
+    const doc: { jobs?: Record<string, { env?: Record<string, string>; steps?: FlakyStep[] }> } =
+      parseYaml(nightly)
+    const flaky = doc.jobs?.['flaky-test-repeat']
+    const steps = flaky?.steps ?? []
+    const build = steps.find((step) => step.name === 'Build workspace packages')
+    const test = steps.find((step) => step.name?.startsWith('Test (repeat'))
+    return {
+      env: flaky?.env,
+      buildEnv: build?.env,
+      testEnv: test?.env,
+      testRun: test?.run ?? '',
+    }
+  }
 
   it('is a 5-leg matrix (repeat 1..5), fail-fast off, named per leg', () => {
     expect(job).toMatch(/fail-fast:\s*false/)
@@ -239,13 +254,29 @@ describe('nightly flaky repeat matrix', () => {
     expect(job).toContain('name: Flaky Test Repeat Run (${{ matrix.repeat }}/5)')
   })
 
-  it('runs the suite once per leg: no for loop, no DB reset, one forced turbo test', () => {
+  it('runs the suite once per leg: no for loop, no DB reset, one turbo test without --force', () => {
     expect(job).not.toMatch(/\bfor\s+\w+\s+in\b/)
     expect(job).not.toContain('DROP SCHEMA')
-    expect(job.match(/pnpm turbo test --force/g)).toHaveLength(1)
+    expect(job.match(/^\s+pnpm turbo test\s*$/gm) ?? []).toHaveLength(1)
+    expect(job).not.toMatch(/pnpm turbo test --force/)
+    expect(job).not.toMatch(/--force/)
     expect(job.match(/pnpm db:migrate/g)).toHaveLength(1)
     expect(job).toContain('ALTER ROLE vault_admin')
     expect(job).toContain('=== flaky-test-repeat: run ${{ matrix.repeat }}/5 ===')
+  })
+
+  it('gives Build and Test the same DATABASE_URL and ADMIN_DATABASE_URL so turbo reuses the build', () => {
+    const vaultApp = 'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
+    const vaultAdmin = 'postgresql://vault_admin:password@localhost:5432/project_vault'
+    const flaky = parsedFlakyJob()
+    expect(flaky.env).toMatchObject({
+      DATABASE_URL: vaultApp,
+      ADMIN_DATABASE_URL: vaultAdmin,
+      VAULT_APP_DATABASE_URL: vaultApp,
+    })
+    expect(flaky.buildEnv).toBeUndefined()
+    expect(flaky.testEnv).toBeUndefined()
+    expect(flaky.testRun).toContain('DATABASE_URL="$SUPERUSER_DATABASE_URL" pnpm db:migrate')
   })
 
   it('keeps a measured-basis timeout of at least the observed 1h17m run', () => {

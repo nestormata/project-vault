@@ -3,6 +3,7 @@ import type {
   ActionResult,
   ExtensionActionResult,
   ExtensionRequestContext,
+  HandoffDisplayClaims,
   ModuleActionContext,
   OAuthHandoffHooks,
   OAuthHandoffRedirectResult,
@@ -34,6 +35,10 @@ describe('Story 68.11 AC-2 — neutral request types', () => {
     expectTypeOf<HasKey<ExtensionRequestContext, 'theme'>>().toEqualTypeOf<true>()
     expectTypeOf<ExtensionRequestContext['requestState']>().toEqualTypeOf<
       Record<string, unknown> | undefined
+    >()
+    expectTypeOf<HasKey<ExtensionRequestContext, 'handoffDisplay'>>().toEqualTypeOf<true>()
+    expectTypeOf<ExtensionRequestContext['handoffDisplay']>().toEqualTypeOf<
+      HandoffDisplayClaims | undefined
     >()
   })
 

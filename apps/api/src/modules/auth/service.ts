@@ -757,6 +757,12 @@ export type LoginSessionOptions = {
   accessTtlSeconds?: number
   /** When false, no refresh token is stored or returned. The access token dies with the session. */
   issueRefresh?: boolean
+  /** Story 73.3: CM handoff display sidecar. Native login leaves this unset (NULL). */
+  handoffDisplayClaims?: {
+    organizationName?: string
+    tier?: string
+    role?: string
+  } | null
 }
 
 export async function createLoginSessionInTx(
@@ -792,6 +798,7 @@ export async function createLoginSessionInTx(
       expiresAt,
       ipAddress: meta.ipAddress ?? null,
       userAgent: meta.userAgent ?? null,
+      handoffDisplayClaims: options.handoffDisplayClaims ?? null,
     })
     .returning({ id: sessions.id })
   const session = sessionRows[0]

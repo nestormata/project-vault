@@ -68,11 +68,12 @@ function signToken(
 
 describe('verifyHandoffToken (Story 30.2 AC3/AC6)', () => {
   let verifyHandoffToken: typeof import('./handoff-verify.js').verifyHandoffToken
+  let sanitizeHandoffDisplayClaims: typeof import('./handoff-verify.js').sanitizeHandoffDisplayClaims
 
   beforeEach(async () => {
     state.handoffVerifyKeys = [{ kid: 'kid-1', publicKeyPem }]
     vi.resetModules()
-    ;({ verifyHandoffToken } = await import('./handoff-verify.js'))
+    ;({ verifyHandoffToken, sanitizeHandoffDisplayClaims } = await import('./handoff-verify.js'))
   })
 
   it('AC3.7 happy path: a well-formed valid token verifies', () => {
@@ -83,7 +84,39 @@ describe('verifyHandoffToken (Story 30.2 AC3/AC6)', () => {
       expect(result.claims.workosUserId).toBe('user_123')
       expect(result.claims.organizationId).toBe('org_abc')
       expect(result.claims.unknownClaimsVersion).toBe(false)
+      expect(result.claims.display).toEqual({ tier: 'pro' })
     }
+  })
+
+  it('Story 73.3: optional display claims are copied when well-formed', () => {
+    const token = signToken({}, { organizationName: 'Acme', role: 'billing_admin' })
+    const result = verifyHandoffToken(token)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.claims.display).toEqual({
+        organizationName: 'Acme',
+        tier: 'pro',
+        role: 'billing_admin',
+      })
+    }
+  })
+
+  it('Story 73.3: malformed optional display claims are omitted and do not fail verify', () => {
+    const token = signToken({}, { organizationName: 12, role: ['owner'] })
+    const result = verifyHandoffToken(token)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.claims.display).toEqual({ tier: 'pro' })
+    }
+  })
+
+  it('Story 73.3: sanitizeHandoffDisplayClaims omits garbage without throwing', () => {
+    expect(sanitizeHandoffDisplayClaims(null)).toBeUndefined()
+    expect(sanitizeHandoffDisplayClaims('owner')).toBeUndefined()
+    expect(sanitizeHandoffDisplayClaims({ role: 1, tier: 'pro' })).toEqual({ tier: 'pro' })
+    expect(sanitizeHandoffDisplayClaims({ organizationName: '', role: 'x' })).toEqual({
+      role: 'x',
+    })
   })
 
   it('AC3.8: oversized body rejects handoff_claims_oversized', () => {

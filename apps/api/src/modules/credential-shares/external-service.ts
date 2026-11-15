@@ -222,11 +222,18 @@ export function displayNameFromEmail(email: string | null): string {
   return email.split('@')[0] ?? email
 }
 
+/** Story 73-13: a live org display name, or null when the join missed / the name is empty.
+ *  Callers treat null as `not_found` so a missing org is not a distinct guest oracle. */
+export function liveOrganizationName(name: string | null | undefined): string | null {
+  return typeof name === 'string' && name !== '' ? name : null
+}
+
 export type ExternalShareMetadata = {
   share: CredentialShareRow
   credentialName: string
   credentialProjectId: string
   sharedByDisplayName: string
+  organizationName: string
 }
 
 export type FindExternalShareResult =
@@ -254,6 +261,8 @@ export async function findExternalShareByTokenHash(
     if (!joined) return { status: 'not_found' }
 
     const share = await lazilyExpireShareIfDue(tx, joined.share)
+    const organizationName = liveOrganizationName(joined.organizationName)
+    if (!organizationName) return { status: 'not_found' }
 
     return {
       status: 'ok',
@@ -262,6 +271,7 @@ export async function findExternalShareByTokenHash(
         credentialName: joined.credentialName,
         credentialProjectId: joined.credentialProjectId,
         sharedByDisplayName: displayNameFromEmail(joined.sharedByEmail),
+        organizationName,
       },
     }
   })

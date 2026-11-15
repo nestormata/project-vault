@@ -99,6 +99,13 @@ export const authMeResponseSchema = z.object({
       gracePeriodDaysRemaining: z.number().int().min(0).nullable(),
       bannerMessage: z.string().nullable(),
     }),
+    handoffDisplay: z
+      .object({
+        organizationName: z.string().optional(),
+        tier: z.string().optional(),
+        role: z.string().optional(),
+      })
+      .optional(),
   }),
 })
 

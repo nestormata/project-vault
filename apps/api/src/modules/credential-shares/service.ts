@@ -1,7 +1,13 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { credentials, credentialShares, orgMemberships, users } from '@project-vault/db/schema'
+import {
+  credentials,
+  credentialShares,
+  orgMemberships,
+  organizations,
+  users,
+} from '@project-vault/db/schema'
 import { AuditEvent, normalizeFieldKey, type ShareDisplayStatus } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
@@ -624,9 +630,11 @@ export function shareWithCredentialAndSharerQuery(tx: Tx) {
         credentialName: credentials.name,
         credentialProjectId: credentials.projectId,
         sharedByEmail: users.email,
+        organizationName: organizations.name,
       })
       .from(credentialShares)
       .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
+      .innerJoin(organizations, eq(organizations.id, credentialShares.orgId))
       // Story 65.6: the consent page names the EFFECTIVE sharer (the acting human for a host row).
       .leftJoin(users, sql`${users.id} = ${effectiveSharerSql}`)
   )

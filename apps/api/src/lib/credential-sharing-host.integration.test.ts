@@ -24,6 +24,7 @@ import {
   createCredentialViaApi,
 } from '../modules/credentials/credential-route-test-helpers.js'
 import { flushPendingLosingAttempts } from '../modules/credential-shares/external-service.js'
+import { EXTERNAL_SHARE_MISS_FLOOR_MS } from '../modules/credential-shares/schema.js'
 import {
   buildCredentialSharingHost,
   __resetCredentialSharingHostRateLimitForTests,
@@ -639,4 +640,50 @@ describe('buildCredentialSharingHost — real-Postgres integration (Story 20.12 
       )
     })
   })
+
+  it('Story 65.8: the miss-hold signal equals the hold applied; a hit is not held', async () => {
+    __resetCredentialSharingHostRateLimitForTests()
+    __resetCredentialSharingOrgRateLimitForTests()
+    const owner = await registerOwner(app, 'miss-hold-signal')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'miss-hold-signal')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'miss-hold-signal-credential',
+      value: 'miss-hold-secret-value',
+    })
+    await provisionMachineUserForExtension(app, owner.cookies, projectId)
+    const host = buildCredentialSharingHost(MANIFEST)
+    const floor = host.externalShareMissMinResponseMs
+    expect(floor).toBe(EXTERNAL_SHARE_MISS_FLOOR_MS)
+    if (floor === undefined) throw new Error('externalShareMissMinResponseMs missing')
+    // Same helper shape as native-route miss-floor tests (65.4): a timer can fire a hair early.
+    const MIN_ELAPSED = floor - 15
+    async function timed<T>(call: Promise<T>) {
+      const started = performance.now()
+      const result = await call
+      return { result, elapsedMs: performance.now() - started }
+    }
+
+    const miss = await timed(host.findShareByToken('garbage-not-a-share-token'))
+    expect(miss.result).toEqual({ status: 'not_found' })
+    expect(miss.elapsedMs).toBeGreaterThanOrEqual(MIN_ELAPSED)
+
+    const revealMiss = await timed(host.revealShare('garbage-not-a-share-token'))
+    expect(revealMiss.result.status).not.toBe('ok')
+    expect(revealMiss.elapsedMs).toBeGreaterThanOrEqual(MIN_ELAPSED)
+
+    const created = await host.createExternalShare({
+      organizationId: owner.orgId,
+      projectId,
+      credentialId: credential.id,
+      recipientEmail: RECIPIENT_EMAIL,
+      expiresAt: futureIso(),
+      fieldKey: 'value',
+    })
+    expect(created.status).toBe('ok')
+    if (created.status !== 'ok') return
+
+    const hit = await timed(host.findShareByToken(created.token))
+    expect(hit.result.status).toBe('ok')
+    expect(hit.elapsedMs).toBeLessThan(floor / 2)
+  }, 30_000)
 })

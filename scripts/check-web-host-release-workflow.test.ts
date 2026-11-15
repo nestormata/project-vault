@@ -18,6 +18,11 @@ const WORKFLOW_FILE = 'web-host-release.yml'
 const WORKFLOW_PATH = `.github/workflows/${WORKFLOW_FILE}`
 const PUBLISH_STEP = 'publish step'
 const KIT_JOB = 'publish-kit'
+const REJECT_STEP_NAME = 'Reject a version that is already on npm'
+const INSPECT_PUBLISHED_STEP_NAME = 'Inspect the published npm tarball'
+const PUBLISHING_NODE = 24
+const VERIFY_NODE = 26
+const PACK_PUBLISHED = 'npm pack "@project-vault/web-host@'
 const VAULT_ACTION_TAG = 'vault-action-v1'
 const WORKFLOW = readFileSync(join(WORKFLOWS_DIR, WORKFLOW_FILE), 'utf8')
 const DOC = readFileSync(join(repositoryRoot, 'docs', 'releasing.md'), 'utf8')
@@ -45,6 +50,7 @@ interface Step {
   uses?: string
   env?: Record<string, string>
   with?: Record<string, unknown>
+  'continue-on-error'?: boolean
 }
 
 interface Job {
@@ -52,6 +58,7 @@ interface Job {
   environment?: string
   permissions?: Record<string, string>
   steps?: Step[]
+  strategy?: { 'fail-fast'?: boolean; matrix?: { 'node-version'?: number[] } }
 }
 
 interface Workflow {
@@ -257,6 +264,167 @@ function withoutComments(text: string): string {
     .join('\n')
 }
 
+/** Split `expr` on `op` at the top level (no nested parens in these workflow `if:` values). */
+function splitTop(expr: string, op: '&&' | '||'): string[] {
+  const parts: string[] = []
+  let start = 0
+  let i = 0
+  while (i < expr.length) {
+    if (expr.slice(i, i + op.length) === op) {
+      parts.push(expr.slice(start, i))
+      i += op.length
+      start = i
+      continue
+    }
+    i += 1
+  }
+  parts.push(expr.slice(start))
+  return parts.map((part) => part.trim()).filter((part) => part.length > 0)
+}
+
+type GithubIfCtx = { nodeVersion: number; dryRun: boolean }
+
+function githubIfValue(token: string, ctx: GithubIfCtx): string {
+  const t = token.trim()
+  if (t === 'matrix.node-version') return String(ctx.nodeVersion)
+  if (t === 'inputs.dry_run') return ctx.dryRun ? 'true' : 'false'
+  return t.replace(/^['"]|['"]$/g, '')
+}
+
+function unwrapGithubIf(expr: string): string {
+  return expr
+    .trim()
+    .replace(/^\$\{\{\s*/, '')
+    .replace(/\s*\}\}$/, '')
+    .trim()
+}
+
+function compareGithubIf(text: string, ctx: GithubIfCtx): boolean | undefined {
+  const cmp = /^(.*?)\s*(==|!=)\s*(.*)$/.exec(text)
+  if (!cmp) return undefined
+  const left = githubIfValue(cmp[1] ?? '', ctx)
+  const right = githubIfValue(cmp[3] ?? '', ctx)
+  const eq = left === right || Number(left) === Number(right)
+  return cmp[2] === '==' ? eq : !eq
+}
+
+/**
+ * Story 75.4: evaluate the `if:` expressions this workflow actually uses (matrix node,
+ * dry_run, == / != / && / ||). A missing `if:` always runs.
+ */
+export function githubIfRuns(expr: string | undefined, ctx: GithubIfCtx): boolean {
+  if (expr === undefined || expr.trim() === '') return true
+  const text = unwrapGithubIf(expr)
+  const orParts = splitTop(text, '||')
+  if (orParts.length > 1) return orParts.some((part) => githubIfRuns(part, ctx))
+  const andParts = splitTop(text, '&&')
+  if (andParts.length > 1) return andParts.every((part) => githubIfRuns(part, ctx))
+  return compareGithubIf(text, ctx) ?? text === 'true'
+}
+
+function isRealNpmPublish(step: Step): boolean {
+  return publishCommands(step.run ?? '').some((line) => !line.includes('--dry-run'))
+}
+
+function flag(on: boolean, message: string): string[] {
+  return on ? [message] : []
+}
+
+const LIVE = { nodeVersion: PUBLISHING_NODE, dryRun: false }
+const VERIFY = { nodeVersion: VERIFY_NODE, dryRun: false }
+
+function rejectStepProblems(step: Step | undefined): string[] {
+  if (step === undefined) return ['publish has no reject-already-on-npm step']
+  return [
+    ...flag(
+      !githubIfRuns(step.if, LIVE),
+      'the publishing leg (Node 24) does not run the reject-already-on-npm step'
+    ),
+    ...flag(
+      githubIfRuns(step.if, VERIFY),
+      'the verify-only leg (Node 26) still runs the reject-already-on-npm step'
+    ),
+    ...flag(
+      !step.run?.includes('already published'),
+      'reject-already-on-npm does not fail when the version is on npm'
+    ),
+  ]
+}
+
+function inspectPublishedProblems(step: Step | undefined): string[] {
+  if (step === undefined) return ['publish has no inspect-published-tarball step']
+  return [
+    ...flag(
+      githubIfRuns(step.if, LIVE),
+      'the publishing leg (Node 24) runs inspect-published-tarball'
+    ),
+    ...flag(
+      !githubIfRuns(step.if, VERIFY),
+      'the verify-only leg (Node 26) does not run inspect-published-tarball'
+    ),
+    ...flag(
+      !step.run?.includes(PACK_PUBLISHED),
+      'inspect-published-tarball does not pack the registry package'
+    ),
+    ...flag(
+      !(step.run?.includes('E404') && step.run?.includes('ETARGET')),
+      'inspect-published-tarball does not treat an unpublished version (E404 or ETARGET) as success'
+    ),
+  ]
+}
+
+function jobNeedList(job: Job | undefined): string[] {
+  const needs = job?.needs
+  return typeof needs === 'string' ? [needs] : (needs ?? [])
+}
+
+function publishMatrixProblems(job: Job | undefined): string[] {
+  const nodes = job?.strategy?.matrix?.['node-version'] ?? []
+  const bothNodes = nodes.includes(PUBLISHING_NODE) && nodes.includes(VERIFY_NODE)
+  const serialized = jobNeedList(job).some((name) => name === 'publish' || name.includes('node'))
+  return [
+    ...flag(!bothNodes, 'publish matrix is not Node 24 and Node 26'),
+    ...flag(job?.strategy?.['fail-fast'] !== false, 'publish matrix fail-fast is not false'),
+    ...flag(serialized, 'publish serializes Node legs with needs:'),
+  ]
+}
+
+/** Story 75.4: Node 24 still rejects an already-published version; Node 26 never does. */
+export function publishLegOrderProblems(text: string): string[] {
+  const job = (parseYaml(text) as Workflow).jobs?.publish
+  const steps = job?.steps ?? []
+  return [
+    ...publishMatrixProblems(job),
+    ...rejectStepProblems(steps.find((step) => step.name === REJECT_STEP_NAME)),
+    ...inspectPublishedProblems(steps.find((step) => step.name === INSPECT_PUBLISHED_STEP_NAME)),
+    ...steps
+      .filter((step) => step['continue-on-error'] === true)
+      .map((step) => `publish step "${step.name ?? '(unnamed)'}" is continue-on-error`),
+  ]
+}
+
+/** Simulate the two Node legs in `order`. A failed node is listed in `failed`. */
+export function simulatePublishLegs(
+  text: string,
+  order: number[],
+  alreadyOnNpm: boolean
+): { failed: number[] } {
+  const steps = (parseYaml(text) as Workflow).jobs?.publish?.steps ?? []
+  let onNpm = alreadyOnNpm
+  const failed: number[] = []
+  for (const nodeVersion of order) {
+    for (const step of steps) {
+      if (!githubIfRuns(step.if, { nodeVersion, dryRun: false })) continue
+      if (step.name === REJECT_STEP_NAME && onNpm) {
+        failed.push(nodeVersion)
+        break
+      }
+      if (isRealNpmPublish(step)) onNpm = true
+    }
+  }
+  return { failed }
+}
+
 function publishStepProblems(step: Step): string[] {
   const run = step.run ?? ''
   return [
@@ -298,6 +466,7 @@ export function releaseWorkflowProblems(text: string): string[] {
       : []),
     ...(/^\s*npm unpublish\b/m.test(code) ? ['runs npm unpublish'] : []),
     ...pins,
+    ...publishLegOrderProblems(text),
   ]
 }
 
@@ -625,9 +794,13 @@ describe('web-host release workflow: moving the release gate after the upload fa
     // publish is the last job, so appending puts the gate after its upload steps.
     const moved = `${WORKFLOW.slice(0, gateStart)}${WORKFLOW.slice(gateEnd + 1)}\n${gateStep}`
     const problems = releaseWorkflowProblems(moved)
-    expect(problems, problems.join('\n')).toEqual([
-      `publish: gate "${RELEASE_GATE}" is missing or runs after the upload`,
-    ])
+    expect(
+      problems.some(
+        (problem) =>
+          problem === `publish: gate "${RELEASE_GATE}" is missing or runs after the upload`
+      ),
+      problems.join('\n')
+    ).toBe(true)
   })
 })
 
@@ -959,6 +1132,7 @@ const RELEASE_VERSION_UNDER_TEST = '1.4.0'
 const STUB_NPM = `npm() {
   case "$STUB_NPM" in
     e404) echo 'npm error code E404' >&2; return 1 ;;
+    etarget) echo 'npm error code ETARGET' >&2; return 1 ;;
     published) echo "$STUB_VERSION"; return 0 ;;
     *) echo 'npm error code EAI_AGAIN' >&2; return 1 ;;
   esac
@@ -974,7 +1148,10 @@ status=$?
 echo "github_output:$(tr '\\n' ' ' < "$out")" >&2
 exit $status`
 
-function runNpmViewStep(script: string, npm: 'e404' | 'published' | 'network'): ScriptResult {
+function runNpmViewStep(
+  script: string,
+  npm: 'e404' | 'etarget' | 'published' | 'network'
+): ScriptResult {
   const run = spawnSync('bash', ['-c', NPM_VIEW_STEP_RUNNER], {
     encoding: 'utf8',
     env: {
@@ -992,19 +1169,17 @@ const KIT_NPM_STEP = runOf(JOBS['publish-kit'].steps, (step) => step.id === 'npm
   '${{ steps.kit.outputs.version }}',
   KIT_VERSION_UNDER_TEST
 )
-const WEB_HOST_NPM_STEP = runOf(
-  JOBS.publish.steps,
-  (step) => step.name === 'Reject a version that is already on npm'
-)
+const WEB_HOST_NPM_STEP = runOf(JOBS.publish.steps, (step) => step.name === REJECT_STEP_NAME)
 // The pre-fix spelling: a bare substitution, then `STATUS=$?` on the next line.
 const BARE_SUBSTITUTION = ' && STATUS=0 || STATUS=$?'
+const NOT_ON_NPM_YET = 'is not on npm yet'
 
 describe('web-host release workflow: the "is it on npm" steps under the runner flags (v1.4.0 dry run)', () => {
   it('kit step: a version that is not on npm (E404) records published=false and succeeds', () => {
     const result = runNpmViewStep(KIT_NPM_STEP, 'e404')
     expect(result.status, result.stderr).toBe(0)
     expect(result.stderr).toContain('github_output:published=false')
-    expect(result.stdout).toContain('is not on npm yet')
+    expect(result.stdout).toContain(NOT_ON_NPM_YET)
   })
 
   it('kit step: a version that is already on npm records published=true and succeeds', () => {
@@ -1048,6 +1223,98 @@ describe('web-host release workflow: the "is it on npm" steps under the runner f
     const result = runNpmViewStep(script.replace(BARE_SUBSTITUTION, '\nSTATUS=$?'), 'e404')
     expect(result.status).toBe(1)
     expect(result.stderr).not.toContain('FATAL')
-    expect(result.stdout).not.toContain('is not on npm yet')
+    expect(result.stdout).not.toContain(NOT_ON_NPM_YET)
+  })
+})
+
+const REJECT_IF = '        if: matrix.node-version == 24\n        shell: bash\n'
+const REJECT_STEP_HEAD = `      - name: ${REJECT_STEP_NAME}\n        shell: bash\n`
+
+describe('web-host release workflow: Node 24 and Node 26 legs are order-independent (Story 75.4)', () => {
+  it('meets the leg-order contract on this repo', () => {
+    expect(publishLegOrderProblems(WORKFLOW)).toEqual([])
+  })
+
+  it('Node 24 first then Node 26 both stay green for a new version', () => {
+    expect(simulatePublishLegs(WORKFLOW, [PUBLISHING_NODE, VERIFY_NODE], false).failed).toEqual([])
+  })
+
+  it('Node 26 first then Node 24 both stay green for a new version', () => {
+    expect(simulatePublishLegs(WORKFLOW, [VERIFY_NODE, PUBLISHING_NODE], false).failed).toEqual([])
+  })
+
+  it('a version already on npm before the run fails the publishing leg', () => {
+    expect(simulatePublishLegs(WORKFLOW, [PUBLISHING_NODE, VERIFY_NODE], true).failed).toEqual([
+      PUBLISHING_NODE,
+    ])
+    expect(simulatePublishLegs(WORKFLOW, [VERIFY_NODE, PUBLISHING_NODE], true).failed).toEqual([
+      PUBLISHING_NODE,
+    ])
+  })
+
+  it('restoring an unconditional reject step on the verify-only leg fails', () => {
+    const unconditional = WORKFLOW.includes(REJECT_IF)
+      ? WORKFLOW.replace(REJECT_IF, '        shell: bash\n')
+      : WORKFLOW
+    expect(unconditional, 'the reject step is gated on Node 24').toContain(REJECT_STEP_HEAD)
+    expect(publishLegOrderProblems(unconditional)).toContain(
+      'the verify-only leg (Node 26) still runs the reject-already-on-npm step'
+    )
+    expect(
+      simulatePublishLegs(unconditional, [PUBLISHING_NODE, VERIFY_NODE], false).failed
+    ).toEqual([VERIFY_NODE])
+  })
+
+  it('dropping inspect-published-tarball fails the contract', () => {
+    const start = WORKFLOW.indexOf(`      - name: ${INSPECT_PUBLISHED_STEP_NAME}`)
+    expect(start, 'the inspect-published step exists').toBeGreaterThan(-1)
+    const end = WORKFLOW.indexOf('\n      - ', start + 1)
+    const dropped = `${WORKFLOW.slice(0, start)}${WORKFLOW.slice(end + 1)}`
+    expect(publishLegOrderProblems(dropped)).toContain(
+      'publish has no inspect-published-tarball step'
+    )
+  })
+
+  it('dropping ETARGET from inspect-published-tarball fails the contract', () => {
+    expect(WORKFLOW).toContain("grep -qE 'E404|ETARGET'")
+    const dropped = WORKFLOW.replace("grep -qE 'E404|ETARGET'", "grep -q 'E404'")
+    expect(publishLegOrderProblems(dropped)).toContain(
+      'inspect-published-tarball does not treat an unpublished version (E404 or ETARGET) as success'
+    )
+  })
+})
+
+describe('web-host release workflow: inspect the published tarball under the runner flags (Story 75.4)', () => {
+  const inspectRun = JOBS.publish.steps.find(
+    (step) => step.name === INSPECT_PUBLISHED_STEP_NAME
+  )?.run
+
+  it('exists on the verify-only leg', () => {
+    expect(inspectRun, 'inspect-published-tarball has a run script').toBeTypeOf('string')
+  })
+
+  it('succeeds when the version is not on npm yet (E404)', () => {
+    const result = runNpmViewStep(inspectRun ?? '', 'e404')
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(NOT_ON_NPM_YET)
+  })
+
+  it('succeeds when npm pack reports ETARGET for a missing version', () => {
+    const result = runNpmViewStep(inspectRun ?? '', 'etarget')
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(NOT_ON_NPM_YET)
+  })
+
+  it('succeeds when the version is already on npm', () => {
+    const result = runNpmViewStep(inspectRun ?? '', 'published')
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('Inspected the published')
+  })
+
+  it('fails closed on any other npm error', () => {
+    const result = runNpmViewStep(inspectRun ?? '', 'network')
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('could not inspect the published tarball')
+    expect(result.stderr).toContain('EAI_AGAIN')
   })
 })

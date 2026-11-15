@@ -15,6 +15,13 @@
  * `projectId` is present only when the caller may see that project, `locale` and `theme` are
  * resolved server-side, and `resourceId` is passed through verbatim with no PV-side lookup.
  */
+/** Story 73.3 — read-only CM handoff display fields. `role` is never a PV authorization input. */
+export type HandoffDisplayClaims = {
+  organizationName?: string
+  tier?: string
+  role?: string
+}
+
 export type ExtensionRequestContext = {
   /**
    * Optional, extension-owned resource identifier. Shape-validated by the host, passed through
@@ -57,6 +64,12 @@ export type ExtensionRequestContext = {
    * the CONTENTS of this value; the extension alone interprets it.
    */
   requestState?: Record<string, unknown>
+  /**
+   * Story 73.3 — present only on a session minted from a CentralizeMe handoff that carried at
+   * least one valid display claim. Read-only labels. `role` is informational: PV authorization
+   * continues to use `identity.orgRole` from membership.
+   */
+  handoffDisplay?: HandoffDisplayClaims
 }
 
 /**

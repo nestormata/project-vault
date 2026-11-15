@@ -225,16 +225,74 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Story 75.2: an existing :X.Y.Z is allowed only on a rerun of THIS run
+      # (github.run_attempt > 1; a new workflow_dispatch/release has a new run_id
+      # and starts at attempt 1) when every platform's
+      # org.opencontainers.image.revision equals the tag commit and the tag has
+      # not moved. The accepted path reuses that digest; it must not push a
+      # different one. Every other existing-tag case still fails with the
+      # original message. Recovery otherwise stays vX.Y.(Z+1).
       - name: Reject existing immutable release tag
+        id: reject
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          IMAGE_NAME: ${{ matrix.name }}
         run: |
           set -euo pipefail
-          SOURCE="${IMAGE_NAMESPACE}/${{ matrix.name }}:${VERSION}"
-          if docker buildx imagetools inspect "$SOURCE" >/dev/null 2>&1; then
+          SOURCE="${IMAGE_NAMESPACE}/${IMAGE_NAME}:${VERSION}"
+          SHA_SOURCE="${IMAGE_NAMESPACE}/${IMAGE_NAME}:sha-${COMMIT}"
+
+          if ! INSPECT_JSON=$(docker buildx imagetools inspect "$SOURCE" --format '{{json .}}' 2>/dev/null); then
+            exit 0
+          fi
+
+          reject_existing() {
             echo "Immutable release tag already exists: $SOURCE" >&2
             exit 1
+          }
+
+          if [[ ! "$RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || [[ "$RUN_ATTEMPT" -le 1 ]]; then
+            reject_existing
           fi
+
+          DIGEST=$(jq -r '.manifest.digest // ""' <<<"$INSPECT_JSON")
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            reject_existing
+          fi
+
+          ROWS=$(jq -r '
+            (if (.image | type) != "object" then {}
+             elif (.image.config? != null) then { "single": .image }
+             else .image end)
+            | to_entries[]
+            | select(.key | startswith("unknown/") | not)
+            | [ .key, (.value.config.Labels["org.opencontainers.image.revision"] // "") ]
+            | @tsv
+          ' <<<"$INSPECT_JSON")
+
+          if [[ -z "$ROWS" ]]; then
+            reject_existing
+          fi
+
+          while IFS=$'\t' read -r PLATFORM LABEL_REVISION; do
+            [[ -n "$PLATFORM" ]] || continue
+            if [[ "$LABEL_REVISION" != "$COMMIT" ]]; then
+              reject_existing
+            fi
+          done <<<"$ROWS"
+
+          if SHA_JSON=$(docker buildx imagetools inspect "$SHA_SOURCE" --format '{{json .}}' 2>/dev/null); then
+            SHA_DIGEST=$(jq -r '.manifest.digest // ""' <<<"$SHA_JSON")
+            if [[ "$SHA_DIGEST" != "$DIGEST" ]]; then
+              reject_existing
+            fi
+          fi
+
+          echo "reuse=true" >> "$GITHUB_OUTPUT"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Reusing existing immutable release tag ${SOURCE} digest ${DIGEST} (same-run rerun, matching revision)"
 
       - name: Extract image metadata
         id: meta
@@ -256,8 +314,20 @@ jobs:
           # One digest per published platform (linux/amd64 and linux/arm64): a contract test ties
           # this number to the build-platform matrix.
           EXPECTED_DIGESTS: '2'
+          REUSE: ${{ steps.reject.outputs.reuse }}
+          EXISTING_DIGEST: ${{ steps.reject.outputs.digest }}
         run: |
           set -euo pipefail
+          if [[ "${REUSE:-}" == "true" ]]; then
+            if [[ ! "$EXISTING_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "Reject step did not report a reusable digest: '$EXISTING_DIGEST'" >&2
+              exit 1
+            fi
+            echo "digest=${EXISTING_DIGEST}" >> "$GITHUB_OUTPUT"
+            echo "Skipping tag create; reusing ${IMAGE}:${VERSION} digest ${EXISTING_DIGEST}"
+            exit 0
+          fi
+
           shopt -s nullglob
           FILES=("${DIGEST_DIR}"/*)
           if [[ "${#FILES[@]}" -ne "$EXPECTED_DIGESTS" ]]; then
@@ -383,11 +453,13 @@ jobs:
       #
       # KNOWN LIMIT (documented in docs/container-images.md, "Release vulnerability gate"): the
       # immutable `X.Y.Z` and `sha-<commit>` tags are already pushed by the time this runs, so a
-      # failed gate leaves a published but un-promoted `X.Y.Z` image behind. Recovery: fix the vulnerability, then cut
-      # `vX.Y.(Z+1)`. Re-running the same tag through workflow_dispatch is refused by the
-      # "Reject existing immutable release tag" step above, by design. Rejected alternative:
-      # scanning before the push would need an extra single-arch `load` build per platform,
-      # doubling release build time, and would still not scan the exact pushed bytes.
+      # failed gate leaves a published but un-promoted `X.Y.Z` image behind. Recovery: fix the
+      # vulnerability, then cut `vX.Y.(Z+1)`. A new workflow_dispatch of the same tag is refused
+      # by the "Reject existing immutable release tag" step above, by design. A rerun of this
+      # same GitHub Actions run may reuse the existing digest (Story 75.2) when the revision
+      # label matches and the tag has not moved; it does not push a different digest. Rejected
+      # alternative: scanning before the push would need an extra single-arch `load` build per
+      # platform, doubling release build time, and would still not scan the exact pushed bytes.
       - name: Scan published image for vulnerabilities (linux/amd64)
         if: ${{ !cancelled() && steps.push.outcome == 'success' }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

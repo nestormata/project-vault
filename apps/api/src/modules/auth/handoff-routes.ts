@@ -171,7 +171,8 @@ async function mintSessionOrMfaChallenge(
   reply: FastifyReply,
   orgId: string,
   userId: string,
-  meta: RequestMeta
+  meta: RequestMeta,
+  display: import('./handoff-verify.js').HandoffDisplayClaims
 ): Promise<unknown> {
   const membership = await findUserMfaEnrolledAndMembership(orgId, userId)
   if (membership?.membershipStatus !== 'active') {
@@ -203,12 +204,17 @@ async function mintSessionOrMfaChallenge(
         meta,
       })
     }).catch(() => undefined)
-    const challenge = await createPendingMfaSession({ userId, orgId }, meta)
+    const challenge = await createPendingMfaSession(
+      { userId, orgId, handoffDisplayClaims: display },
+      meta
+    )
     return reply.send({ data: challenge })
   }
 
   const result: LoginResult = await withOrg(orgId, async (tx) => {
-    const session = await issueSessionForUser(tx as Tx, orgId, userId, meta)
+    const session = await issueSessionForUser(tx as Tx, orgId, userId, meta, {
+      handoffDisplayClaims: display,
+    })
     const identityTokenId = await firstActorTokenIdForUser(tx as Tx, userId)
     await writeHumanAuditEntry(tx as Tx, {
       orgId,
@@ -358,7 +364,8 @@ async function handleClaim(
       reply,
       resolution.orgId,
       resolution.userId,
-      meta
+      meta,
+      checked.claims.display
     )
   } catch {
     return reply

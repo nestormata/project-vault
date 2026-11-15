@@ -34,6 +34,7 @@ export type { UIPanelResult } from './hooks/ui-panel.js'
 export type {
   ExtensionRequestContext,
   ExtensionActionResult,
+  HandoffDisplayClaims,
 } from './hooks/extension-request-context.js'
 /**
  * @deprecated

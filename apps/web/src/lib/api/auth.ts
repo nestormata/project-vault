@@ -62,6 +62,12 @@ export type AuthUser = {
     gracePeriodDaysRemaining: number | null
     bannerMessage: string | null
   }
+  /** Present only on a CentralizeMe-handoff session. `role` is informational. */
+  handoffDisplay?: {
+    organizationName?: string
+    tier?: string
+    role?: string
+  }
 }
 
 export type MfaEnrollResponse = {

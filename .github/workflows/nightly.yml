@@ -163,6 +163,10 @@ jobs:
     env:
       SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
       VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+      # Same values on Build and Test. turbo.json lists DATABASE_URL and ADMIN_DATABASE_URL in
+      # globalEnv, so a Test-only env block would miss the Build cache after the force flag went.
+      DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+      ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
     services:
       postgres:
         image: postgres:16-alpine
@@ -203,12 +207,7 @@ jobs:
           # same starting state every normal single CI run gets, so no per-run reset is needed.
           DATABASE_URL="$SUPERUSER_DATABASE_URL" pnpm db:migrate
           psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
-          pnpm turbo test --force
-        env:
-          # SUPERUSER_DATABASE_URL is already set at the job level and inherited here —
-          # only the override for the test run itself (vault_app, not postgres) is needed.
-          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
-          ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
+          pnpm turbo test
 
       # Story 65.4 AC3: the statistical external-share miss timing run (about 90 s; excluded from the
       # default vitest run). Once per night is enough evidence, so only the first leg runs it. It
@@ -216,9 +215,6 @@ jobs:
       - name: External share miss timing (Story 65.4)
         if: matrix.repeat == 1
         run: pnpm --filter @project-vault/api test:timing
-        env:
-          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
-          ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
 
   trivy-image:
     name: Trivy Docker Image Scan (${{ matrix.name }})

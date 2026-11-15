@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { m } from '$lib/paraglide/messages.js'
+
   // Shared by both reveal pages (17.1's session-bound `/shares/[token]` and 17.2's
   // unauthenticated `/external-shares/[token]`) — same "who shared what, and until when" summary,
   // parameterized by the caller's own sharer-label and expiry-note text since the two recipient
   // types disclose different sharer identity (email vs. display name) and TTL semantics.
   let {
     sharedByLabel,
+    organizationName = null,
     credentialName,
     fieldKey,
     attributeKeys = null,
@@ -12,6 +15,9 @@
     expiryNote,
   }: {
     sharedByLabel: string
+    // Story 73-13: guest external shares name the owning org before verification. Session-bound
+    // 17.1 shares omit this.
+    organizationName?: string | null
     credentialName: string
     fieldKey: string | null
     // Story 20.5 (review patch): lets the recipient tell a bounded share apart from an ordinary
@@ -36,8 +42,17 @@
 </script>
 
 <p class="text-sm text-slate-700">
-  <strong>{sharedByLabel}</strong> shared
-  <strong>{credentialName}</strong>{scopeNote} with you.
+  {#if organizationName}
+    {m.guest_share_from_org({
+      sharer: sharedByLabel,
+      organization: organizationName,
+      credential: credentialName,
+      scope: scopeNote,
+    })}
+  {:else}
+    <strong>{sharedByLabel}</strong> shared
+    <strong>{credentialName}</strong>{scopeNote} with you.
+  {/if}
 </p>
 <p class="mt-2 text-xs text-slate-500">
   Expires {new Date(expiresAt).toLocaleString()} · {expiryNote}

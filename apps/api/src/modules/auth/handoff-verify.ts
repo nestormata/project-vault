@@ -35,6 +35,12 @@ export type HandoffRejectReason =
   | 'handoff_audience_mismatch'
   | 'handoff_unknown_assurance'
 
+export type HandoffDisplayClaims = {
+  organizationName?: string
+  tier?: string
+  role?: string
+}
+
 export type HandoffVerifiedClaims = {
   jti: string
   workosUserId: string
@@ -52,6 +58,8 @@ export type HandoffVerifiedClaims = {
   /** AC4.17: claimsVersion !== 1 — identity/session claims still apply, but any
    *  capability/tier/quota claim must be treated by callers as a non-grant. */
   unknownClaimsVersion: boolean
+  /** Story 73.3: labels only. Never used for PV authorization. */
+  display: HandoffDisplayClaims
 }
 
 export type HandoffVerifyResult =
@@ -153,6 +161,38 @@ function validateAmr(
     if (!ALLOWED_AMR_VALUES.has(item)) return { ok: false, reason: 'handoff_unknown_assurance' }
   }
   return { ok: true, value: raw as string[] }
+}
+
+function optionalDisplayString(payload: Record<string, unknown>, key: string): string | undefined {
+  const result = readStringClaim(payload, key, MAX_STRING_CLAIM_BYTES)
+  return result.ok ? result.value : undefined
+}
+
+/** Story 73.3: optional display fields never fail verification. */
+export function buildHandoffDisplayClaims(
+  payload: Record<string, unknown>,
+  verifiedTier: string
+): HandoffDisplayClaims {
+  const display: HandoffDisplayClaims = { tier: verifiedTier }
+  const organizationName = optionalDisplayString(payload, 'organizationName')
+  const role = optionalDisplayString(payload, 'role')
+  if (organizationName) display.organizationName = organizationName
+  if (role) display.role = role
+  return display
+}
+
+/** Re-sanitize stored jsonb. Malformed input yields undefined, never throws. */
+export function sanitizeHandoffDisplayClaims(raw: unknown): HandoffDisplayClaims | undefined {
+  if (!isPlainObject(raw)) return undefined
+  const organizationName = optionalDisplayString(raw, 'organizationName')
+  const tier = optionalDisplayString(raw, 'tier')
+  const role = optionalDisplayString(raw, 'role')
+  if (!organizationName && !tier && !role) return undefined
+  const display: HandoffDisplayClaims = {}
+  if (organizationName) display.organizationName = organizationName
+  if (tier) display.tier = tier
+  if (role) display.role = role
+  return display
 }
 
 function validateNonce(
@@ -315,6 +355,7 @@ function validatePayload(payload: unknown): PayloadValidation {
       amr: amr.value,
       nonce: nonce.value,
       unknownClaimsVersion: claimsVersion.value !== 1,
+      display: buildHandoffDisplayClaims(payload, strings.value.tier),
     },
   }
 }

@@ -510,6 +510,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
           isPlatformOperator: authContext.isPlatformOperator,
           ...mfaStatus,
           mfaStatus: enforcementStatus.mfaStatus,
+          ...(authContext.handoffDisplay ? { handoffDisplay: authContext.handoffDisplay } : {}),
         },
       }
     },
