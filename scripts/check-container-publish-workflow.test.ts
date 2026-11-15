@@ -93,7 +93,7 @@ describe('container publish workflow contract', () => {
   it('uses the release tag as the checkout ref and stamps one resolved source commit', () => {
     const workflow = workflowText()
 
-    expect(workflow).toMatch(/group:\s*container-publish-aliases/)
+    expect(workflow).toMatch(/group:.*container-publish-aliases/)
     expect(workflow).toMatch(/commit:\s*\$\{\{\s*steps\.source\.outputs\.commit\s*\}\}/)
     expect(workflow).toMatch(/ref:\s*\$\{\{\s*needs\.prepare\.outputs\.ref\s*\}\}/)
     expect(workflow).not.toMatch(/ref:\s*\$\{\{\s*needs\.prepare\.outputs\.commit\s*\}\}/)
@@ -274,6 +274,14 @@ const BUILD_PUBLISH = 'build-publish'
 const BUILD_PLATFORM = 'build-platform'
 const STUB_DOCKER_LOG = 'docker.log'
 const STUB_GITHUB_OUTPUT = 'github-output'
+const CREATE_MANIFEST_STEP = '- name: Create multi-platform manifest and push immutable tags'
+const EXAMPLE_API_IMAGE = 'ghcr.io/example/p/api'
+const IMMUTABLE_TAG_EXISTS = 'Immutable release tag already exists:'
+const DOCKER_LOG_AND_INSPECT_STUB =
+  'docker() {\n' +
+  '  echo "$*" >> "$DOCKER_LOG"\n' +
+  '  if [[ "$3" == inspect ]]; then printf "%s" "$STUB_INSPECT_JSON"; fi\n' +
+  '}\n'
 
 type PublishJob = {
   needs?: unknown
@@ -532,17 +540,17 @@ describe('Story 75.1: native platform builds and a tag-after-both-platforms merg
     const SHA_A = 'a'.repeat(64)
     const SHA_B = 'b'.repeat(64)
     const INDEX_DIGEST = `sha256:${'c'.repeat(64)}`
-    const TAGS = 'ghcr.io/example/p/api:2.0.3\nghcr.io/example/p/api:sha-0123'
+    const TAGS = `${EXAMPLE_API_IMAGE}:2.0.3\n${EXAMPLE_API_IMAGE}:sha-0123`
 
     it('creates both tags from both platform digests and reports the index digest', () => {
       const result = runCreateStep({ digests: [SHA_A, SHA_B], tags: TAGS })
 
       expect(result.status).toBe(0)
       expect(result.docker).toContain('create')
-      expect(result.docker).toContain('--tag ghcr.io/example/p/api:2.0.3')
-      expect(result.docker).toContain('--tag ghcr.io/example/p/api:sha-0123')
-      expect(result.docker).toContain(`ghcr.io/example/p/api@sha256:${SHA_A}`)
-      expect(result.docker).toContain(`ghcr.io/example/p/api@sha256:${SHA_B}`)
+      expect(result.docker).toContain(`--tag ${EXAMPLE_API_IMAGE}:2.0.3`)
+      expect(result.docker).toContain(`--tag ${EXAMPLE_API_IMAGE}:sha-0123`)
+      expect(result.docker).toContain(`${EXAMPLE_API_IMAGE}@sha256:${SHA_A}`)
+      expect(result.docker).toContain(`${EXAMPLE_API_IMAGE}@sha256:${SHA_B}`)
       expect(result.githubOutput).toBe(`digest=${INDEX_DIGEST}\n`)
     })
 
@@ -583,7 +591,7 @@ describe('Story 75.1: native platform builds and a tag-after-both-platforms merg
       docker: string
       githubOutput: string
     } {
-      const body = stepRunBody('- name: Create multi-platform manifest and push immutable tags')
+      const body = stepRunBody(CREATE_MANIFEST_STEP)
       const dir = mkdtempSync(join(tmpdir(), 'pv-merge-step-'))
       try {
         const digestDir = join(dir, 'digests')
@@ -594,16 +602,11 @@ describe('Story 75.1: native platform builds and a tag-after-both-platforms merg
         writeFileSync(dockerLog, '')
         writeFileSync(githubOutput, '')
         // A shell function shadows the docker CLI: it logs every call and answers `inspect`.
-        const stub =
-          'docker() {\n' +
-          '  echo "$*" >> "$DOCKER_LOG"\n' +
-          '  if [[ "$3" == inspect ]]; then printf "%s" "$STUB_INSPECT_JSON"; fi\n' +
-          '}\n'
-        const run = spawnSync('bash', ['-c', stub + body], {
+        const run = spawnSync('bash', ['-c', DOCKER_LOG_AND_INSPECT_STUB + body], {
           encoding: 'utf8',
           env: {
             ...process.env,
-            IMAGE: 'ghcr.io/example/p/api',
+            IMAGE: EXAMPLE_API_IMAGE,
             VERSION: '2.0.3',
             TAGS: options.tags,
             DIGEST_DIR: digestDir,
@@ -636,7 +639,7 @@ describe('Story 75.2: same-run rerun may complete a partial publish', () => {
   const OTHER_COMMIT = 'd'.repeat(40)
   const VERSION_DIGEST = `sha256:${'a'.repeat(64)}`
   const OTHER_DIGEST = `sha256:${'b'.repeat(64)}`
-  const EXISTING_MESSAGE = 'Immutable release tag already exists:'
+  const EXISTING_MESSAGE = IMMUTABLE_TAG_EXISTS
 
   it('keeps reject before create, and the first-attempt path still refuses an existing tag', () => {
     const publishSteps = jobNamed(BUILD_PUBLISH)?.steps ?? []
@@ -830,13 +833,214 @@ describe('Story 75.2: same-run rerun may complete a partial publish', () => {
   })
 })
 
+// Story 75.3: a workflow_dispatch dry_run rehearses native arm64 + digest merge without a
+// release tag and without pushing immutable :X.Y.Z or aliases.
+describe('Story 75.3: rehearsal dry-run without a release tag', () => {
+  const SHA_A = 'a'.repeat(64)
+  const SHA_B = 'b'.repeat(64)
+  const INDEX_DIGEST = `sha256:${'c'.repeat(64)}`
+  const RUN_ID = '44556677'
+  const REHEARSAL_TAG = `${EXAMPLE_API_IMAGE}:rehearsal-${RUN_ID}`
+
+  it('declares a dry_run workflow_dispatch input that defaults to false', () => {
+    const inputs = (
+      parseYaml(workflowText()) as {
+        on?: {
+          workflow_dispatch?: {
+            inputs?: Record<string, { type?: string; default?: unknown; required?: boolean }>
+          }
+        }
+      }
+    ).on?.workflow_dispatch?.inputs
+    expect(inputs?.dry_run?.type).toBe('boolean')
+    expect(inputs?.dry_run?.default).toBe(false)
+    expect(inputs?.tag?.required).toBe(false)
+  })
+
+  it('uses a separate concurrency group on dry_run so a rehearsal cannot cancel a release', () => {
+    const workflow = workflowText()
+    expect(workflow).toMatch(/container-publish-rehearsal/)
+    expect(workflow).toMatch(/container-publish-aliases/)
+    expect(workflow).toMatch(/inputs\.dry_run == true/)
+    expect(workflow).toMatch(/cancel-in-progress:\s*false/)
+  })
+
+  it('enables version and sha tags only on a real publish, and rehearsal-<run_id> only on dry_run', () => {
+    const workflow = workflowText()
+    expect(workflow).toMatch(
+      /type=raw,value=\$\{\{\s*needs\.prepare\.outputs\.version\s*\}\},enable=\$\{\{\s*github\.event_name == 'release' \|\| inputs\.dry_run != true\s*\}\}/
+    )
+    expect(workflow).toMatch(
+      /type=sha,format=long,prefix=sha-,enable=\$\{\{\s*github\.event_name == 'release' \|\| inputs\.dry_run != true\s*\}\}/
+    )
+    expect(workflow).toMatch(
+      /type=raw,value=rehearsal-\$\{\{\s*github\.run_id\s*\}\},enable=\$\{\{\s*inputs\.dry_run == true\s*\}\}/
+    )
+  })
+
+  it('skips alias promotion unless this is a release event or dry_run is not true', () => {
+    const promote = parsedJobs()['promote-aliases']
+    expect(String(promote?.if ?? '')).toMatch(
+      /github\.event_name == 'release' \|\| inputs\.dry_run != true/
+    )
+    expect(String(promote?.if ?? '')).toMatch(/needs\.build-publish\.result == 'success'/)
+  })
+
+  it('prepare on dry_run stamps 0.0.0-rehearsal from github.sha and does not require a tag', () => {
+    const result = runPrepareReleaseTagStep({
+      dryRun: 'true',
+      eventName: 'workflow_dispatch',
+      ref: 'refs/heads/feature/75-3',
+      sha: 'e'.repeat(40),
+      inputTag: '',
+    })
+    expect(result.status).toBe(0)
+    expect(result.githubOutput).toContain(`ref=${'e'.repeat(40)}`)
+    expect(result.githubOutput).toContain('version=0.0.0-rehearsal')
+    expect(result.output).not.toMatch(/does not exist on origin/)
+  })
+
+  it('prepare still refuses a non-main recovery dispatch when dry_run is not true', () => {
+    const result = runPrepareReleaseTagStep({
+      dryRun: 'false',
+      eventName: 'workflow_dispatch',
+      ref: 'refs/heads/feature/75-3',
+      sha: 'e'.repeat(40),
+      inputTag: 'v2.0.3',
+    })
+    expect(result.status).toBe(1)
+    expect(result.output).toMatch(/only allowed from refs\/heads\/main/)
+  })
+
+  it('reject on dry_run exits 0 without inspecting :X.Y.Z even when that tag exists', () => {
+    const result = runRejectStep({
+      runAttempt: '1',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(`sha256:${'a'.repeat(64)}`, 'c'.repeat(40)),
+      shaInspect: inspectDoc(`sha256:${'a'.repeat(64)}`, 'c'.repeat(40)),
+      dryRun: 'true',
+    })
+    expect(result.status).toBe(0)
+    expect(result.githubOutput).not.toMatch(/reuse=true/)
+    expect(result.docker).not.toMatch(/inspect/)
+  })
+
+  it('reject without dry_run still refuses an existing tag on attempt 1', () => {
+    const result = runRejectStep({
+      runAttempt: '1',
+      versionExists: true,
+      shaExists: true,
+      versionInspect: inspectDoc(`sha256:${'a'.repeat(64)}`, 'c'.repeat(40)),
+      shaInspect: inspectDoc(`sha256:${'a'.repeat(64)}`, 'c'.repeat(40)),
+      dryRun: 'false',
+    })
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(IMMUTABLE_TAG_EXISTS)
+  })
+
+  it('create on dry_run merges digests under rehearsal-<run_id> only', () => {
+    const result = runRehearsalCreateStep({
+      dryRun: 'true',
+      tags: REHEARSAL_TAG,
+      digests: [SHA_A, SHA_B],
+    })
+    expect(result.status).toBe(0)
+    expect(result.docker).toContain('create')
+    expect(result.docker).toContain(`--tag ${REHEARSAL_TAG}`)
+    expect(result.docker).not.toMatch(/:2\.0\.3\b/)
+    expect(result.docker).not.toMatch(/:sha-/)
+    expect(result.docker).toContain(`inspect ${REHEARSAL_TAG}`)
+    expect(result.githubOutput).toBe(`digest=${INDEX_DIGEST}\n`)
+  })
+
+  it('create on dry_run refuses a release or sha tag before imagetools create', () => {
+    const result = runRehearsalCreateStep({
+      dryRun: 'true',
+      tags: `${REHEARSAL_TAG}\n${EXAMPLE_API_IMAGE}:2.0.3`,
+      digests: [SHA_A, SHA_B],
+    })
+    expect(result.status).toBe(1)
+    expect(result.output).toMatch(/Rehearsal must not push a release or sha tag/)
+    expect(result.docker).not.toContain('create')
+  })
+
+  it('removing the rehearsal tag refusal lets a dry_run create :X.Y.Z (mutation)', () => {
+    expect(rehearsalCreateRejectsReleaseTag(workflowText())).toBe(true)
+
+    const mutated = workflowText().replace(
+      /\[\[ "\$TAG" =~ :\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$ \]\] \|\| \[\[ "\$TAG" == \*:sha-\* \]\]/g,
+      'false'
+    )
+    expect(mutated, 'workflow must contain the rehearsal tag refusal').not.toBe(workflowText())
+    expect(rehearsalCreateRejectsReleaseTag(mutated)).toBe(false)
+  })
+
+  it('hides no failure: still no continue-on-error', () => {
+    expect(workflowText()).not.toMatch(/continue-on-error/)
+  })
+
+  function runRehearsalCreateStep(
+    options: { dryRun: string; tags: string; digests: string[] },
+    text: string = workflowText()
+  ): { status: number; output: string; docker: string; githubOutput: string } {
+    const body = stepRunBody(CREATE_MANIFEST_STEP, text)
+    const dir = mkdtempSync(join(tmpdir(), 'pv-rehearsal-create-'))
+    try {
+      const digestDir = join(dir, 'digests')
+      mkdirSync(digestDir)
+      for (const digest of options.digests) writeFileSync(join(digestDir, digest), '')
+      const dockerLog = join(dir, STUB_DOCKER_LOG)
+      const githubOutput = join(dir, STUB_GITHUB_OUTPUT)
+      writeFileSync(dockerLog, '')
+      writeFileSync(githubOutput, '')
+      const run = spawnSync('bash', ['-c', DOCKER_LOG_AND_INSPECT_STUB + body], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          IMAGE: EXAMPLE_API_IMAGE,
+          VERSION: '2.0.3',
+          TAGS: options.tags,
+          DIGEST_DIR: digestDir,
+          EXPECTED_DIGESTS: '2',
+          DOCKER_LOG: dockerLog,
+          GITHUB_OUTPUT: githubOutput,
+          DRY_RUN: options.dryRun,
+          RUN_ID,
+          STUB_INSPECT_JSON: JSON.stringify({ manifest: { digest: INDEX_DIGEST } }),
+        },
+      })
+      return {
+        status: run.status ?? -1,
+        output: `${run.stdout}${run.stderr}`,
+        docker: readFileSync(dockerLog, 'utf8'),
+        githubOutput: readFileSync(githubOutput, 'utf8'),
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  function rehearsalCreateRejectsReleaseTag(text: string): boolean {
+    const result = runRehearsalCreateStep(
+      {
+        dryRun: 'true',
+        tags: `${REHEARSAL_TAG}\n${EXAMPLE_API_IMAGE}:2.0.3`,
+        digests: [SHA_A, SHA_B],
+      },
+      text
+    )
+    return result.status === 1 && /Rehearsal must not push a release or sha tag/.test(result.output)
+  }
+})
+
 function runReuseCreateStep(options: { existingDigest: string }): {
   status: number
   output: string
   docker: string
   githubOutput: string
 } {
-  const body = stepRunBody('- name: Create multi-platform manifest and push immutable tags')
+  const body = stepRunBody(CREATE_MANIFEST_STEP)
   const dir = mkdtempSync(join(tmpdir(), 'pv-reuse-create-'))
   try {
     const digestDir = join(dir, 'digests')
@@ -850,9 +1054,9 @@ function runReuseCreateStep(options: { existingDigest: string }): {
       encoding: 'utf8',
       env: {
         ...process.env,
-        IMAGE: 'ghcr.io/example/p/api',
+        IMAGE: EXAMPLE_API_IMAGE,
         VERSION: '2.0.3',
-        TAGS: 'ghcr.io/example/p/api:2.0.3',
+        TAGS: `${EXAMPLE_API_IMAGE}:2.0.3`,
         DIGEST_DIR: digestDir,
         EXPECTED_DIGESTS: '2',
         DOCKER_LOG: dockerLog,
@@ -900,7 +1104,43 @@ function mismatchingRevisionRejected(text: string): boolean {
     },
     text
   )
-  return result.status === 1 && result.output.includes('Immutable release tag already exists:')
+  return result.status === 1 && result.output.includes(IMMUTABLE_TAG_EXISTS)
+}
+
+function runPrepareReleaseTagStep(options: {
+  dryRun: string
+  eventName: string
+  ref: string
+  sha: string
+  inputTag: string
+}): { status: number; output: string; githubOutput: string } {
+  const body = stepRunBody('- name: Resolve release tag')
+  const dir = mkdtempSync(join(tmpdir(), 'pv-prepare-tag-'))
+  try {
+    const githubOutput = join(dir, STUB_GITHUB_OUTPUT)
+    writeFileSync(githubOutput, '')
+    const run = spawnSync('bash', ['-c', body], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        DRY_RUN: options.dryRun,
+        GITHUB_EVENT_NAME: options.eventName,
+        GITHUB_REF: options.ref,
+        GITHUB_SHA: options.sha,
+        GITHUB_REPOSITORY: 'nestormata/project-vault',
+        RELEASE_TAG: '',
+        INPUT_TAG: options.inputTag,
+        GITHUB_OUTPUT: githubOutput,
+      },
+    })
+    return {
+      status: run.status ?? -1,
+      output: `${run.stdout}${run.stderr}`,
+      githubOutput: readFileSync(githubOutput, 'utf8'),
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 function runRejectStep(
@@ -910,6 +1150,7 @@ function runRejectStep(
     shaExists: boolean
     versionInspect?: unknown
     shaInspect?: unknown
+    dryRun?: string
   },
   text: string = workflowText()
 ): { status: number; output: string; docker: string; githubOutput: string } {
@@ -949,6 +1190,7 @@ function runRejectStep(
         VERSION: '2.0.3',
         COMMIT: 'c'.repeat(40),
         RUN_ATTEMPT: options.runAttempt,
+        DRY_RUN: options.dryRun ?? '',
         DOCKER_LOG: dockerLog,
         GITHUB_OUTPUT: githubOutput,
         STUB_VERSION_EXISTS: options.versionExists ? '1' : '0',

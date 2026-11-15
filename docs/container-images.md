@@ -197,8 +197,13 @@ package, no registry credential is needed.
 
 ## Manual recovery
 
-The workflow also supports `workflow_dispatch`. Supply an existing strict-semver tag such as
-`v1.2.3` from the `main` branch. The tag must already exist in the repository, and the workflow
-refuses to overwrite an existing immutable `1.2.3` image tag. This protects release tags from
-silent rebuilds; correct the source and publish a new release tag when a previously published
-release needs a rebuilt image.
+The workflow also supports `workflow_dispatch`. A recovery dispatch (`dry_run` not true) needs an
+existing strict-semver tag such as `v1.2.3` from the `main` branch. The tag must already exist in
+the repository, and the workflow refuses to overwrite an existing immutable `1.2.3` image tag
+except on a same-run rerun (see above). This protects release tags from silent rebuilds; correct
+the source and publish a new release tag when a previously published release needs a rebuilt
+image.
+
+A rehearsal dispatch (`dry_run: true`) does not take a release tag. It builds both platforms
+natively, merges the digests, and pushes only `rehearsal-<run_id>`. It never creates `:X.Y.Z`,
+`:sha-<commit>`, or alias tags.
