@@ -21,6 +21,9 @@ export const EXCLUDED_TABLES = new Set([
   // known. Same reasoning as sso_login_states/platform_security_events above.
   'handoff_token_jti',
   'handoff_nonces',
+  // Story 73.4: trusted-caller identity revocation jti burn ledger. No tenant is known at
+  // verify time, same class as handoff_token_jti.
+  'identity_revocation_jti',
   // Story 43.30: CLI device-login grants. No tenant is known when the CLI creates the row, and
   // the poller is unauthenticated, so org RLS cannot apply. user_id/org_id are filled only at
   // approval and are not a tenant boundary (same class as handoff_nonces).

@@ -205,7 +205,7 @@ a way that breaks an existing consumer. A breaking change ships under a new pref
 
 ## Authentication
 
-Four independent mechanisms exist; see \`securitySchemes\` for each one's transport.
+Five independent mechanisms exist; see \`securitySchemes\` for each one's transport.
 
 - **\`cookieAuth\`** — the browser session. A successful login sets an \`access-token\` cookie;
   everything a human user does in the web app rides on it.
@@ -218,6 +218,9 @@ Four independent mechanisms exist; see \`securitySchemes\` for each one's transp
 - **\`serviceProvisioningToken\`** — a deployment-wide shared secret in the
   \`x-service-provisioning-token\` header, for the service-provisioning routes only. When the
   secret is unset those routes are unreachable.
+- **\`identityRevocationJwt\`** — a dedicated 60-second HS256 JWT for
+  \`POST /api/v1/service/identities/revoke-sessions\` only. When the secret is unset that route
+  is unreachable.
 
 ## Response envelopes
 
@@ -266,6 +269,13 @@ const OPENAPI_SECURITY_SCHEMES = {
     name: 'x-service-provisioning-token',
     description:
       'Deployment-wide shared secret for the service-provisioning routes. Unreachable when the secret is not configured.',
+  },
+  identityRevocationJwt: {
+    type: 'http',
+    scheme: 'bearer',
+    bearerFormat: 'JWT',
+    description:
+      'Dedicated HS256 JWT for POST /api/v1/service/identities/revoke-sessions. Audience node:<instance-id>, 60s TTL, single-use jti. Unreachable when IDENTITY_REVOCATION_JWT_SECRET is unset.',
   },
 } as const
 
@@ -486,6 +496,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
         { machineBearer: [] },
         { apiKey: [] },
         { serviceProvisioningToken: [] },
+        { identityRevocationJwt: [] },
       ],
       tags: OPENAPI_TAGS,
     },

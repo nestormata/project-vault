@@ -136,6 +136,7 @@ the compromised value.
 | Secret | Runbook |
 | --- | --- |
 | `SERVICE_REVOCATION_TOKEN` | [`service-revocation-token-rotation.md`](service-revocation-token-rotation.md) |
+| `IDENTITY_REVOCATION_JWT_SECRET` | [`identity-revocation-jwt-secret-rotation.md`](identity-revocation-jwt-secret-rotation.md) |
 | `SERVICE_PROVISIONING_TOKEN` | Same pattern as the above: dedicated value, hard swap, restart required. |
 | `VAULT_HANDOFF_VERIFY_KEYS` (asymmetric, has an overlap window) | [`handoff-key-rotation.md`](handoff-key-rotation.md) |
 | `VAULT_BOOTSTRAP_TOKEN` | Only meaningful before init; regenerate freely and restart. |

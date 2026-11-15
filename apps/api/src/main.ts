@@ -19,6 +19,7 @@ import {
   pruneHandoffNonces,
   RETIRED_HANDOFF_PRUNE_SCHEDULES,
   pruneHandoffTokenJti,
+  pruneIdentityRevocationJti,
 } from './workers/prune-handoff-token-jti.js'
 import { pruneDelegationAssertionJti } from './workers/prune-delegation-assertion-jti.js'
 import { pruneTotpUsedCodes } from './workers/prune-totp-used-codes.js'
@@ -237,6 +238,7 @@ async function main(): Promise<void> {
       // to the hourly revoked-tokens sweep — same 5-minute cadence as the sibling
       // handoff/clock-skew-check job registered alongside it.
       'prune-handoff-token-jti': { cron: EVERY_FIVE_MINUTES_CRON },
+      'prune-identity-revocation-jti': { cron: EVERY_FIVE_MINUTES_CRON },
       'prune-handoff-nonces': { cron: EVERY_FIVE_MINUTES_CRON },
       'prune-cli-device-grants': { cron: EVERY_FIVE_MINUTES_CRON },
       // Story 71.7: one bounded DELETE per minute keeps the delegation burn ledger small (rows
@@ -340,6 +342,7 @@ async function main(): Promise<void> {
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
       'prune-handoff-token-jti': () => pruneHandoffTokenJti(),
+      'prune-identity-revocation-jti': () => pruneIdentityRevocationJti(),
       'prune-handoff-nonces': () => pruneHandoffNonces(),
       'prune-cli-device-grants': () => pruneCliDeviceGrants(),
       'delegation/prune-assertion-jti': () => pruneDelegationAssertionJti(),

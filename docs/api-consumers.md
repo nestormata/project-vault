@@ -25,7 +25,7 @@ without a version change — nor on the exact wording of any `message`.
 
 ## Authentication
 
-Four mechanisms exist. They are not interchangeable; each is accepted only by the routes it was
+Five mechanisms exist. They are not interchangeable; each is accepted only by the routes it was
 designed for.
 
 | Scheme                     | Transport                                | Used by                                               |
@@ -34,6 +34,7 @@ designed for.
 | `machineBearer`            | `Authorization: Bearer <JWT>`            | The `/api/v1/machine/**` routes only.                 |
 | `apiKey`                   | `Authorization: Bearer pk_...`           | `POST /api/v1/auth/machine-token` only.               |
 | `serviceProvisioningToken` | `x-service-provisioning-token: <secret>` | The service-provisioning routes only.                 |
+| `identityRevocationJwt`    | `Authorization: Bearer <JWT>`            | `POST /api/v1/service/identities/revoke-sessions` only. |
 
 ### Session (`cookieAuth`)
 
@@ -125,6 +126,16 @@ writes `unrecognized_role`. These routes do not accept `Authorization: PV-Delega
 story. HostServices has no membership write. The WorkOS `viewer` slug stays cosmetic. An org-level
 `viewer` is the smallest PV-enforced CM viewer: it does not auto-grant a project `viewer` row on
 every project.
+
+### Identity revocation JWT
+
+A dedicated HS256 JWT (`IDENTITY_REVOCATION_JWT_SECRET`) authenticates
+`POST /api/v1/service/identities/revoke-sessions`. Claims are `iss` (provider name), `sub`
+(external subject), `aud` (`node:<VAULT_HANDOFF_INSTANCE_ID>`), `jti`, `iat`, and `exp` with
+`exp - iat` at most 60 seconds. Each `jti` is single-use. Auth failures return the same `401`
+`trusted_caller_revocation_rejected` body. Success is `204` with an empty body, including when no
+sessions match. When the secret is unset the route is unreachable. This is not
+`SERVICE_REVOCATION_TOKEN` and not a machine-user token.
 
 ## Response envelopes
 

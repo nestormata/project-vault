@@ -27,7 +27,7 @@ handoff instance identity.
 | Vault key material — see below | `vault_keys` volume, secret manager, or AWS KMS | **No** |
 | The twelve production HMAC/session secrets | Secret manager | Effectively no; see the impact table in [`secret-rotation.md`](secret-rotation.md) |
 | Cluster role passwords (`vault_app`, `vault_admin`, `vault_extension`) | Secret manager | Yes — they can be reset by a superuser, but the app cannot start until they match |
-| `SERVICE_PROVISIONING_TOKEN` / `SERVICE_REVOCATION_TOKEN` | Secret manager | Yes — rotate on both sides |
+| `SERVICE_PROVISIONING_TOKEN` / `SERVICE_REVOCATION_TOKEN` / `IDENTITY_REVOCATION_JWT_SECRET` | Secret manager | Yes — rotate on both sides |
 
 ### Volumes
 

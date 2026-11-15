@@ -3,12 +3,15 @@ import { getDb, type Tx } from '@project-vault/db'
 import {
   apiKeys,
   auditLogEntries,
+  externalIdentities,
+  identityRevocationJti,
   refreshTokens,
   revokedTokens,
   sessions,
 } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
+import { getAdminDb } from '../../lib/db.js'
 import { AppError } from '../../lib/errors.js'
 import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
@@ -16,6 +19,7 @@ import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac, getPreviousEntryHmac, GENESIS_SENTINEL } from '../audit/write-entry.js'
 import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from '../audit/quota-gate.js'
 import { writeSystemAuditEntry } from '../audit/machine-entry.js'
+import { hashIdentityRevocationSubject } from './identity-revocation-security-events.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { deletePendingEnrollmentForUser } from './recovery-codes.js'
 import { evictSessionActivityDebounce } from './session-activity.js'
@@ -33,6 +37,8 @@ export type SessionRevokeScope =
   // Story 8.4 D4: distinguishes erasure-triggered session revocation from an ordinary
   // admin-forced revoke or self-service deactivation in audit rows.
   | 'erasure'
+  // Story 73.4 D11: trusted-caller identity session revocation (not admin_action/logout).
+  | 'trusted_caller'
 
 type RevokeSessionOptions = {
   actorUserId?: string
@@ -431,47 +437,7 @@ export async function revokeAllSessionsForOrg({
       .where(and(eq(sessions.orgId, orgId), isNull(sessions.revokedAt)))
       .returning({ id: sessions.id, userId: sessions.userId, jti: sessions.jti })
 
-    const sessionIds = revokedSessionRows.map((row) => row.id)
-    await revokeDeviceGrantsForSessions(innerTx, sessionIds, now)
-
-    if (sessionIds.length > 0) {
-      // 2. Bulk-revoke their refresh tokens.
-      await innerTx
-        .update(refreshTokens)
-        .set({ revokedAt: now })
-        .where(and(inArray(refreshTokens.sessionId, sessionIds), isNull(refreshTokens.revokedAt)))
-
-      // 3. Bulk-insert revoked_tokens rows, one per revoked session's jti. There is no single
-      // caller-supplied accessTokenExp for a bulk org-wide call (unlike the single-session path),
-      // so this deliberately deviates from computeRevokedTokenExpiresAt()'s per-call
-      // accessTokenExp precedent: every row uses the same fixed
-      // now + JWT_ACCESS_TTL_SECONDS expiry, computed once via computeRevokedTokenExpiresAt with
-      // no accessTokenExp/refreshTokenExpiresAt override. This is an accepted simplification
-      // (Decision 4) — documented here, not silently assumed.
-      const revokedTokenExpiresAt = computeRevokedTokenExpiresAt({ now })
-      await innerTx
-        .insert(revokedTokens)
-        .values(
-          revokedSessionRows.map((row) => ({
-            jti: row.jti,
-            userId: row.userId,
-            expiresAt: revokedTokenExpiresAt,
-          }))
-        )
-        .onConflictDoNothing()
-
-      // In-process cache eviction, not a DB statement — a cheap in-memory loop over the
-      // RETURNING id list, not a per-session round-trip.
-      for (const row of revokedSessionRows) evictSessionActivityDebounce(row.id)
-
-      // deletePendingEnrollmentForUser operates per-user, not per-session — called once per
-      // distinct user_id from the returned rows (its own idempotency makes calling it twice for
-      // the same user across two sessions a safe no-op).
-      const distinctUserIds = [...new Set(revokedSessionRows.map((row) => row.userId))]
-      await forEachSequential(distinctUserIds, (userId) =>
-        deletePendingEnrollmentForUser(userId, innerTx)
-      )
-    }
+    const sessionIds = await completeBulkSessionRevocation(innerTx, now, revokedSessionRows)
 
     // Decision 6/AC12: bulk-revoke every active machine-user API key for the org, in the SAME
     // transaction. api_keys already carries org_id directly (orgScoped()) — no join through
@@ -510,6 +476,190 @@ export async function revokeAllSessionsForOrg({
 
     return { sessionsRevokedCount, apiKeysRevokedCount }
   })
+}
+
+export class IdentityRevocationReplayError extends Error {
+  constructor() {
+    super('identity_revocation_replayed')
+    this.name = 'IdentityRevocationReplayError'
+  }
+}
+
+export class IdentityRevocationStoreError extends Error {
+  constructor() {
+    super('identity_revocation_store_unavailable')
+    this.name = 'IdentityRevocationStoreError'
+  }
+}
+
+async function completeBulkSessionRevocation(
+  tx: Tx,
+  now: Date,
+  revokedSessionRows: Array<{ id: string; userId: string; jti: string }>
+): Promise<string[]> {
+  const sessionIds = revokedSessionRows.map((row) => row.id)
+  await revokeDeviceGrantsForSessions(tx, sessionIds, now)
+  if (sessionIds.length === 0) return sessionIds
+
+  await tx
+    .update(refreshTokens)
+    .set({ revokedAt: now })
+    .where(and(inArray(refreshTokens.sessionId, sessionIds), isNull(refreshTokens.revokedAt)))
+  const revokedTokenExpiresAt = computeRevokedTokenExpiresAt({ now })
+  await tx
+    .insert(revokedTokens)
+    .values(
+      revokedSessionRows.map((row) => ({
+        jti: row.jti,
+        userId: row.userId,
+        expiresAt: revokedTokenExpiresAt,
+      }))
+    )
+    .onConflictDoNothing()
+  for (const row of revokedSessionRows) evictSessionActivityDebounce(row.id)
+  const distinctUserIds = [...new Set(revokedSessionRows.map((row) => row.userId))]
+  await forEachSequential(distinctUserIds, (userId) => deletePendingEnrollmentForUser(userId, tx))
+  return sessionIds
+}
+
+function isIdentityJtiReplay(error: unknown): boolean {
+  const shaped = error as {
+    code?: string
+    constraint_name?: string
+    cause?: { code?: string; constraint_name?: string }
+  }
+  const code = shaped.code ?? shaped.cause?.code
+  const constraint = shaped.constraint_name ?? shaped.cause?.constraint_name
+  if (code !== '23505') return false
+  return !constraint || constraint === 'identity_revocation_jti_pkey'
+}
+
+export type RevokeAllSessionsForExternalIdentityResult = {
+  sessionsRevokedCount: number
+  orgIds: string[]
+}
+
+type ExternalIdentityPair = { userId: string; orgId: string }
+
+async function lookupExternalIdentityPairs(
+  providerName: string,
+  externalSubject: string
+): Promise<ExternalIdentityPair[]> {
+  return await getAdminDb()
+    .select({ userId: externalIdentities.userId, orgId: externalIdentities.orgId })
+    .from(externalIdentities)
+    .where(
+      and(
+        eq(externalIdentities.providerName, providerName),
+        eq(externalIdentities.externalSubject, externalSubject)
+      )
+    )
+}
+
+async function revokeIdentitySessionsInOrg(
+  tx: Tx,
+  {
+    orgId,
+    userIds,
+    now,
+    providerName,
+    subjectHash,
+    audience,
+  }: {
+    orgId: string
+    userIds: string[]
+    now: Date
+    providerName: string
+    subjectHash: string
+    audience: string
+  }
+): Promise<number> {
+  await applyExpectedOrgContext(tx, orgId)
+  const revokedSessionRows = await tx
+    .update(sessions)
+    .set({
+      revokedAt: now,
+      sessionVersion: sql`${sessions.sessionVersion} + 1`,
+      updatedAt: now,
+    })
+    .where(
+      and(eq(sessions.orgId, orgId), inArray(sessions.userId, userIds), isNull(sessions.revokedAt))
+    )
+    .returning({ id: sessions.id, userId: sessions.userId, jti: sessions.jti })
+
+  const sessionIds = await completeBulkSessionRevocation(tx, now, revokedSessionRows)
+
+  await writeSystemAuditEntry(tx, {
+    orgId,
+    eventType: AuditEvent.IDENTITY_SESSIONS_REVOKED_BY_TRUSTED_CALLER,
+    payload: {
+      providerName,
+      subjectHash,
+      nodeAudience: audience,
+      sessionsRevokedCount: sessionIds.length,
+      scope: 'trusted_caller',
+    },
+  })
+  return sessionIds.length
+}
+
+/**
+ * Story 73.4 D3/D5/D6: resolve matching identities via the admin BYPASSRLS pool, then burn the
+ * trusted-caller jti first and bulk-revoke those sessions in one vault_app transaction.
+ */
+export async function revokeAllSessionsForExternalIdentity({
+  providerName,
+  externalSubject,
+  jti,
+  expiresAt,
+  audience,
+}: {
+  providerName: string
+  externalSubject: string
+  jti: string
+  expiresAt: Date
+  audience: string
+}): Promise<RevokeAllSessionsForExternalIdentityResult> {
+  const identityLockKey = `identity-revoke:${providerName}:${externalSubject}`
+
+  try {
+    const subjectHash = hashIdentityRevocationSubject(providerName, externalSubject)
+    const pairs = await lookupExternalIdentityPairs(providerName, externalSubject)
+    return await getDb().transaction(async (innerTx) => {
+      const tx = innerTx as Tx
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${identityLockKey}))`)
+      await tx.insert(identityRevocationJti).values({ jti, expiresAt })
+
+      const orgIds = [...new Set(pairs.map((pair) => pair.orgId))].sort((left, right) =>
+        left.localeCompare(right)
+      )
+      await forEachSequential(orgIds, (orgId) =>
+        tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`)
+      )
+
+      const now = new Date()
+      let sessionsRevokedCount = 0
+      await forEachSequential(orgIds, async (orgId) => {
+        const userIds = [
+          ...new Set(pairs.filter((pair) => pair.orgId === orgId).map((pair) => pair.userId)),
+        ]
+        sessionsRevokedCount += await revokeIdentitySessionsInOrg(tx, {
+          orgId,
+          userIds,
+          now,
+          providerName,
+          subjectHash,
+          audience,
+        })
+      })
+
+      return { sessionsRevokedCount, orgIds }
+    })
+  } catch (error) {
+    if (error instanceof IdentityRevocationReplayError) throw error
+    if (isIdentityJtiReplay(error)) throw new IdentityRevocationReplayError()
+    throw new IdentityRevocationStoreError()
+  }
 }
 
 export function sessionNotFound(): AppError {

@@ -113,7 +113,7 @@ self-hosted instance.
 The machine-to-machine API a hosted platform uses to create organizations, provision member
 identities, link an organization to its upstream record, and revoke handoff sessions
 organization-wide. It is guarded by dedicated tokens (`SERVICE_PROVISIONING_TOKEN`,
-`SERVICE_REVOCATION_TOKEN`) and is fail-closed while they are unset.
+`SERVICE_REVOCATION_TOKEN`, `IDENTITY_REVOCATION_JWT_SECRET`) and is fail-closed while they are unset.
 
 ### Row-level security (RLS)
 
