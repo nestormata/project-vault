@@ -11,6 +11,12 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **API: trusted-caller per-identity session revocation** (Story 73.4).
+  `POST /api/v1/service/identities/revoke-sessions` accepts a 60-second HS256 JWT
+  (`IDENTITY_REVOCATION_JWT_SECRET`, `aud=node:<VAULT_HANDOFF_INSTANCE_ID>`) and revokes every
+  session of the matching external identity on this node. The response is `204` with an empty
+  body whether zero or N sessions were revoked. Org-wide
+  `SERVICE_REVOCATION_TOKEN` revocation is unchanged.
 - **API: CentralizeMe role provisioning (add, change-role, remove)** (Story 73.5). Trusted
   `x-service-provisioning-token` callers can change and remove organization members and add,
   change, and remove project members on CentralizeMe-managed orgs. PV owns the role. The grant

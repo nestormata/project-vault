@@ -27,6 +27,7 @@ table below.
 | `kms_unreachable`, `kms_key_unavailable`, `kms_permission_denied` | [`master-key.md`](master-key.md) § KMS failure modes |
 | A HMAC/session secret is suspected leaked, or an instance is on dev values | [`secret-rotation.md`](secret-rotation.md) |
 | `SERVICE_REVOCATION_TOKEN` leak, or `org.sessions_revoked_by_service` fired unexpectedly | [`service-revocation-token-rotation.md`](service-revocation-token-rotation.md) |
+| `IDENTITY_REVOCATION_JWT_SECRET` leak, or unexpected identity session revocation | [`identity-revocation-jwt-secret-rotation.md`](identity-revocation-jwt-secret-rotation.md) |
 | Rotating the CentralizeMe handoff signing key, or responding to its compromise | [`handoff-key-rotation.md`](handoff-key-rotation.md) |
 | Configuring handoff identity/keys, or a `clock_skew.measured` warning | [`handoff-instance-identity.md`](handoff-instance-identity.md) |
 | Rotating a service-delegation verification key (`VAULT_DELEGATION_VERIFY_KEYS`), or responding to its compromise | [`delegation-key-rotation.md`](delegation-key-rotation.md) |

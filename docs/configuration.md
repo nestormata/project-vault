@@ -208,6 +208,7 @@ and no scheduling happens at all. Configure exactly one destination (path **xor*
 | `VAULT_HANDOFF_CLOCK_SKEW_WARN_MS` | `20000` | | Skew above which a clock-skew warning is raised. |
 | `SERVICE_PROVISIONING_TOKEN` | unset | | Shared secret gating `POST /api/v1/service/organizations`. Unset means the route is unreachable (fail-closed). Generate with `openssl rand -base64 32`. |
 | `SERVICE_REVOCATION_TOKEN` | unset | | Shared secret for the companion service-side revocation callback. Same fail-closed default. |
+| `IDENTITY_REVOCATION_JWT_SECRET` | unset | | Dedicated HS256 secret for `POST /api/v1/service/identities/revoke-sessions`. Unset fails closed. Must not equal other auth secrets in production. |
 
 ## Platform & infrastructure
 
