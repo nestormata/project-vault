@@ -47,7 +47,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "semver": "7.8.5"
+    "semver": "7.8.6"
   },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",
@@ -57,7 +57,7 @@
     "@vitest/coverage-v8": "^5.1.0",
     "eslint": "^10.14.0",
     "tsx": "4.23.15",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^5.1.0"
   }
 }
