@@ -20,6 +20,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **Web: rail shell command palette no longer throws `state_unsafe_mutation`** (Story 73.15).
+  Opening Global search on `WEB_SHELL_VARIANT=rail` focused the palette input during a Svelte
+  `$effect`, and the bottom bar's `focusin` listener wrote `$state` in that same turn. The hide-
+  on-text-focus rule (F-23) still applies; the write waits for a microtask. Desktop rail and the
+  390 px bottom bar are covered by J51.
 - **API/Web: recipient share metadata names the owning organization** (Story 73.13).
   `GET /api/v1/external-shares/access/{token}` includes required `organizationName` (current
   `organizations.name`). The native guest page shows it before verification. No organization id.

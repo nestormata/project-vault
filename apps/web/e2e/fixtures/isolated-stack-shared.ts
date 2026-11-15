@@ -306,6 +306,9 @@ export async function spawnIsolatedWebProcess(options: {
   apiPort: number
   /** Console-log prefix, e.g. `web-envelope` / `web-capgate`. */
   logLabel: string
+  /** Story 73.15: layered onto the web child (e.g. `WEB_SHELL_VARIANT=rail`) so a journey can
+   * boot a shell the shared E2E compose stack does not use. */
+  extraEnv?: Record<string, string>
 }): Promise<WebHandle> {
   // The pnpm-workspace-installed vite CLI binary — `require.resolve('vite/bin/vite.js')` fails
   // because vite's own package.json `exports` map does not expose that subpath.
@@ -316,6 +319,7 @@ export async function spawnIsolatedWebProcess(options: {
       ...process.env,
       NODE_ENV: 'development',
       API_BASE_URL: `http://localhost:${options.apiPort}`,
+      ...options.extraEnv,
     },
     stdio: 'pipe',
     detached: true,
@@ -336,12 +340,14 @@ export async function spawnIsolatedWebProcess(options: {
  * scaffolding) every one of these calls was already a shared helper, so only the glue sequencing
  * them was duplicated.
  */
-export async function setupMockExtensionIsolatedStack(options: {
+export async function setupIsolatedFullStack(options: {
   dbName: string
   apiLogLabel: string
   webLogLabel: string
   vaultPassphrase: string
   debugLogLevelEnvVar: string
+  apiExtraEnv?: Record<string, string>
+  webExtraEnv?: Record<string, string>
 }): Promise<{
   apiProcess: ChildProcess
   webHandle: WebHandle
@@ -356,13 +362,14 @@ export async function setupMockExtensionIsolatedStack(options: {
     webPort,
     logLabel: options.apiLogLabel,
     logLevelEnvVar: options.debugLogLevelEnvVar,
-    extraEnv: { VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-ui-panel-extension' },
+    extraEnv: options.apiExtraEnv,
   })
   await initIsolatedVault(api.port, options.vaultPassphrase)
   const webHandle = await spawnIsolatedWebProcess({
     port: webPort,
     apiPort: api.port,
     logLabel: options.webLogLabel,
+    extraEnv: options.webExtraEnv,
   })
   return {
     apiProcess: api.process,
@@ -370,4 +377,23 @@ export async function setupMockExtensionIsolatedStack(options: {
     baseUrl: `http://localhost:${webPort}`,
     apiBase: `http://localhost:${api.port}`,
   }
+}
+
+export async function setupMockExtensionIsolatedStack(options: {
+  dbName: string
+  apiLogLabel: string
+  webLogLabel: string
+  vaultPassphrase: string
+  debugLogLevelEnvVar: string
+}): Promise<{
+  apiProcess: ChildProcess
+  webHandle: WebHandle
+  /** Story 66.10: ports are OS-allocated, so callers get the URLs the stack really listens on. */
+  baseUrl: string
+  apiBase: string
+}> {
+  return setupIsolatedFullStack({
+    ...options,
+    apiExtraEnv: { VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-ui-panel-extension' },
+  })
 }
