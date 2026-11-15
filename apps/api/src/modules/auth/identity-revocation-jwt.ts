@@ -93,20 +93,25 @@ function parseIdentityRevocationClaims(
   return { ok: true, claims }
 }
 
-export function verifyIdentityRevocationJwt(
-  token: string,
-  deps: { secret?: string; instanceId?: string } = {
+function identityRevocationVerifyDeps(): { secret?: string; instanceId?: string } {
+  return {
     secret: env.IDENTITY_REVOCATION_JWT_SECRET,
     instanceId: env.VAULT_HANDOFF_INSTANCE_ID,
   }
+}
+
+export function verifyIdentityRevocationJwt(
+  token: string,
+  deps?: { secret?: string; instanceId?: string }
 ): IdentityRevocationVerifyResult {
-  if (!deps.secret) return { ok: false, reason: 'unset_secret' }
-  if (!deps.instanceId) return { ok: false, reason: 'unset_instance_id' }
+  const resolved = deps ?? identityRevocationVerifyDeps()
+  if (!resolved.secret) return { ok: false, reason: 'unset_secret' }
+  if (!resolved.instanceId) return { ok: false, reason: 'unset_instance_id' }
   if (typeof token !== 'string' || token.length === 0) return { ok: false, reason: 'malformed' }
 
-  const decoded = decodeIdentityRevocationPayload(token, deps.secret)
+  const decoded = decodeIdentityRevocationPayload(token, resolved.secret)
   if (decoded.ok !== 'payload') return decoded
-  return parseIdentityRevocationClaims(decoded.payload, deps.instanceId)
+  return parseIdentityRevocationClaims(decoded.payload, resolved.instanceId)
 }
 
 export function bearerTokenFromAuthorization(

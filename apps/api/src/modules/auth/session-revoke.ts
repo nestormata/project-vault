@@ -545,7 +545,7 @@ async function lookupExternalIdentityPairs(
   providerName: string,
   externalSubject: string
 ): Promise<ExternalIdentityPair[]> {
-  return getAdminDb()
+  return await getAdminDb()
     .select({ userId: externalIdentities.userId, orgId: externalIdentities.orgId })
     .from(externalIdentities)
     .where(
@@ -630,7 +630,9 @@ export async function revokeAllSessionsForExternalIdentity({
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${identityLockKey}))`)
       await tx.insert(identityRevocationJti).values({ jti, expiresAt })
 
-      const orgIds = [...new Set(pairs.map((pair) => pair.orgId))].sort()
+      const orgIds = [...new Set(pairs.map((pair) => pair.orgId))].sort((left, right) =>
+        left.localeCompare(right)
+      )
       await forEachSequential(orgIds, (orgId) =>
         tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`)
       )
