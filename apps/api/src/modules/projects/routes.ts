@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod/v4'
@@ -67,6 +67,7 @@ import {
   addExistingOrgUserToProject,
   getProjectMemberCount,
   getProjectMembershipRole,
+  otherProjectOwnersForUpdate,
   removeProjectMembership,
 } from './member-management.js'
 import { effectiveProjectRoleForCaller, requireProjectVisible } from './project-access.js'
@@ -1275,17 +1276,11 @@ export function projectRoutes(fastify: FastifyApp): Promise<void> {
 
       // D5 item 1: never remove the last owner of a project (self-removal is no exception).
       if (targetMembershipRole === 'owner') {
-        const otherOwners = await secureCtx.tx
-          .select({ userId: projectMemberships.userId })
-          .from(projectMemberships)
-          .where(
-            and(
-              eq(projectMemberships.projectId, params.projectId),
-              eq(projectMemberships.role, 'owner'),
-              ne(projectMemberships.userId, params.userId)
-            )
-          )
-          .for('update')
+        const otherOwners = await otherProjectOwnersForUpdate(
+          secureCtx.tx,
+          params.projectId,
+          params.userId
+        )
         if (otherOwners.length === 0) {
           return reply
             .status(409)

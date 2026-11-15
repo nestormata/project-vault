@@ -52,6 +52,8 @@ const IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT = 'idempotency-key-unique-constraint'
 // (idx_organizations_centralizeme_organization_id), which prevents a different PV organization
 // from claiming an already-linked CM id -- a distinct guarantee from request-replay idempotency.
 const CENTRALIZEME_ID_UNIQUENESS_CONSTRAINT = 'centralizeme-id-uniqueness-constraint'
+const GRANT_CAP_NEVER_OWNER = 'grant-cap-never-owner'
+const LAST_OWNER_FOR_UPDATE = 'last-owner-for-update'
 const MONITORING_LIST_READ_OMISSION_REASON =
   'List read returns operational metadata only; no secret values.'
 const MONITORING_READ_CLASSIFICATION: RouteActionClassification = {
@@ -291,6 +293,69 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'PATCH /api/v1/service/organizations/:organizationId/members/:userId',
+    reason:
+      'Story 73.5 -- machine-authenticated org-member role change for a trusted platform partner (CentralizeMe). The caller has no PV session -- SecureRoute cannot apply. Reuses SERVICE_PROVISIONING_TOKEN (Decision D2). Grant cap never owner; last-owner FOR UPDATE; unknown role fail-closed to platform_security_events.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      GRANT_CAP_NEVER_OWNER,
+      LAST_OWNER_FOR_UPDATE,
+    ],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'DELETE /api/v1/service/organizations/:organizationId/members/:userId',
+    reason:
+      'Story 73.5 -- machine-authenticated org-member remove for a trusted platform partner (CentralizeMe). The caller has no PV session -- SecureRoute cannot apply. Reuses SERVICE_PROVISIONING_TOKEN. Last-org-owner and sole-project-owner FOR UPDATE.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      LAST_OWNER_FOR_UPDATE,
+    ],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/service/organizations/:organizationId/projects/:projectId/members',
+    reason:
+      'Story 73.5 -- machine-authenticated project-member add for a trusted platform partner (CentralizeMe), same membership insert as 72-14 with a service token instead of a session. Grant cap never owner. Cross-org targets 404.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      GRANT_CAP_NEVER_OWNER,
+    ],
+    expiresAfterStory: null,
+  },
+  {
+    route:
+      'PATCH /api/v1/service/organizations/:organizationId/projects/:projectId/members/:userId',
+    reason:
+      'Story 73.5 -- machine-authenticated project-member role change for a trusted platform partner (CentralizeMe). Grant cap never owner; project owners cannot be demoted on this path.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      GRANT_CAP_NEVER_OWNER,
+    ],
+    expiresAfterStory: null,
+  },
+  {
+    route:
+      'DELETE /api/v1/service/organizations/:organizationId/projects/:projectId/members/:userId',
+    reason:
+      'Story 73.5 -- machine-authenticated project-member remove for a trusted platform partner (CentralizeMe). Last project owner FOR UPDATE.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      LAST_OWNER_FOR_UPDATE,
+    ],
+    expiresAfterStory: null,
+  },
+  {
     // Story 43.6 (D3) — the CLI's startup version check. Not vault-guard-allowlisted (a sealed
     // server returns 503, which the CLI treats as unreachable).
     route: 'GET /api/v1/client-version-policy',
@@ -458,6 +523,31 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditEvent: 'org.centralizeme_link_backfilled',
     sameTransactionAuditService: 'backfillCentralizemeOrgLink',
+  },
+  'PATCH /api/v1/service/organizations/:organizationId/members/:userId': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org.member_role_changed',
+    sameTransactionAuditService: 'changeServiceOrgMemberRole',
+  },
+  'DELETE /api/v1/service/organizations/:organizationId/members/:userId': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org.user_removed',
+    sameTransactionAuditService: 'removeServiceOrgMember',
+  },
+  'POST /api/v1/service/organizations/:organizationId/projects/:projectId/members': {
+    action: SECURITY_ACTION,
+    auditEvent: 'project.member_added',
+    sameTransactionAuditService: 'addServiceProjectMember',
+  },
+  'PATCH /api/v1/service/organizations/:organizationId/projects/:projectId/members/:userId': {
+    action: SECURITY_ACTION,
+    auditEvent: 'project.member_role_changed',
+    sameTransactionAuditService: 'changeServiceProjectMemberRole',
+  },
+  'DELETE /api/v1/service/organizations/:organizationId/projects/:projectId/members/:userId': {
+    action: SECURITY_ACTION,
+    auditEvent: 'project.member_removed',
+    sameTransactionAuditService: 'removeServiceProjectMember',
   },
   'DELETE /api/v1/auth/sessions/:sessionId': {
     action: SECURITY_ACTION,
