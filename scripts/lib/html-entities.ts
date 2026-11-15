@@ -45,9 +45,13 @@ function decodeCodePoint(value: number): string {
   return invalid ? '\uFFFD' : String.fromCodePoint(value)
 }
 
+function codePoint(rest: string, index: number): number {
+  return rest.codePointAt(index) ?? 0
+}
+
 function scanWhile(rest: string, start: number, pred: (code: number) => boolean): number {
   let end = start
-  while (end < rest.length && pred(rest.charCodeAt(end))) end += 1
+  while (end < rest.length && pred(codePoint(rest, end))) end += 1
   return end
 }
 
@@ -66,7 +70,7 @@ function consumeTerminatedNumber(
   radix: number
 ): ConsumedReference | undefined {
   const end = scanWhile(rest, digitsStart, pred)
-  if (end === digitsStart || rest.charCodeAt(end) !== 59) return undefined
+  if (end === digitsStart || codePoint(rest, end) !== 59) return undefined
   return {
     chars: decodeCodePoint(Number.parseInt(rest.slice(digitsStart, end), radix)),
     consumed: end + 1,
@@ -74,18 +78,18 @@ function consumeTerminatedNumber(
 }
 
 function consumeNumeric(rest: string): ConsumedReference | undefined {
-  if (rest.charCodeAt(0) !== 35) return undefined
-  if (rest.charCodeAt(1) === 120 || rest.charCodeAt(1) === 88) {
+  if (codePoint(rest, 0) !== 35) return undefined
+  if (codePoint(rest, 1) === 120 || codePoint(rest, 1) === 88) {
     return consumeTerminatedNumber(rest, 2, isHex, 16)
   }
   return consumeTerminatedNumber(rest, 1, isDigit, 10)
 }
 
 function consumeNamed(rest: string, mode: NamedReferenceMode): ConsumedReference | undefined {
-  if (!isNameStart(rest.charCodeAt(0))) return undefined
+  if (!isNameStart(codePoint(rest, 0))) return undefined
   const end = scanWhile(rest, 1, isNameChar)
   const name = rest.slice(0, end)
-  if (rest.charCodeAt(end) === 59) {
+  if (codePoint(rest, end) === 59) {
     const chars = NAMED.get(name)
     return chars === undefined ? undefined : { chars, consumed: end + 1 }
   }
