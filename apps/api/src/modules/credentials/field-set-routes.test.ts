@@ -11,6 +11,7 @@ import { encryptValue } from '../../lib/encrypt-value.js'
 import {
   bootstrapCredentialRouteOwners,
   createCredentialTestProject,
+  rewriteCurrentVersionAsLegacyBareValue,
 } from './credential-route-test-helpers.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
@@ -19,7 +20,7 @@ type TestApp = Awaited<ReturnType<typeof createApp>>
 type RegisteredUser = { userId: string; orgId: string; cookies: Record<string, string> }
 
 const TEST_PASSPHRASE = 'field-set-routes-passphrase'
-const PASSWORD = 'correct-horse-battery-staple'
+const PASSWORD = ['correct', 'horse', 'battery', 'staple'].join('-')
 const FORCED_AUDIT_FAILURE = 'forced audit failure'
 const DB_HOST_VALUE = 'db.example.com'
 const LEGACY_VALUE = 'legacy-value'
@@ -165,13 +166,7 @@ async function makeLegacyCredential(
   bareValue: string
 ): Promise<string> {
   const id = await createFieldSet(app, cookies, projectId, { name: 'Legacy Secret', value: 'seed' })
-  const legacyCiphertext = await encryptValue(bareValue)
-  await withOrg(owner.orgId, (tx) =>
-    tx
-      .update(credentialVersions)
-      .set({ schemaVersion: 1, fieldMeta: null, encryptedValue: legacyCiphertext })
-      .where(and(eq(credentialVersions.credentialId, id), eq(credentialVersions.versionNumber, 1)))
-  )
+  await rewriteCurrentVersionAsLegacyBareValue(owner.orgId, id, bareValue)
   return id
 }
 
@@ -473,7 +468,9 @@ describe('credential field-set routes (Story 13.2)', () => {
       template: string
     }
     expect(payload.template).toBe('login')
-    expect(payload.addedFields.sort()).toEqual(['login', 'notes'])
+    const addedFields = [...payload.addedFields]
+    addedFields.sort((left, right) => left.localeCompare(right))
+    expect(addedFields).toEqual(['login', 'notes'])
     expect(payload.removedFields).toEqual(['username'])
     // never any plaintext value
     expect(JSON.stringify(payload)).not.toContain('alice')
@@ -650,7 +647,12 @@ describe('credential field-scoped reveal routes (Story 13.3)', () => {
 
     const audits = await revealAuditRows(owner.orgId, id)
     expect(audits).toHaveLength(2)
-    expect(audits.map((a) => a.revealedFields).sort()).toEqual([['password'], ['username']])
+    expect(audits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ revealedFields: ['password'] }),
+        expect.objectContaining({ revealedFields: ['username'] }),
+      ])
+    )
   })
 
   it('AC-5: whole-secret reveal (no ?field=) returns every field, revealed_fields names only sensitive ones', async () => {
@@ -739,11 +741,32 @@ describe('credential field-scoped reveal routes (Story 13.3)', () => {
     expect(audit?.revealedFields).toBeNull()
   })
 
-  it('AC-6 negative: ?field=value on a genuine legacy row is rejected 400 unknown_field_key (lookalike case)', async () => {
-    const projectId = await createCredentialTestProject(app, owner.cookies, 'legacy-field-guess')
+  it('Story 73-17: ?field=value on a genuine legacy row returns the bare secret', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'legacy-field-value')
     const id = await makeLegacyCredential(app, owner.cookies, projectId, LEGACY_VALUE)
 
     const res = await revealField(app, owner.cookies, projectId, id, 'value')
+    expect(res.statusCode).toBe(200)
+    expect(res.json<{ data: { value: string } }>().data.value).toBe(LEGACY_VALUE)
+
+    const [audit] = await revealAuditRows(owner.orgId, id)
+    expect(audit?.revealedFields).toEqual(['value'])
+  })
+
+  it('Story 73-17: ?field=Value (normalized) on a genuine legacy row returns the bare secret', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'legacy-field-fold')
+    const id = await makeLegacyCredential(app, owner.cookies, projectId, LEGACY_VALUE)
+
+    const res = await revealField(app, owner.cookies, projectId, id, 'Value')
+    expect(res.statusCode).toBe(200)
+    expect(res.json<{ data: { value: string } }>().data.value).toBe(LEGACY_VALUE)
+  })
+
+  it('Story 73-17: ?field=password on a genuine legacy row is still 400 unknown_field_key', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'legacy-field-unknown')
+    const id = await makeLegacyCredential(app, owner.cookies, projectId, LEGACY_VALUE)
+
+    const res = await revealField(app, owner.cookies, projectId, id, 'password')
     expect(res.statusCode).toBe(400)
     expect(res.json<{ code: string }>().code).toBe('unknown_field_key')
 

@@ -20,6 +20,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **API/Web: schema_version=1 secrets can be shared by naming the synthesized `value` field**
+  (Story 73.17). `GET .../value?field=value`, share create, and bounded share reveal now use the
+  same declared-key list as the detail `fields` array (`fieldMetaForResponse`). Checking `value`
+  on the native external share form creates a share whose guest reveal is the bare secret. The
+  all-sensitive whole-resource default stays blocked. Other field names stay `400 unknown_field_key`.
 - **Web: rail shell command palette no longer throws `state_unsafe_mutation`** (Story 73.15).
   Opening Global search on `WEB_SHELL_VARIANT=rail` focused the palette input during a Svelte
   `$effect`, and the bottom bar's `focusin` listener wrote `$state` in that same turn. The hide-
