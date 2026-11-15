@@ -15,6 +15,7 @@ import {
   createCredentialTestProject,
   createCredentialViaApi,
   createSharingMultiFieldFixture,
+  rewriteCurrentVersionAsLegacyBareValue,
   SENTINEL_VALUE,
 } from '../credentials/credential-route-test-helpers.js'
 import { resourceExists } from '../credentials/bounded-share-adapter.js'
@@ -341,6 +342,75 @@ describe('credential-shares routes', () => {
     const body = response.json<{ data: { value: string; valueFormat: string } }>()
     expect(body.data.value).toBe(SENTINEL_VALUE)
     expect(body.data.valueFormat).toBe('scalar')
+  })
+
+  it('Story 73-17: genuine schema_version=1 attributeKeys value creates a share whose reveal is the bare secret', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('legacy-v1-share')
+    const legacyBare = 'legacy-v1-share-bare'
+    await rewriteCurrentVersionAsLegacyBareValue(sharer.orgId, credentialId, legacyBare)
+    const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      attributeKeys: ['value'],
+      expiresAt: futureIso(),
+      singleUse: true,
+    })
+    expect(create.statusCode).toBe(201)
+    expect(create.json<{ data: { attributeKeys: string[] | null } }>().data.attributeKeys).toEqual([
+      'value',
+    ])
+    const { token } = create.json<{ data: { token: string } }>().data
+
+    const response = await app.inject({
+      method: 'POST',
+      url: accessUrl(token, '/reveal'),
+      headers: { cookie: cookieHeader(recipient.cookies) },
+    })
+    expect(response.statusCode).toBe(200)
+    const body = response.json<{ data: { value: string; valueFormat: string } }>()
+    expect(body.data.value).toBe(legacyBare)
+    expect(body.data.valueFormat).toBe('scalar')
+  })
+
+  it('Story 73-17: genuine schema_version=1 fieldKey value reveals the same scalar', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('legacy-v1-fieldkey')
+    const legacyBare = 'legacy-v1-fieldkey-bare'
+    await rewriteCurrentVersionAsLegacyBareValue(sharer.orgId, credentialId, legacyBare)
+    const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      fieldKey: 'value',
+      expiresAt: futureIso(),
+      singleUse: true,
+    })
+    expect(create.statusCode).toBe(201)
+    const { token } = create.json<{ data: { token: string } }>().data
+    const response = await app.inject({
+      method: 'POST',
+      url: accessUrl(token, '/reveal'),
+      headers: { cookie: cookieHeader(recipient.cookies) },
+    })
+    expect(response.statusCode).toBe(200)
+    const body = response.json<{ data: { value: string; valueFormat: string } }>()
+    expect(body.data.value).toBe(legacyBare)
+    expect(body.data.valueFormat).toBe('scalar')
+  })
+
+  it('Story 73-17: genuine schema_version=1 unknown attributeKeys is 400 unknown_field_key', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('legacy-v1-unknown')
+    await rewriteCurrentVersionAsLegacyBareValue(
+      sharer.orgId,
+      credentialId,
+      'legacy-v1-unknown-bare'
+    )
+    const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      attributeKeys: ['nope'],
+      expiresAt: futureIso(),
+    })
+    expect(create.statusCode).toBe(400)
+    expect(create.json<{ code: string; reason?: string }>()).toMatchObject({
+      code: 'unknown_field_key',
+      reason: 'field_unknown',
+    })
   })
 
   it('AC-1: a create request with action other than "read" is rejected 422, never coerced', async () => {
