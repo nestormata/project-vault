@@ -165,6 +165,19 @@ so wait until every job has finished, then run `gh run rerun <run-id> --failed`.
 "re-run all jobs" unless you intend to rebuild the untagged platform blobs: it repeats jobs that
 already succeeded. The version tag is still not overwritten.
 
+**Rehearsal (`dry_run: true`, story 75-3).** Dispatch `container-publish.yml` with `dry_run=true` to
+exercise the native amd64/arm64 builds and the digest merge without a release tag. The run checks
+out the dispatching commit, stamps OCI version `0.0.0-rehearsal`, merges both platform digests, and
+tags only `rehearsal-<run_id>`. It does not push `:X.Y.Z`, `:sha-<commit>`, or `latest` / major /
+minor aliases. Rehearsal uses its own concurrency group so it cannot take the
+`container-publish-aliases` slot. A recovery dispatch (`dry_run` not true) still requires an
+existing `vX.Y.Z` tag and still runs only from `main`. Agents do not dispatch this workflow. Live
+GHCR proof is a human item (story 75-5).
+
+```bash
+! gh workflow run container-publish.yml --ref <branch-or-main> -f dry_run=true
+```
+
 Post-publish verification:
 
 ```bash

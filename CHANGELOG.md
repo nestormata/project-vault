@@ -11,6 +11,10 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Release: `container-publish.yml` rehearsal input** (Story 75.3). `workflow_dispatch` `dry_run`
+  builds both platforms natively and merges their digests under `rehearsal-<run_id>` without a
+  release tag and without pushing `:X.Y.Z` or aliases. Recovery dispatch still requires a `vX.Y.Z`
+  tag from `main`. See [docs/releasing.md](docs/releasing.md) section 4.
 - **API: CentralizeMe role provisioning (add, change-role, remove)** (Story 73.5). Trusted
   `x-service-provisioning-token` callers can change and remove organization members and add,
   change, and remove project members on CentralizeMe-managed orgs. PV owns the role. The grant

@@ -1,7 +1,7 @@
 name: Publish container images
 # Names the tag on every run, so a manual recovery from `main` shows which tag it built. Display
 # only: web-host-release.yml's Release gate does not trust run names (docs/releasing.md §9.2).
-run-name: Publish container images ${{ inputs.tag || github.event.release.tag_name }}
+run-name: Publish container images ${{ inputs.dry_run == true && 'rehearsal' || inputs.tag || github.event.release.tag_name }}
 
 on:
   release:
@@ -9,15 +9,21 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing vMAJOR.MINOR.PATCH tag to publish or recover
-        required: true
+        description: Existing vMAJOR.MINOR.PATCH tag to publish or recover (ignored when dry_run)
+        required: false
         type: string
+      dry_run:
+        description: Rehearse native arm64 build and digest merge without pushing :X.Y.Z or aliases
+        required: false
+        type: boolean
+        default: false
 
 permissions: {}
 
-# All runs share the aliases below, so releases and manual recoveries must finish in order.
+# Real publishes share the alias group. A rehearsal must not occupy that slot or cancel a release.
+# On a release event inputs.dry_run is null, so `== true` is false (pv-cm-github-actions.md).
 concurrency:
-  group: container-publish-aliases
+  group: ${{ inputs.dry_run == true && format('container-publish-rehearsal-{0}', github.ref) || 'container-publish-aliases' }}
   cancel-in-progress: false
 
 env:
@@ -40,8 +46,20 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
         run: |
           set -euo pipefail
+          # Story 75.3: rehearsal checks out the dispatching commit and never resolves a vX.Y.Z tag.
+          if [[ "${DRY_RUN:-}" == "true" ]]; then
+            if [[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]]; then
+              echo "Rehearsal is only allowed on workflow_dispatch" >&2
+              exit 1
+            fi
+            echo "ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "version=0.0.0-rehearsal" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "Manual publication is only allowed from refs/heads/main" >&2
             exit 1
@@ -51,6 +69,11 @@ jobs:
             TAG="$RELEASE_TAG"
           else
             TAG="$INPUT_TAG"
+          fi
+
+          if [[ -z "${TAG:-}" ]]; then
+            echo "tag input is required unless dry_run is true" >&2
+            exit 1
           fi
 
           if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
@@ -239,8 +262,13 @@ jobs:
           COMMIT: ${{ needs.prepare.outputs.commit }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           IMAGE_NAME: ${{ matrix.name }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
         run: |
           set -euo pipefail
+          if [[ "${DRY_RUN:-}" == "true" ]]; then
+            exit 0
+          fi
+
           SOURCE="${IMAGE_NAMESPACE}/${IMAGE_NAME}:${VERSION}"
           SHA_SOURCE="${IMAGE_NAMESPACE}/${IMAGE_NAME}:sha-${COMMIT}"
 
@@ -301,8 +329,9 @@ jobs:
           context: git
           images: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}
           tags: |
-            type=raw,value=${{ needs.prepare.outputs.version }}
-            type=sha,format=long,prefix=sha-
+            type=raw,value=${{ needs.prepare.outputs.version }},enable=${{ github.event_name == 'release' || inputs.dry_run != true }}
+            type=sha,format=long,prefix=sha-,enable=${{ github.event_name == 'release' || inputs.dry_run != true }}
+            type=raw,value=rehearsal-${{ github.run_id }},enable=${{ inputs.dry_run == true }}
 
       - name: Create multi-platform manifest and push immutable tags
         id: push
@@ -316,6 +345,8 @@ jobs:
           EXPECTED_DIGESTS: '2'
           REUSE: ${{ steps.reject.outputs.reuse }}
           EXISTING_DIGEST: ${{ steps.reject.outputs.digest }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
           if [[ "${REUSE:-}" == "true" ]]; then
@@ -354,12 +385,27 @@ jobs:
             exit 1
           fi
 
+          if [[ "${DRY_RUN:-}" == "true" ]]; then
+            while IFS= read -r TAG; do
+              [[ -n "$TAG" ]] || continue
+              if [[ "$TAG" =~ :[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$TAG" == *:sha-* ]]; then
+                echo "Rehearsal must not push a release or sha tag: $TAG" >&2
+                exit 1
+              fi
+            done <<<"$TAGS"
+          fi
+
           docker buildx imagetools create "${TAG_ARGS[@]}" "${SOURCES[@]}"
 
-          INSPECT_JSON=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{json .}}')
+          if [[ "${DRY_RUN:-}" == "true" ]]; then
+            INSPECT_REF="${IMAGE}:rehearsal-${RUN_ID}"
+          else
+            INSPECT_REF="${IMAGE}:${VERSION}"
+          fi
+          INSPECT_JSON=$(docker buildx imagetools inspect "${INSPECT_REF}" --format '{{json .}}')
           DIGEST=$(jq -r '.manifest.digest // ""' <<<"$INSPECT_JSON")
           if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "Cannot read the manifest-list digest of ${IMAGE}:${VERSION}: '$DIGEST'" >&2
+            echo "Cannot read the manifest-list digest of ${INSPECT_REF}: '$DIGEST'" >&2
             exit 1
           fi
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
@@ -511,7 +557,7 @@ jobs:
   promote-aliases:
     name: Promote release aliases
     needs: [prepare, build-publish]
-    if: needs.build-publish.result == 'success'
+    if: ${{ needs.build-publish.result == 'success' && (github.event_name == 'release' || inputs.dry_run != true) }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
