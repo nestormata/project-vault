@@ -17,14 +17,14 @@
     "vitest": "^5.1.0"
   },
   "dependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.72.1",
-    "@typescript-eslint/parser": "^8.72.1",
+    "@typescript-eslint/eslint-plugin": "^8.72.2",
+    "@typescript-eslint/parser": "^8.72.2",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-security": "^4.2.1",
     "eslint-plugin-sonarjs": "^4.2.2",
     "eslint-plugin-no-secrets": "^2.3.3",
-    "eslint-plugin-svelte": "^3.24.0"
+    "eslint-plugin-svelte": "^3.24.1"
   },
   "peerDependencies": {
     "eslint": "^10.14.0",
