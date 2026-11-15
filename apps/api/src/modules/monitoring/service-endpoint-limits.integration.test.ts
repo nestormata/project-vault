@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import dns from 'node:dns/promises'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import { organizations, serviceEndpoints } from '@project-vault/db/schema'
@@ -22,6 +23,7 @@ import {
   createServiceEndpoint,
   updateServiceEndpoint,
 } from './service.js'
+import { UrlNotMonitorableError } from './url-safety.js'
 
 configureAuthIntegrationEnv()
 
@@ -253,6 +255,183 @@ describe('service-endpoint limits enforcement (Story 73.7)', () => {
         tx.select().from(serviceEndpoints).where(eq(serviceEndpoints.orgId, orgId))
       )
       expect(rows).toHaveLength(1)
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+})
+
+const PRIVATE_URL = 'http://127.0.0.1/health'
+
+describe('createServiceEndpoint cap before SSRF (Story 73.12)', () => {
+  beforeAll(async () => {
+    await initVaultForTest(initVault, TEST_PASSPHRASE)
+  })
+
+  afterEach(() => {
+    __resetServiceEndpointLimitsForTests()
+  })
+
+  afterAll(async () => {
+    await resetVaultForTest()
+  })
+
+  it('at-cap create refuses with the cap error and does not look up the URL', async () => {
+    const orgId = await createTestOrg('cap-dns')
+    const userId = await createTestUser('selimits-cap-dns')
+    try {
+      const project = await insertTestProject(orgId, {
+        userId,
+        slug: `selimits-capdns-${randomUUID().slice(0, 8)}`,
+      })
+      await withOrg(orgId, (tx) =>
+        createServiceEndpoint(tx, {
+          orgId,
+          projectId: project.id,
+          userId,
+          body: { name: 'first', url: TEST_URL, checkFrequencyMinutes: 5 },
+        })
+      )
+      __setStaticServiceEndpointLimitsForTests({ maxEndpoints: 1 })
+      const lookup = vi.spyOn(dns, 'lookup')
+      try {
+        await expect(
+          withOrg(orgId, (tx) =>
+            createServiceEndpoint(tx, {
+              orgId,
+              projectId: project.id,
+              userId,
+              body: { name: 'second', url: 'https://example.net/health' },
+            })
+          )
+        ).rejects.toMatchObject({
+          name: 'ServiceEndpointLimitReachedError',
+          code: 'service_endpoint_limit_reached',
+        })
+        expect(lookup).not.toHaveBeenCalled()
+      } finally {
+        lookup.mockRestore()
+      }
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('at-cap create with a private URL still returns the cap error, not url_not_monitorable', async () => {
+    const orgId = await createTestOrg('cap-priv')
+    const userId = await createTestUser('selimits-cap-priv')
+    try {
+      const project = await insertTestProject(orgId, {
+        userId,
+        slug: `selimits-capprv-${randomUUID().slice(0, 8)}`,
+      })
+      await withOrg(orgId, (tx) =>
+        createServiceEndpoint(tx, {
+          orgId,
+          projectId: project.id,
+          userId,
+          body: { name: 'first', url: TEST_URL, checkFrequencyMinutes: 5 },
+        })
+      )
+      __setStaticServiceEndpointLimitsForTests({ maxEndpoints: 1 })
+      await expect(
+        withOrg(orgId, (tx) =>
+          createServiceEndpoint(tx, {
+            orgId,
+            projectId: project.id,
+            userId,
+            body: { name: 'second', url: PRIVATE_URL },
+          })
+        )
+      ).rejects.toBeInstanceOf(ServiceEndpointLimitReachedError)
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('under-cap create still rejects a private URL as not monitorable', async () => {
+    const orgId = await createTestOrg('under-priv')
+    const userId = await createTestUser('selimits-under-priv')
+    try {
+      const project = await insertTestProject(orgId, {
+        userId,
+        slug: `selimits-undprv-${randomUUID().slice(0, 8)}`,
+      })
+      await expect(
+        withOrg(orgId, (tx) =>
+          createServiceEndpoint(tx, {
+            orgId,
+            projectId: project.id,
+            userId,
+            body: { name: 'blocked', url: PRIVATE_URL },
+          })
+        )
+      ).rejects.toBeInstanceOf(UrlNotMonitorableError)
+      const rows = await withOrg(orgId, (tx) =>
+        tx.select().from(serviceEndpoints).where(eq(serviceEndpoints.orgId, orgId))
+      )
+      expect(rows).toHaveLength(0)
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('update of URL still SSRF-validates when the org is at cap', async () => {
+    const orgId = await createTestOrg('upd-cap')
+    const userId = await createTestUser('selimits-upd-cap')
+    try {
+      const project = await insertTestProject(orgId, {
+        userId,
+        slug: `selimits-updcap-${randomUUID().slice(0, 8)}`,
+      })
+      const live = await withOrg(orgId, (tx) =>
+        createServiceEndpoint(tx, {
+          orgId,
+          projectId: project.id,
+          userId,
+          body: { name: 'live', url: TEST_URL, checkFrequencyMinutes: 5 },
+        })
+      )
+      __setStaticServiceEndpointLimitsForTests({ maxEndpoints: 1 })
+      await expect(
+        withOrg(orgId, (tx) =>
+          updateServiceEndpoint(tx, {
+            serviceEndpointId: live.id,
+            projectId: project.id,
+            userId,
+            body: { url: PRIVATE_URL },
+            rawBody: { url: PRIVATE_URL },
+          })
+        )
+      ).rejects.toBeInstanceOf(UrlNotMonitorableError)
+      const [row] = await withOrg(orgId, (tx) =>
+        tx.select().from(serviceEndpoints).where(eq(serviceEndpoints.id, live.id))
+      )
+      expect(row?.url).toBe(TEST_URL)
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('health-disabled create with a private URL refuses on health checks, not SSRF', async () => {
+    const orgId = await createTestOrg('health-priv')
+    const userId = await createTestUser('selimits-health-priv')
+    try {
+      const project = await insertTestProject(orgId, {
+        userId,
+        slug: `selimits-hlthpv-${randomUUID().slice(0, 8)}`,
+      })
+      __setStaticServiceEndpointLimitsForTests({ healthChecksEnabled: false })
+      await expect(
+        withOrg(orgId, (tx) =>
+          createServiceEndpoint(tx, {
+            orgId,
+            projectId: project.id,
+            userId,
+            body: { name: 'blocked', url: PRIVATE_URL },
+          })
+        )
+      ).rejects.toBeInstanceOf(HealthChecksDisabledError)
     } finally {
       await deleteTestUser(userId)
     }

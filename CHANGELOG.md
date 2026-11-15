@@ -84,6 +84,14 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   guards the rule, and the mock UI pack overlays every listed key in `en` or `es`. No runtime or API change; a host that
   overrides one of those test files sees its `hostSha256` change with this release.
 
+### Fixed
+
+- **API: at-cap service-endpoint create no longer runs outbound SSRF/DNS** (Story 73.12).
+  `createServiceEndpoint` applies the org advisory lock and 73-7 limits before
+  `assertUrlIsMonitorable`. An org at `maxEndpoints` gets `service_endpoint_limit_reached`
+  even when the URL would not be monitorable. Under-cap creates still validate the URL.
+  URL updates still validate even when the org is already at cap.
+
 ### Added
 
 - **Browser-approved CLI sign-in.** `POST /api/v1/auth/cli/device` starts a short-lived sign-in

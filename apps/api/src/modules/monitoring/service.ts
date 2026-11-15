@@ -589,8 +589,8 @@ export async function listServiceEndpointsForOrg(tx: Tx, orgId: string) {
 }
 
 /**
- * AC 1/ADR-6.2-09 plus Story 73.7: SSRF validation first, then org advisory lock plus
- * per-project and org-wide limits, then insert.
+ * ADR-6.2-09 plus Story 73.7/73.12: org advisory lock plus per-project and org-wide
+ * limits first, then SSRF validation, then insert. At-cap creates must not run outbound DNS.
  */
 export async function createServiceEndpoint(
   tx: Tx,
@@ -602,14 +602,14 @@ export async function createServiceEndpoint(
     logger?: ServiceEndpointLimitsLogger
   }
 ) {
-  await assertUrlIsMonitorable(input.body.url)
-
   await assertServiceEndpointCreateAllowed(tx, {
     orgId: input.orgId,
     projectId: input.projectId,
     intervalSeconds: frequencyMinutesToSeconds(input.body.checkFrequencyMinutes ?? 5),
     logger: input.logger,
   })
+
+  await assertUrlIsMonitorable(input.body.url)
 
   const [row] = await tx
     .insert(serviceEndpoints)
