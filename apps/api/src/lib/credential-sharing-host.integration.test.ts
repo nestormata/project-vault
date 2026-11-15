@@ -138,11 +138,21 @@ describe('buildCredentialSharingHost — real-Postgres integration (Story 20.12 
     if (created.status !== 'ok') return
     expect(created.token).toBeTruthy()
     expect((created.share as { tokenHash?: unknown }).tokenHash).toBeUndefined()
+    expect(created.share).toMatchObject({
+      displayStatus: 'active',
+      lockedAt: null,
+      verificationRequired: false,
+    })
 
     const found = await host.findShareByToken(created.token)
     expect(found.status).toBe('ok')
     if (found.status !== 'ok') return
     expect(found.share.id).toBe(created.share.id)
+    expect(found.share).toMatchObject({
+      displayStatus: 'active',
+      lockedAt: null,
+      verificationRequired: false,
+    })
 
     const revealed = await host.revealShare(created.token)
     expect(revealed).toMatchObject({ status: 'ok', value: 'super-secret-value' })
@@ -415,6 +425,11 @@ describe('buildCredentialSharingHost — real-Postgres integration (Story 20.12 
       credentialId: credentialA.id,
     })
     expect(listFromOwnOrg).toMatchObject({ status: 'ok', total: 1 })
+    expect(listFromOwnOrg.items[0]).toMatchObject({
+      displayStatus: 'active',
+      lockedAt: null,
+      verificationRequired: false,
+    })
 
     // AC8 edge case: a credentialId belonging to a different org resolves as empty, not an error.
     const listFromWrongOrg = await host.listSharesForCredential({

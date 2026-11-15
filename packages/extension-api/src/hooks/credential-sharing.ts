@@ -217,6 +217,21 @@ export type CredentialSharingShareRecord = {
   firstViewedAt: string | null
   viewCount: number
   status: CredentialSharingShareStatus
+  /**
+   * Story 73.16 — ISO-8601 time an attempt cap locked the share, or `null`. Same JSON as HTTP
+   * `serializeShare`. Optional: a host older than 3.46.0 omits the key.
+   */
+  lockedAt?: string | null
+  /**
+   * Story 73.16 — read-side display status. Same vocabulary as `@project-vault/shared`
+   * `ShareDisplayStatus`. Optional: a host older than 3.46.0 omits the key.
+   */
+  displayStatus?: 'active' | 'opened' | 'locked' | 'revoked' | 'expired' | 'superseded'
+  /**
+   * Story 73.16 — true when guest verification is required before reveal. Optional: a host older
+   * than 3.46.0 omits the key.
+   */
+  verificationRequired?: boolean
 }
 
 // ---------------------------------------------------------------------------------------------
