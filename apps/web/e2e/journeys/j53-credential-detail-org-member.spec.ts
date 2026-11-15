@@ -18,26 +18,27 @@ import { inviteAndSignIn } from '../fixtures/invited-user.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
 const MEMBER_PASSWORD = 'e2e-Member-Password-123'
-const SECRET_NAME = 'J52 grouped secret'
+const SECRET_NAME = 'J53 grouped secret'
 
-// J52 (Story 73.18 / DW-536): an org member invited as project viewer opens a credential they
+// J53 (Story 73.18 / DW-536): an org member invited as project viewer opens a credential they
 // can see. The page used to 500 because the load called admin-only GET /org/users.
+// Numbered J53 because 73-17 (PR #707) already took J52 for the legacy share field journey.
 
-describeEachAppearance('J52 credential detail for an org member', (appearance) => {
+describeEachAppearance('J53 credential detail for an org member', (appearance) => {
   test('AC1/AC2: a project viewer gets 200 and the limited view, never the error page', async ({
     context,
     browser,
   }) => {
     await registerAndLoginViaApi(context, {
-      email: uniqueEmail('j52-owner'),
+      email: uniqueEmail('j53-owner'),
       password: OWNER_PASSWORD,
-      orgName: uniqueOrgName('J52 Org'),
+      orgName: uniqueOrgName('J53 Org'),
     })
     const project = await createProjectViaApi(context, {
-      name: uniqueProjectName('J52 Project'),
-      slug: `j52-${randomUUID().slice(0, 12)}`,
+      name: uniqueProjectName('J53 Project'),
+      slug: `j53-${randomUUID().slice(0, 12)}`,
     })
-    const secretValue = uniqueCredentialValue('j52-value-never-shown')
+    const secretValue = uniqueCredentialValue('j53-value-never-shown')
     const credential = await createCredentialViaApi(context, project.id, {
       name: SECRET_NAME,
       value: secretValue,
@@ -45,7 +46,7 @@ describeEachAppearance('J52 credential detail for an org member', (appearance) =
     const member = await inviteAndSignIn(context, browser, {
       projectId: project.id,
       role: 'viewer',
-      label: 'j52-member',
+      label: 'j53-member',
       password: MEMBER_PASSWORD,
     })
     const me = await member.page.request.get('/api/v1/auth/me')
