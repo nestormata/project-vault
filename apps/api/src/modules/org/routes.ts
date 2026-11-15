@@ -1,5 +1,5 @@
 import { z } from 'zod/v4'
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
 import { orgMemberships, projectMemberships, users } from '@project-vault/db/schema'
@@ -33,7 +33,9 @@ import { dismissSecurityAlert, listSecurityAlerts } from './security-alerts.js'
 import {
   listOrgUsers,
   lockOrgMembershipForUpdate,
+  otherOrgOwnersForUpdate,
   removeUserFromOrgMemberships,
+  soleOwnerProjectsForUpdate,
 } from './user-management.js'
 import { pseudonymizeUser } from './pseudonymize.js'
 import { getProjectMembershipRole } from '../projects/member-management.js'
@@ -740,17 +742,11 @@ export function orgRoutes(fastify: FastifyApp): Promise<void> {
       // D5 item 4: never remove the sole org owner (checked before the per-project guard —
       // an ownerless org is categorically worse than an ownerless project).
       if (target.orgRole === 'owner') {
-        const otherOwners = await secureCtx.tx
-          .select({ userId: orgMemberships.userId })
-          .from(orgMemberships)
-          .where(
-            and(
-              eq(orgMemberships.orgId, secureCtx.auth.orgId),
-              eq(orgMemberships.role, 'owner'),
-              ne(orgMemberships.userId, params.userId)
-            )
-          )
-          .for('update')
+        const otherOwners = await otherOrgOwnersForUpdate(
+          secureCtx.tx,
+          secureCtx.auth.orgId,
+          params.userId
+        )
         if (otherOwners.length === 0) {
           return reply.status(409).send({
             code: 'last_org_owner',
@@ -759,26 +755,11 @@ export function orgRoutes(fastify: FastifyApp): Promise<void> {
         }
       }
 
-      // D5 item 2: block if the target is the sole owner of any project.
-      const soleOwnerProjects = await secureCtx.tx.execute(sql`
-        SELECT pm.project_id AS "projectId", p.name AS "projectName"
-        FROM project_memberships pm
-        JOIN projects p ON p.id = pm.project_id
-        WHERE pm.org_id = ${secureCtx.auth.orgId}
-          AND pm.user_id = ${params.userId}
-          AND pm.role = 'owner'
-          AND NOT EXISTS (
-            SELECT 1 FROM project_memberships pm2
-            WHERE pm2.project_id = pm.project_id
-              AND pm2.role = 'owner'
-              AND pm2.user_id != ${params.userId}
-          )
-        FOR UPDATE OF pm
-      `)
-      const soleOwnerRows = soleOwnerProjects as unknown as {
-        projectId: string
-        projectName: string
-      }[]
+      const soleOwnerRows = await soleOwnerProjectsForUpdate(
+        secureCtx.tx,
+        secureCtx.auth.orgId,
+        params.userId
+      )
       if (soleOwnerRows.length > 0) {
         return reply.status(409).send({
           code: 'sole_owner_of_projects',

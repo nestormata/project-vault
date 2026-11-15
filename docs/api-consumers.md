@@ -111,6 +111,21 @@ A deployment-wide shared secret, sent in the `x-service-provisioning-token` head
 service-provisioning routes. When the secret is not configured those routes are unreachable and
 answer `403` for every request — the same response as a wrong token, so absence leaks nothing.
 
+Story 73.5 extends that surface with org-member change-role and remove, and with project-member
+add, change-role and remove, all under `/api/v1/service/organizations/{organizationId}/…`. PV owns
+the stored role (CM ADR 0010 item 4). A trusted caller may grant `admin`, `member` or `viewer`,
+never `owner`. An unrecognized role is `400 invalid_role` with a generic message and a
+`platform_security_events` row (`unrecognized_role`). Removing or demoting the last organization
+owner is `409 last_org_owner`; removing the last project owner is `409 last_owner`; a user who is
+the sole owner of any project cannot be removed from the org (`409 sole_owner_of_projects`). A
+target outside the organization answers `404` with the same body as a missing row. Each successful
+mutation writes one system audit row that includes `requestId`. A stored membership role that is
+not one of the four known values fails closed at session load as `403 account_deactivated` and
+writes `unrecognized_role`. These routes do not accept `Authorization: PV-Delegation` in this
+story. HostServices has no membership write. The WorkOS `viewer` slug stays cosmetic. An org-level
+`viewer` is the smallest PV-enforced CM viewer: it does not auto-grant a project `viewer` row on
+every project.
+
 ## Response envelopes
 
 A successful response wraps its payload in `data`:

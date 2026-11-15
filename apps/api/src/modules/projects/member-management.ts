@@ -1,4 +1,4 @@
-import { and, count, eq } from 'drizzle-orm'
+import { and, asc, count, eq } from 'drizzle-orm'
 import { type Tx } from '@project-vault/db'
 import { orgMemberships, projectMemberships, users } from '@project-vault/db/schema'
 import type { OrgRole } from '../../plugins/require-org-role.js'
@@ -26,11 +26,10 @@ export async function removeProjectMembership(
  * projects' member-removal handler so the identical `(projectId, userId, orgId)` lookup lives in
  * one place; each call site keeps its own 404 reply.
  */
-export async function getProjectMembershipRole(
-  tx: Tx,
-  { orgId, projectId, userId }: { orgId: string; projectId: string; userId: string }
-): Promise<string | undefined> {
-  const [membership] = await tx
+type ProjectMemberIds = { orgId: string; projectId: string; userId: string }
+
+function projectMembershipRoleQuery(tx: Tx, { orgId, projectId, userId }: ProjectMemberIds) {
+  return tx
     .select({ role: projectMemberships.role })
     .from(projectMemberships)
     .where(
@@ -40,8 +39,44 @@ export async function getProjectMembershipRole(
         eq(projectMemberships.orgId, orgId)
       )
     )
-    .limit(1)
+}
+
+export async function getProjectMembershipRole(
+  tx: Tx,
+  ids: ProjectMemberIds
+): Promise<string | undefined> {
+  const [membership] = await projectMembershipRoleQuery(tx, ids).limit(1)
   return membership?.role
+}
+
+export async function lockProjectMembershipForUpdate(
+  tx: Tx,
+  ids: ProjectMemberIds
+): Promise<string | undefined> {
+  const [membership] = await projectMembershipRoleQuery(tx, ids).for('update').limit(1)
+  return membership?.role
+}
+
+/** Locks every project owner in userId order so concurrent last-owner checks serialize without deadlock. */
+export async function projectOwnersForUpdate(
+  tx: Tx,
+  projectId: string
+): Promise<{ userId: string }[]> {
+  return await tx
+    .select({ userId: projectMemberships.userId })
+    .from(projectMemberships)
+    .where(and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.role, 'owner')))
+    .orderBy(asc(projectMemberships.userId))
+    .for('update')
+}
+
+export async function otherProjectOwnersForUpdate(
+  tx: Tx,
+  projectId: string,
+  userId: string
+): Promise<{ userId: string }[]> {
+  const owners = await projectOwnersForUpdate(tx, projectId)
+  return owners.filter((row) => row.userId !== userId)
 }
 
 /**
