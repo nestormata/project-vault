@@ -2,9 +2,9 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
-## 3.43.0 — 2026-11-11
+## 3.45.0 — 2026-11-15
 
-contract-hash: sha256:d7271c28a8a91d902cc4df659f5055c3747d8ddb20dce2e540237d0502213ab7
+contract-hash: sha256:0939c060fe9393534d946a97b5c26dbad00e78e0bcfd9704ee34e48af96322cc
 
 Story 73.7. Optional `serviceEndpointLimits` resolver and `'service-endpoint-limits'` capability.
 The host applies numeric health-check limits on service-endpoint create and update. Omitted fields
@@ -21,7 +21,7 @@ and on updates that raise probing intensity.
 
 ### Deprecated
 
-3.43.0 does not start a new deprecation. Marker lint still needs the 3.30.0 frozen set named here:
+3.45.0 does not start a new deprecation. Marker lint still needs the 3.30.0 frozen set named here:
 legacy panel types `UIPanel` `UIPanelContext` `UIPanelResult`; action types `ModuleAction`
 `ModuleActionContext` `ModuleActionRequest` `ActionResult`; data-route types
 `ModuleDataRequestContext` `ModuleDataResult` `ModuleDataRouteHandler` `ModuleDataRouteDeclaration`;
@@ -32,7 +32,38 @@ M7 `apiRoutes` instead.
 
 - earliest-removal: 4.0.0
 - notice-window-ends: 2027-01-14
-- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.43.0 adds none).
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.45.0 adds none).
+
+## 3.44.0 — 2026-11-11
+
+contract-hash: sha256:40045daa8ce8166d0308f3eba5655a9cf9000d4860d8c55c244dcc187214d7e6
+
+Story 65.8. Additive. Hosts that natively hold external-share miss timing publish the hold in
+milliseconds on `HostServices.credentialSharing`. Older hosts omit the field. Consumers must keep
+their own floor when it is missing; never treat 0 as a published hold, and never infer from
+package version or a timing probe. 3.43.0 was reserved for PR #697 while both were open; 73-7
+lands as 3.45.0 after this release.
+
+### Added
+
+- `CredentialSharingHost.externalShareMissMinResponseMs?: number`. Set from the host's
+  `EXTERNAL_SHARE_MISS_FLOOR_MS`. Every non-ok outcome of `findShareByToken` and `revealShare`
+  (including a non-active share and the per-org 429) is held to at least that many ms from call
+  start; hits are never held.
+
+### Deprecated
+
+No additional freeze in this release. The 3.30.0 markers remain: the panel types (`UIPanel` and
+siblings `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionContext`,
+`ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`, `ModuleDataResult`,
+`ModuleDataRouteHandler`, `ModuleDataRouteDeclaration`, `ExtensionNavItem`), the manifest keys
+`uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`, the hooks `uiPanel`,
+`moduleAction`, `moduleData`, and the `'ui-panel'` capability. Use composed UI, M7 `apiRoutes`,
+`ExtensionRequestContext` and `ExtensionActionResult` instead.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.44.0 adds no deprecation).
 
 ## 3.42.0 — 2026-11-10
 

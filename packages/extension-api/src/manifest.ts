@@ -675,9 +675,10 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // bound to PV's current organization invocation and refuse calls outside that scope (policy row 1).
 // Story 73.3 — bumped as a minor (3.41.0 -> 3.42.0): optional `HandoffDisplayClaims` on
 // `ExtensionRequestContext` (policy row 1). Additive. `identity.orgRole` is unchanged.
-// Story 73.7 — bumped as a minor (3.42.0 -> 3.43.0): optional `serviceEndpointLimits` hook and
+// Story 73.7 — bumped as a minor (3.44.0 -> 3.45.0): optional `serviceEndpointLimits` hook and
 // `'service-endpoint-limits'` capability (policy rows 1, 6, 11). Default-open when omitted.
-export const EXTENSION_API_VERSION = '3.43.0'
+// 3.43.0 was reserved while #697 and 65-8 were both open; 65-8 shipped 3.44.0, so 73-7 takes 3.45.0.
+export const EXTENSION_API_VERSION = '3.45.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

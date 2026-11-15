@@ -1,12 +1,23 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { terminalRevealStatusFor } from './external-service.js'
+import { liveOrganizationName, terminalRevealStatusFor } from './external-service.js'
 
 // Story 17.2 Task 1.3: confirms no other query path in this module ever runs on the raw admin
 // connection outside the one, narrow, explicitly-justified point-lookup — a targeted
 // lint-style assertion, similar in spirit to route-audit.test.ts's enforcement style, rather than
 // relying purely on code review to catch a future accidental second `getAdminDb()` call site.
+describe('shareWithCredentialAndSharerQuery org join (Story 73-13)', () => {
+  it('inner-joins organizations so a missing org row is not_found', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/modules/credential-shares/service.ts'),
+      'utf-8'
+    )
+    expect(source).toMatch(/innerJoin\(organizations/)
+    expect(source).toMatch(/organizationName: organizations\.name/)
+  })
+})
+
 describe('external-service.ts getAdminDb confinement (Task 1.3)', () => {
   it('getAdminDb is called exactly once, inside adminLookupByTokenHash', () => {
     const source = readFileSync(
@@ -44,6 +55,19 @@ describe('external-service.ts getAdminDb confinement (Task 1.3)', () => {
 // drift out of sync on which statuses collapse to which reveal-failure reason (the 'superseded'
 // case in particular — resolveLostExternalClaim's own path is a narrow atomic-claim-race window
 // that's impractical to trigger deterministically in an integration test).
+describe('liveOrganizationName (Story 73-13)', () => {
+  it('returns the current name when it is a non-empty string', () => {
+    expect(liveOrganizationName('Acme')).toBe('Acme')
+    expect(liveOrganizationName('Acme <script>')).toBe('Acme <script>')
+  })
+
+  it('treats a missing or empty name as absent (metadata GET collapses to not_found)', () => {
+    expect(liveOrganizationName(undefined)).toBeNull()
+    expect(liveOrganizationName(null)).toBeNull()
+    expect(liveOrganizationName('')).toBeNull()
+  })
+})
+
 describe('terminalRevealStatusFor', () => {
   it('maps revoked to revoked', () => {
     expect(terminalRevealStatusFor('revoked')).toBe('revoked')

@@ -36699,6 +36699,10 @@
                         "sharedByDisplayName": {
                           "type": "string"
                         },
+                        "organizationName": {
+                          "type": "string",
+                          "minLength": 1
+                        },
                         "fieldKey": {
                           "nullable": true,
                           "type": "string"
@@ -36741,6 +36745,7 @@
                       "required": [
                         "credentialName",
                         "sharedByDisplayName",
+                        "organizationName",
                         "expiresAt",
                         "status",
                         "verificationRequired"

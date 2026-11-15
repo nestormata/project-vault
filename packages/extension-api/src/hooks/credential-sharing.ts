@@ -429,6 +429,14 @@ export type CredentialSharingListResult = {
  */
 export type CredentialSharingHost = {
   /**
+   * Story 65.8 (since 3.44.0) — when present, every non-ok outcome of `findShareByToken` and
+   * `revealShare` (including a share whose status is not `active`, and the per-org rate-limit
+   * rejection) is held to at least this many milliseconds from call start. Hits are never held.
+   * Absent on older hosts and on the `registerExtension()` placeholder: do not infer a hold from
+   * package version or timing; keep your own floor. Never published as 0.
+   */
+  externalShareMissMinResponseMs?: number
+  /**
    * Story 73.9 (since 3.39.0) — with `apiVersion` 3.39.0 or later, when the org has no
    * admin-provisioned machine user with a live key, the host provisions the host-managed one in the
    * same transaction (as `provisionMachineUser` would) and proceeds. The share's `sharedBy` is then

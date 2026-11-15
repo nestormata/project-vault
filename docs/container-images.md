@@ -75,9 +75,12 @@ still resolves.
 
 **Recovery.** Fix the vulnerability (usually a base-image digest bump or a dependency update), then
 cut the next patch release, `vX.Y.(Z+1)` (see [releasing.md](releasing.md)). Re-running the same
-tag through `workflow_dispatch` is refused by the workflow's "Reject existing immutable release tag"
-step, by design. A suppression is only acceptable through the documented `.trivyignore` process
-(CVE id, `exp:` date, one-line justification).
+tag through a **new** `workflow_dispatch` is refused by the workflow's "Reject existing immutable
+release tag" step, by design. A **rerun of the same GitHub Actions run** (`github.run_attempt > 1`)
+may complete attestation, verification and both scans on the existing digest when the image
+revision label equals the tag commit and the tag has not moved; it does not push a different
+digest under `:X.Y.Z`. A suppression is only acceptable through the documented `.trivyignore`
+process (CVE id, `exp:` date, one-line justification).
 
 Scanning before the push was rejected: it would need an extra single-platform `load` build for each
 platform, doubling release build time, and would still not scan the exact bytes that were pushed.

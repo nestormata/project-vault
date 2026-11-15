@@ -912,6 +912,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.22.0
   - type: `(params: CredentialSharingCreateExternalShareParams) => Promise<CredentialSharingCreateExternalShareResult>`
   - call-signature: `(params: CredentialSharingCreateExternalShareParams): Promise<CredentialSharingCreateExternalShareResult>`
+- member: `externalShareMissMinResponseMs?`
+  - since: 3.44.0
+  - type: `number | undefined`
+  - union-members: `undefined`, `number`
 - member: `findShareByToken`
   - since: 3.22.0
   - type: `(rawToken: string) => Promise<CredentialSharingFindShareByTokenResult>`
@@ -1491,7 +1495,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.43.0"`
+- type: `"3.45.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -1847,6 +1851,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
     - since: 3.22.0
     - type: `(params: CredentialSharingCreateExternalShareParams) => Promise<CredentialSharingCreateExternalShareResult>`
     - call-signature: `(params: CredentialSharingCreateExternalShareParams): Promise<CredentialSharingCreateExternalShareResult>`
+  - member: `externalShareMissMinResponseMs?`
+    - since: 3.44.0
+    - type: `number | undefined`
+    - union-members: `undefined`, `number`
   - member: `findShareByToken`
     - since: 3.22.0
     - type: `(rawToken: string) => Promise<CredentialSharingFindShareByTokenResult>`
@@ -3881,6 +3889,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
       - since: 3.22.0
       - type: `(params: CredentialSharingCreateExternalShareParams) => Promise<CredentialSharingCreateExternalShareResult>`
       - call-signature: `(params: CredentialSharingCreateExternalShareParams): Promise<CredentialSharingCreateExternalShareResult>`
+    - member: `externalShareMissMinResponseMs?`
+      - since: 3.44.0
+      - type: `number | undefined`
+      - union-members: `undefined`, `number`
     - member: `findShareByToken`
       - since: 3.22.0
       - type: `(rawToken: string) => Promise<CredentialSharingFindShareByTokenResult>`

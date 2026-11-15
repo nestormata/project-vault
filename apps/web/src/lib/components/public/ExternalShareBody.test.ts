@@ -24,6 +24,7 @@ const OPEN = {
   credentialId: 'cred-1',
   credentialName: 'Stripe Key',
   sharedByDisplayName: 'morgan',
+  organizationName: 'Acme',
   fieldKey: null,
   attributeKeys: null,
   action: 'read' as const,
@@ -33,6 +34,7 @@ const OPEN = {
 const GATED = {
   credentialName: 'Stripe Key',
   sharedByDisplayName: 'morgan',
+  organizationName: 'Acme',
   expiresAt: '2026-08-01T00:00:00.000Z',
   status: 'active' as const,
   verificationRequired: true,
@@ -58,8 +60,12 @@ describe('ExternalShareBody (Story 72.11 guest verification)', () => {
     expect(revealMock).toHaveBeenCalledWith(expect.anything(), TOKEN, undefined)
   })
 
-  it('a gated share shows the masked address and the code step, and no reveal button', () => {
-    renderBody(GATED)
+  it('a gated share shows the organization name before the code step, and no reveal button', () => {
+    renderBody({
+      ...GATED,
+      organizationName: 'Acme <script>alert(1)</script>',
+    })
+    expect(screen.getByText(/Acme <script>alert\(1\)<\/script>/)).toBeTruthy()
     expect(screen.getByText(/v\*\*\*@e\*\*\*/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Send code' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /reveal secret/i })).toBeNull()

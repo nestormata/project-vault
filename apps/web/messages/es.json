@@ -358,6 +358,7 @@
   "share_reason_revoke_forbidden": "Solo quien lo compartió, o un administrador de la organización, puede revocarlo.",
   "share_reason_already_closed": "Este enlace ya está cerrado.",
   "share_reason_generic": "No se pudo completar la solicitud.",
+  "guest_share_from_org": "{sharer} de {organization} compartió {credential}{scope} contigo.",
   "guest_verify_heading": "Verifica tu correo electrónico",
   "guest_verify_intro": "Enviaremos un código de 6 dígitos a {address}. Introdúcelo aquí para abrir el secreto.",
   "guest_verify_send": "Enviar código",
