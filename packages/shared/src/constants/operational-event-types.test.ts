@@ -263,4 +263,13 @@ describe('OperationalEvent', () => {
     expect(OperationalEvent.ORG_USER_DEACTIVATE_DENIED).toBe('org_user.deactivate_denied')
     expect(OperationalEvent.ORG_USER_REMOVE_DENIED).toBe('org_user.remove_denied')
   })
+
+  it('exposes the Story 73.7 service-endpoint limits event types', () => {
+    expect(OperationalEvent.SERVICE_ENDPOINT_LIMITS_DOUBLE_WIRE_IGNORED).toBe(
+      'service_endpoint_limits.double_wire_ignored'
+    )
+    expect(OperationalEvent.SERVICE_ENDPOINT_LIMITS_UNAVAILABLE).toBe(
+      'service_endpoint_limits.unavailable'
+    )
+  })
 })

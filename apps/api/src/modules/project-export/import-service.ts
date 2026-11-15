@@ -20,6 +20,7 @@ import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
 import type { SecureRouteContext } from '../../lib/secure-route.js'
 import { currentKeyVersion } from '../credentials/db-helpers.js'
+import { assertServiceEndpointCreateAllowed } from '../monitoring/service.js'
 import { enableStatusPage, updateStatusPageServices } from '../monitoring/status-page-service.js'
 import { createProject } from '../projects/routes.js'
 import { resolveImportProjectName } from './import-name.js'
@@ -113,7 +114,12 @@ type ImportAuth = SecureRouteContext['auth']
 /** Every per-entity-group insert helper below shares this shape: the transaction, the importing
  *  user's auth context, and the newly created project's id. Factored out so each helper's own
  *  signature stays short. */
-type ImportTarget = { tx: ImportTx; auth: ImportAuth; projectId: string }
+type ImportTarget = {
+  tx: ImportTx
+  auth: ImportAuth
+  projectId: string
+  logger: Parameters<typeof createProject>[2]
+}
 
 type InsertedCredentials = { newCredentialIds: string[]; newVersionIdByKey: Map<string, string> }
 
@@ -353,6 +359,12 @@ async function insertServiceEndpointsAndStatusPage(
   const { tx, auth, projectId } = target
   const newServiceIds: string[] = []
   await forEachSequential(bundle.serviceEndpoints, async (s) => {
+    await assertServiceEndpointCreateAllowed(tx, {
+      orgId: auth.orgId,
+      projectId,
+      intervalSeconds: s.checkFrequencyMinutes * 60,
+      logger: target.logger,
+    })
     const [row] = await tx
       .insert(serviceEndpoints)
       .values({
@@ -451,6 +463,7 @@ export async function importProjectBundle(
     tx: secureCtx.tx,
     auth: secureCtx.auth,
     projectId: created.project.id,
+    logger: params.logger,
   }
 
   const { newCredentialIds, newVersionIdByKey } = await insertCredentialsAndVersions(target, bundle)

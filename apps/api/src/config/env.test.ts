@@ -278,6 +278,9 @@ describe('env', () => {
     expect(env.FAILED_AUTH_RETENTION_HOURS).toBe(24)
     expect(env.FAILED_AUTH_RECORD_ENABLED).toBe(true)
     expect(env.MAX_SERVICE_ENDPOINTS_PER_PROJECT).toBe(25)
+    expect(env.SERVICE_ENDPOINT_HEALTH_CHECKS_ENABLED).toBeUndefined()
+    expect(env.SERVICE_ENDPOINT_MAX_ENDPOINTS).toBeUndefined()
+    expect(env.SERVICE_ENDPOINT_MIN_CHECK_INTERVAL_SECONDS).toBeUndefined()
     expect(env.HEALTH_CHECK_MAX_CONCURRENCY).toBe(20)
     expect(env.ANOMALOUS_ACCESS_THRESHOLD_COUNT).toBe(5)
     expect(env.ANOMALOUS_ACCESS_WINDOW_SECONDS).toBe(3600)
@@ -1233,6 +1236,34 @@ describe('env', () => {
       expect(env.SMTP_PASS).toBe('pass')
       expect(env.SMTP_FROM).toBe(SMTP_FROM_FIXTURE)
       expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('treats empty Story 73.7 service-endpoint limit env as unset (default open)', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SERVICE_ENDPOINT_HEALTH_CHECKS_ENABLED: '',
+        SERVICE_ENDPOINT_MAX_ENDPOINTS: '',
+        SERVICE_ENDPOINT_MIN_CHECK_INTERVAL_SECONDS: '',
+      }
+      const { env } = await import('./env.js')
+      expect(env.SERVICE_ENDPOINT_HEALTH_CHECKS_ENABLED).toBeUndefined()
+      expect(env.SERVICE_ENDPOINT_MAX_ENDPOINTS).toBeUndefined()
+      expect(env.SERVICE_ENDPOINT_MIN_CHECK_INTERVAL_SECONDS).toBeUndefined()
+    })
+
+    it('parses Story 73.7 restricted service-endpoint limit env', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SERVICE_ENDPOINT_HEALTH_CHECKS_ENABLED: 'false',
+        SERVICE_ENDPOINT_MAX_ENDPOINTS: '3',
+        SERVICE_ENDPOINT_MIN_CHECK_INTERVAL_SECONDS: '300',
+      }
+      const { env } = await import('./env.js')
+      expect(env.SERVICE_ENDPOINT_HEALTH_CHECKS_ENABLED).toBe(false)
+      expect(env.SERVICE_ENDPOINT_MAX_ENDPOINTS).toBe(3)
+      expect(env.SERVICE_ENDPOINT_MIN_CHECK_INTERVAL_SECONDS).toBe(300)
     })
 
     it('treats an empty-string SMTP_SECURE as unset (undefined), rather than false', async () => {
