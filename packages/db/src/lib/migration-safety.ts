@@ -434,4 +434,9 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // handoff_pending_states, without CASCADE, and nothing else.
   '0109_drop_handoff_pending_states':
     'Story 73.1 D7 human-approved (Nestor, 2026-10-30) drop of the retired handoff_pending_states table: no code reads or writes it since 73.1 and its rows lived 120 s; paired migration safety test proves a single DROP TABLE of that table with no CASCADE and nothing else.',
+  // Story 73.4 D3/D5: additive identity_revocation_jti table plus a SECURITY DEFINER lookup so
+  // vault_app can resolve (provider, subject) across orgs inside one RLS-bound transaction.
+  // The only privilege statements are REVOKE/GRANT EXECUTE on that new function.
+  '0114_identity_revocation_jti':
+    'Story 73.4 reviewed GRANT EXECUTE (and REVOKE FROM PUBLIC) on lookup_external_identities_by_subject; paired migration safety test proves one new burn-ledger table, no ALTER of pre-existing tables, and no table-level GRANT.',
 }
