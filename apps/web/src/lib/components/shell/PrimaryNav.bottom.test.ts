@@ -87,15 +87,20 @@ describe('PrimaryNav variant="bottom"', () => {
     }
   )
 
+  async function afterFocusHide() {
+    await Promise.resolve()
+    await tick()
+  }
+
   it('hides while a text field has focus and returns on blur', async () => {
     render(PrimaryNav, { props: { variant: 'bottom' } })
     const input = document.createElement('input')
     document.body.append(input)
     input.focus()
-    await tick()
+    await afterFocusHide()
     expect(screen.queryByTestId('bottom-bar')).toBeNull()
     input.blur()
-    await tick()
+    await afterFocusHide()
     expect(screen.queryByTestId('bottom-bar')).not.toBeNull()
     input.remove()
   })
@@ -106,7 +111,7 @@ describe('PrimaryNav variant="bottom"', () => {
     box.type = 'checkbox'
     document.body.append(box)
     box.focus()
-    await tick()
+    await afterFocusHide()
     expect(screen.queryByTestId('bottom-bar')).not.toBeNull()
     box.remove()
   })
