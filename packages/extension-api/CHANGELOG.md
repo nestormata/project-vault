@@ -2,6 +2,38 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.45.0 — 2026-11-15
+
+contract-hash: sha256:0939c060fe9393534d946a97b5c26dbad00e78e0bcfd9704ee34e48af96322cc
+
+Story 73.7. Optional `serviceEndpointLimits` resolver and `'service-endpoint-limits'` capability.
+The host applies numeric health-check limits on service-endpoint create and update. Omitted fields
+stay default-open. A registered resolver replaces static env and never replaces
+`MAX_SERVICE_ENDPOINTS_PER_PROJECT`. Throw, timeout, or a malformed object fail closed on create
+and on updates that raise probing intensity.
+
+### Added
+
+- Types `ServiceEndpointLimits`, `ServiceEndpointLimitsContext`, and `ServiceEndpointLimitsResolver`.
+- Optional `ExtensionHooks.serviceEndpointLimits`.
+- Manifest capability `'service-endpoint-limits'`. Declaring it without a callable resolver fails
+  registration.
+
+### Deprecated
+
+3.45.0 does not start a new deprecation. Marker lint still needs the 3.30.0 frozen set named here:
+legacy panel types `UIPanel` `UIPanelContext` `UIPanelResult`; action types `ModuleAction`
+`ModuleActionContext` `ModuleActionRequest` `ActionResult`; data-route types
+`ModuleDataRequestContext` `ModuleDataResult` `ModuleDataRouteHandler` `ModuleDataRouteDeclaration`;
+nav type `ExtensionNavItem`. Frozen manifest keys remain `uiPanelSlots`, `moduleActions`,
+`navItems`, `moduleDataRoutes`. Frozen hooks remain `uiPanel`, `moduleAction`, `moduleData`, plus
+capability `'ui-panel'`. Use `ExtensionRequestContext` / `ExtensionActionResult`, composed UI, or
+M7 `apiRoutes` instead.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.45.0 adds none).
+
 ## 3.44.0 — 2026-11-11
 
 contract-hash: sha256:40045daa8ce8166d0308f3eba5655a9cf9000d4860d8c55c244dcc187214d7e6
@@ -9,7 +41,8 @@ contract-hash: sha256:40045daa8ce8166d0308f3eba5655a9cf9000d4860d8c55c244dcc1872
 Story 65.8. Additive. Hosts that natively hold external-share miss timing publish the hold in
 milliseconds on `HostServices.credentialSharing`. Older hosts omit the field. Consumers must keep
 their own floor when it is missing; never treat 0 as a published hold, and never infer from
-package version or a timing probe. 3.43.0 is reserved for PR #697.
+package version or a timing probe. 3.43.0 was reserved for PR #697 while both were open; 73-7
+lands as 3.45.0 after this release.
 
 ### Added
 

@@ -159,15 +159,21 @@ describe('checkProjectWriteRoles (Story 69.18)', () => {
 })
 
 describe('checkCredentialSharingMachineUserMode (Story 73.9)', () => {
-  it.each(['3.39.0', '3.39.7', '3.40.0', '3.41.0', '3.42.0', '4.0.0', EXTENSION_API_VERSION])(
-    '%s gets the host-managed machine user',
-    (apiVersion) => {
-      expect(checkCredentialSharingMachineUserMode({ apiVersion })).toEqual({
-        mode: 'host-managed',
-        reason: 'declared_since',
-      })
-    }
-  )
+  it.each([
+    '3.39.0',
+    '3.39.7',
+    '3.40.0',
+    '3.41.0',
+    '3.42.0',
+    '3.43.0',
+    '4.0.0',
+    EXTENSION_API_VERSION,
+  ])('%s gets the host-managed machine user', (apiVersion) => {
+    expect(checkCredentialSharingMachineUserMode({ apiVersion })).toEqual({
+      mode: 'host-managed',
+      reason: 'declared_since',
+    })
+  })
 
   it.each(['3.38.0', '3.38.9', '3.38.1000', '3.22.0', '2.99.99', '2.1000000.0'])(
     '%s keeps admin-provisioned machine users only',

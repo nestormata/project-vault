@@ -14,6 +14,7 @@ import {
   writeHumanAuditEntryOrFailClosed,
   type SameTransactionAuditInput,
 } from '../../lib/audit-or-fail-closed.js'
+import { serviceEndpointLimitsHttpError } from '../../lib/service-endpoint-limits.js'
 import { rejectIfProjectArchived } from '../projects/archive-guards.js'
 import { findProjectInOrg } from '../credentials/service.js'
 import {
@@ -114,6 +115,11 @@ function sendServiceEndpointWriteError(reply: FastifyReply, error: unknown): boo
   }
   if (error instanceof ServiceEndpointLimitReachedError) {
     reply.status(422).send({ code: error.code, message: error.message })
+    return true
+  }
+  const limits = serviceEndpointLimitsHttpError(error)
+  if (limits) {
+    reply.status(limits.status).send({ code: limits.code, message: limits.message })
     return true
   }
   return false
@@ -949,6 +955,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
+        503: ApiErrorSchema,
       },
     },
     security: {
@@ -976,6 +983,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
           projectId: params.projectId,
           userId: secureCtx.auth.userId,
           body,
+          logger: req.log,
         })
       } catch (error) {
         if (sendServiceEndpointWriteError(reply, error)) return reply
@@ -1039,6 +1047,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
+        503: ApiErrorSchema,
       },
     },
     security: {
@@ -1067,6 +1076,7 @@ export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
           userId: secureCtx.auth.userId,
           body,
           rawBody: rawBodyOf(req),
+          logger: req.log,
         })
       } catch (error) {
         if (sendServiceEndpointWriteError(reply, error)) return reply

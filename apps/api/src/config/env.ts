@@ -1361,6 +1361,23 @@ const envSchema = z
     // Story 6.2 ADR-6.2-09: hard per-project registration cap — bounds worst-case exposure
     // (registered-endpoint count x per-check timeout x per-tick concurrency).
     MAX_SERVICE_ENDPOINTS_PER_PROJECT: z.coerce.number().int().min(1).max(1000).default(25),
+    // Story 73.7 — optional org-wide overlay. Empty/unset is default-open. A registered
+    // serviceEndpointLimits resolver replaces these three; it never replaces the per-project cap.
+    SERVICE_ENDPOINT_HEALTH_CHECKS_ENABLED: z.preprocess(
+      (v) => (v === '' ? undefined : String(v)),
+      z
+        .enum(['true', 'false'])
+        .transform((v) => v === 'true')
+        .optional()
+    ),
+    SERVICE_ENDPOINT_MAX_ENDPOINTS: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.coerce.number().int().min(1).max(100000).optional()
+    ),
+    SERVICE_ENDPOINT_MIN_CHECK_INTERVAL_SECONDS: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.coerce.number().int().min(1).max(86400).optional()
+    ),
     // Story 6.2 ADR-6.2-09: bounded per-tick concurrency so a large due-batch can't blow past
     // the 60-second health-check tick interval.
     HEALTH_CHECK_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(20),

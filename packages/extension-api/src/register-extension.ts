@@ -31,6 +31,7 @@ import type { NotificationChannel } from './hooks/notification-channel.js'
 import type { UIPanel } from './hooks/ui-panel.js'
 import type { ModuleAction } from './hooks/module-action.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
+import type { ServiceEndpointLimitsResolver } from './hooks/service-endpoint-limits.js'
 import type { DeliveryProvider } from './hooks/delivery-provider.js'
 import type { OAuthHandoffHooks } from './hooks/oauth-handoff.js'
 import type { PublicRouteHooks } from './hooks/public-route.js'
@@ -78,6 +79,11 @@ export type ExtensionHooks = {
    */
   uiPanel?: UIPanel
   capabilityGate?: CapabilityGate
+  /**
+   * Story 73.7 — optional numeric limits for service-endpoint create/update. Legal when the
+   * manifest declares `'service-endpoint-limits'`. Omitted means default open.
+   */
+  serviceEndpointLimits?: ServiceEndpointLimitsResolver
   projectLifecycle?: ProjectCreatePolicy
   /**
    * Story 35.1 AC1 — a pure, non-vetoing notification target for
@@ -1438,6 +1444,17 @@ function hasCallableScheduledTaskHook(manifest: ExtensionManifest, hooks: Extens
   )
 }
 
+function hasCallableServiceEndpointLimitsHook(
+  manifest: ExtensionManifest,
+  hooks: ExtensionHooks
+): boolean {
+  if (!manifest.capabilities.includes('service-endpoint-limits')) return true
+  return (
+    hooks.serviceEndpointLimits !== undefined &&
+    typeof hooks.serviceEndpointLimits.onResolveServiceEndpointLimits === 'function'
+  )
+}
+
 /**
  * Post-`hooksFactory()` callability checks, grouped into one function purely to keep
  * `registerExtension`'s own cyclomatic complexity within this repo's lint budget — behaviorally
@@ -1547,6 +1564,13 @@ function assertLateAdditionCallableHooksAfterFactory(
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       'Extension manifest declares "scheduledTasks" but hooksFactory() did not return a callable scheduledTask hook'
+    )
+  }
+
+  if (!hasCallableServiceEndpointLimitsHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "service-endpoint-limits" but hooksFactory() did not return a callable serviceEndpointLimits hook'
     )
   }
 }
