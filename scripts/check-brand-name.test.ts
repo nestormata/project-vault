@@ -189,6 +189,24 @@ describe('check-brand-name: mutation self-tests (Story 72.16 AC-2)', () => {
     ])
   })
 
+  it('fails HTML optional-semicolon named refs and keeps SVG requiring a semicolon', () => {
+    expect(problems({ 'src/app.html': '<title>Project&nbspVault</title>' })).toEqual([
+      `src/app.html:1: hard-codes "${BRAND_LITERAL}"; read m.brand_name()`,
+    ])
+    expect(
+      problems({
+        'static/logo.svg':
+          '<svg xmlns="http://www.w3.org/2000/svg"><text>Project&nbspVault</text></svg>\n',
+      })
+    ).toEqual([])
+    expect(
+      problems({
+        'static/manifest.json': JSON.stringify({ name: 'Project&nbspVault' }),
+      })
+    ).toEqual([])
+    expect(problems({ 'src/b.ts': "export const t = 'Project&nbspVault'\n" })).toEqual([])
+  })
+
   it('reports invalid JSON in a scanned manifest and still ignores a missing static dir', () => {
     expect(problems({ 'static/manifest.json': '{ not json' })).toEqual([
       'static/manifest.json: not valid JSON',

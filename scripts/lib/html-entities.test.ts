@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest'
 import {
   HTML5_NAMED_ENTITY_COUNT,
   HTML5_NAMED_ENTITY_SOURCE,
+  HTML5_OPTIONAL_SEMICOLON_NAMED_ENTITY_COUNT,
   decodeHtmlEntities,
 } from './html-entities.js'
 
 const BRAND_PATTERN = /project[\s\u00a0]+vault/i
 const ENCODED_NBSP = 'Project&nbsp;Vault'
+const ENCODED_NBSP_NO_SEMI = 'Project&nbspVault'
 const ENCODED_THIN_SPACE = 'Project&ThinSpace;Vault'
 const DECODED_NBSP = 'Project\u00a0Vault'
 const DECODED_NAME = 'Project Vault'
@@ -61,7 +63,7 @@ describe('decodeHtmlEntities', () => {
 
   it('leaves unknown names, unterminated refs and plain text unchanged', () => {
     expect(decodeHtmlEntities('Project&notanentity;Vault')).toBe('Project&notanentity;Vault')
-    expect(decodeHtmlEntities('Project&nbspVault')).toBe('Project&nbspVault')
+    expect(decodeHtmlEntities(ENCODED_NBSP_NO_SEMI)).toBe(ENCODED_NBSP_NO_SEMI)
     expect(decodeHtmlEntities(DECODED_NAME)).toBe(DECODED_NAME)
   })
 
@@ -95,5 +97,43 @@ describe('decodeHtmlEntities', () => {
   it('pins the generated WHATWG semicolon-terminated table', () => {
     expect(HTML5_NAMED_ENTITY_SOURCE).toBe('https://html.spec.whatwg.org/entities.json')
     expect(HTML5_NAMED_ENTITY_COUNT).toBe(2125)
+  })
+})
+
+describe('decodeHtmlEntities html mode (optional semicolon)', () => {
+  it('decodes WHATWG optional-semicolon names without a terminating semicolon', () => {
+    expect(decodeHtmlEntities(ENCODED_NBSP_NO_SEMI, 'html')).toBe(DECODED_NBSP)
+    expect(decodeHtmlEntities('&amp', 'html')).toBe('&')
+    expect(decodeHtmlEntities('&AMP', 'html')).toBe('&')
+    expect(decodeHtmlEntities('&nbsp;', 'html')).toBe('\u00a0')
+  })
+
+  it('keeps semicolon-only names and the default xml mode unchanged', () => {
+    expect(decodeHtmlEntities(ENCODED_NBSP_NO_SEMI)).toBe(ENCODED_NBSP_NO_SEMI)
+    expect(decodeHtmlEntities(ENCODED_NBSP_NO_SEMI, 'xml')).toBe(ENCODED_NBSP_NO_SEMI)
+    expect(decodeHtmlEntities('&ohm', 'html')).toBe('&ohm')
+    expect(decodeHtmlEntities('&ThinSpace', 'html')).toBe('&ThinSpace')
+    expect(decodeHtmlEntities('&ohm;', 'html')).toBe('\u03A9')
+  })
+
+  it('uses the longest optional-semicolon prefix and stays a single pass', () => {
+    expect(decodeHtmlEntities('&notit', 'html')).toBe('\u00ACit')
+    expect(decodeHtmlEntities('&ampnbsp', 'html')).toBe('&nbsp')
+    expect(decodeHtmlEntities('Project&amp;nbspVault', 'html')).toBe(ENCODED_NBSP_NO_SEMI)
+  })
+
+  it('still requires a semicolon on numeric references in html mode', () => {
+    expect(decodeHtmlEntities('Project&#160Vault', 'html')).toBe('Project&#160Vault')
+    expect(decodeHtmlEntities('Project&#160;Vault', 'html')).toBe(DECODED_NBSP)
+  })
+
+  it('pins the generated WHATWG optional-semicolon table', () => {
+    expect(HTML5_OPTIONAL_SEMICOLON_NAMED_ENTITY_COUNT).toBe(106)
+  })
+
+  it('mutation: html optional-semicolon nbsp is invisible to the brand pattern until decode', () => {
+    expect(BRAND_PATTERN.test(ENCODED_NBSP_NO_SEMI)).toBe(false)
+    expect(BRAND_PATTERN.test(decodeHtmlEntities(ENCODED_NBSP_NO_SEMI, 'html'))).toBe(true)
+    expect(BRAND_PATTERN.test(decodeHtmlEntities(ENCODED_NBSP_NO_SEMI, 'xml'))).toBe(false)
   })
 })
