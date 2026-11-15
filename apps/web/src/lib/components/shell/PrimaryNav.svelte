@@ -65,13 +65,22 @@
   const barVisible = $derived(!isTaskPage(page.url.pathname) && !textFocused)
   $effect(() => {
     if (variant !== 'bottom') return
+    // Story 73.15: `HTMLElement.focus()` fires `focusin` synchronously. The palette `$effect`
+    // calls `trapFocus`, which focuses the search field during that reaction. Writing `textFocused`
+    // here in the same turn is Svelte `state_unsafe_mutation`. A microtask keeps F-23 (hide while
+    // a text field has focus) without mutating during a foreign reaction.
+    let cancelled = false
     function onFocusChange() {
-      textFocused = isTextEntry(document.activeElement)
+      queueMicrotask(() => {
+        if (cancelled) return
+        textFocused = isTextEntry(document.activeElement)
+      })
     }
     onFocusChange()
     document.addEventListener('focusin', onFocusChange)
     document.addEventListener('focusout', onFocusChange)
     return () => {
+      cancelled = true
       document.removeEventListener('focusin', onFocusChange)
       document.removeEventListener('focusout', onFocusChange)
     }
