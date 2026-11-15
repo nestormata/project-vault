@@ -1939,6 +1939,95 @@ describe('credential detail +page.svelte', () => {
     // `resolveShareAttributeKeys`, but one AC-2's sensitivity-default-exclusion always reveals as
     // an empty field set. Submitting it must be blocked with guidance, not silently create a share
     // that can never disclose anything.
+    it('Story 73-17: schema_version=1 value checkbox is shown unchecked; checking it posts attributeKeys value', async () => {
+      createCredentialShareMock.mockResolvedValue({
+        id: 'share-1',
+        credentialId,
+        fieldKey: null,
+        sharedBy: 'sharer-1',
+        recipientUserId: 'recipient-1',
+        singleUse: true,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        expiresAt: '2026-07-29T00:00:00.000Z',
+        revokedAt: null,
+        firstViewedAt: null,
+        viewCount: 0,
+        status: 'active',
+        token: 'raw-one-time-token',
+      })
+      render(CredentialDetailPage, { props: { data: baseData() } })
+
+      const valueCheckbox = screen.getByRole('checkbox', { name: /value/i }) as HTMLInputElement
+      expect(valueCheckbox.checked).toBe(false)
+      expect(screen.getByText(/excluded by default/i)).toBeTruthy()
+
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+      expect(await screen.findByText(/every field on this secret is sensitive/i)).toBeTruthy()
+      expect(createCredentialShareMock).not.toHaveBeenCalled()
+
+      await fireEvent.click(valueCheckbox)
+      expect(valueCheckbox.checked).toBe(true)
+      await fireEvent.click(valueCheckbox)
+      expect(valueCheckbox.checked).toBe(false)
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+      expect(await screen.findByText(/every field on this secret is sensitive/i)).toBeTruthy()
+      expect(createCredentialShareMock).not.toHaveBeenCalled()
+
+      await fireEvent.click(valueCheckbox)
+      expect(valueCheckbox.checked).toBe(true)
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+      expect(createCredentialShareMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        expect.objectContaining({ attributeKeys: ['value'] })
+      )
+    })
+
+    it('Story 73-17: external path posts attributeKeys value after the checkbox is checked', async () => {
+      createExternalCredentialShareMock.mockResolvedValue({
+        id: 'share-ext-1',
+        credentialId,
+        fieldKey: null,
+        sharedBy: 'sharer-1',
+        recipientType: 'external',
+        recipientUserId: null,
+        recipientEmail: 'priya@vendor.example',
+        singleUse: true,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        expiresAt: '2026-07-28T01:00:00.000Z',
+        revokedAt: null,
+        firstViewedAt: null,
+        viewCount: 0,
+        status: 'active',
+        token: 'raw-external-token',
+      })
+      render(CredentialDetailPage, { props: { data: baseData() } })
+
+      await fireEvent.click(screen.getByRole('button', { name: /external \(email\)/i }))
+      await fireEvent.input(screen.getByLabelText(/recipient email/i), {
+        target: { value: 'priya@vendor.example' },
+      })
+      await fireEvent.input(screen.getByLabelText(/confirm your password/i), {
+        target: { value: 'sharer-password' },
+      })
+      await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      expect(createExternalCredentialShareMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        expect.objectContaining({
+          recipientEmail: 'priya@vendor.example',
+          attributeKeys: ['value'],
+        })
+      )
+    })
+
     it('Story 20.5 AC-9 bugfix: blocks creating a share when every field is sensitive and none is explicitly checked', async () => {
       render(CredentialDetailPage, {
         props: {

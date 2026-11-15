@@ -687,11 +687,9 @@ export async function addCredentialVersion(
 }
 
 /**
- * Story 13.3 Subtask 2.3/AC-7 — validates a requested `?field=` against the REAL field_meta
- * before any decrypt/audit-write occurs. A genuine schema_version = 1 legacy row has no
- * field_meta at all, so ANY `?field=` name is rejected (AC-6's lookalike-case distinction); a
- * schema_version >= 2 row (single- or multi-field) is validated against its actual declared keys.
- * Returns `undefined` when the field is absent or valid; the offending key when invalid.
+ * Validates a requested `?field=` against the same declared keys the detail body and share
+ * create use (`fieldMetaForResponse`). Schema_version 1 synthesizes `value`. Totp seeds stay
+ * write-only. Returns `undefined` when the field is absent or valid; the offending key when invalid.
  */
 function invalidRequestedField(
   field: string | undefined,
@@ -699,13 +697,10 @@ function invalidRequestedField(
   fieldMeta: unknown
 ): string | undefined {
   if (field === undefined) return undefined
-  if (schemaVersion < 2) return field
-  // Story 72.10: a `totp` seed is write-only, so asking for that field by name answers exactly as
-  // for a key the secret does not have.
   const declaredKeys = fieldMetaForResponse(schemaVersion, fieldMeta)
     .filter((item) => item.kind !== 'totp')
-    .map((item) => item.key)
-  return declaredKeys.includes(field) ? undefined : field
+    .map((item) => normalizeFieldKey(item.key))
+  return declaredKeys.includes(normalizeFieldKey(field)) ? undefined : field
 }
 
 // Story 72.10: `totp` seeds are write-only. They are dropped here, before any branch of the reveal,

@@ -2,8 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { apiKeys, auditLogEntries, credentialVersions } from '@project-vault/db/schema'
-import { encryptValue } from '../../lib/encrypt-value.js'
+import { apiKeys, auditLogEntries } from '@project-vault/db/schema'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -11,6 +10,7 @@ import {
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
+import { rewriteCurrentVersionAsLegacyBareValue } from '../credentials/credential-route-test-helpers.js'
 import { bootMachineUserRouteTestApp } from './machine-user-route-test-bootstrap.js'
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
@@ -166,19 +166,7 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
         'LEGACY_URL',
         'seed'
       )
-      // rewrite the version into a genuine legacy bare-string row
-      const legacyCiphertext = await encryptValue('postgres://legacy-bare')
-      await withOrg(owner.orgId, (tx) =>
-        tx
-          .update(credentialVersions)
-          .set({ schemaVersion: 1, fieldMeta: null, encryptedValue: legacyCiphertext })
-          .where(
-            and(
-              eq(credentialVersions.credentialId, credId),
-              eq(credentialVersions.versionNumber, 1)
-            )
-          )
-      )
+      await rewriteCurrentVersionAsLegacyBareValue(owner.orgId, credId, 'postgres://legacy-bare')
       const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
       const jwt = await exchangeForMachineJwt(app, key)
 
@@ -485,9 +473,9 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
       const { status, payload } = await revealAndReadAuditPayload('absent', {})
 
       expect(status).toBe(200)
-      expect(Object.keys(payload).sort()).toEqual(
-        ['keyId', 'machineUserId', 'name', 'versionNumber'].sort()
-      )
+      const payloadKeys = Object.keys(payload)
+      payloadKeys.sort((left, right) => left.localeCompare(right))
+      expect(payloadKeys).toEqual(['keyId', 'machineUserId', 'name', 'versionNumber'])
     })
 
     it.each([
@@ -699,22 +687,11 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
       expect(res.statusCode).toBe(422)
     })
 
-    it('AC-6: legacy schema_version=1 reveal via ?field= is rejected 400 (no field_meta to match)', async () => {
+    it('Story 73-17: legacy schema_version=1 reveal via ?field=value returns the bare secret', async () => {
       const owner = await registerOwner(app, 'field-legacy')
       const projectId = await createProjectViaApi(app, owner.cookies, 'machine-field-legacy')
       const credId = await createCredentialViaApi(app, owner.cookies, projectId, 'LEGACY2', 'seed')
-      const legacyCiphertext = await encryptValue('legacy-bare-value')
-      await withOrg(owner.orgId, (tx) =>
-        tx
-          .update(credentialVersions)
-          .set({ schemaVersion: 1, fieldMeta: null, encryptedValue: legacyCiphertext })
-          .where(
-            and(
-              eq(credentialVersions.credentialId, credId),
-              eq(credentialVersions.versionNumber, 1)
-            )
-          )
-      )
+      await rewriteCurrentVersionAsLegacyBareValue(owner.orgId, credId, 'legacy-bare-value')
       const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
       const jwt = await exchangeForMachineJwt(app, key)
 
@@ -723,8 +700,8 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
         url: `${machineCredentialValueUrl(projectId, 'LEGACY2')}?field=value`,
         headers: { authorization: `Bearer ${jwt}` },
       })
-      expect(res.statusCode).toBe(400)
-      expect(res.json()).toMatchObject({ code: 'unknown_field_key' })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({ data: { value: 'legacy-bare-value' } })
     })
   })
 })

@@ -1,12 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import FormData from 'form-data'
 import { expect } from 'vitest'
+import { and, eq } from 'drizzle-orm'
+import { withOrg } from '@project-vault/db'
+import { credentialVersions } from '@project-vault/db/schema'
 import type { createApp } from '../../app.js'
 import {
   cookieHeader,
   initVaultForTest,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import { encryptValue } from '../../lib/encrypt-value.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 
 export type CredentialRouteTestApp = Awaited<ReturnType<typeof createApp>>
@@ -45,6 +49,26 @@ export async function createCredentialViaApi(
   })
   expect(response.statusCode).toBe(201)
   return response.json<{ data: { id: string } }>().data
+}
+
+/** Rewrites version 1 into a genuine schema_version=1 row (bare ciphertext, null field_meta). */
+export async function rewriteCurrentVersionAsLegacyBareValue(
+  orgId: string,
+  credentialId: string,
+  bareValue: string
+): Promise<void> {
+  const legacyCiphertext = await encryptValue(bareValue)
+  await withOrg(orgId, (tx) =>
+    tx
+      .update(credentialVersions)
+      .set({ schemaVersion: 1, fieldMeta: null, encryptedValue: legacyCiphertext })
+      .where(
+        and(
+          eq(credentialVersions.credentialId, credentialId),
+          eq(credentialVersions.versionNumber, 1)
+        )
+      )
+  )
 }
 
 /** Story 20.5 (review patch): a mixed sensitive/non-sensitive multi-field credential, needed by

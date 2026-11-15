@@ -17,6 +17,7 @@ import {
   createCredentialTestProject,
   createCredentialViaApi,
   createSharingMultiFieldFixture,
+  rewriteCurrentVersionAsLegacyBareValue,
 } from '../credentials/credential-route-test-helpers.js'
 import * as dispatcher from '../../notifications/dispatcher.js'
 import { flushPendingLosingAttempts } from './external-service.js'
@@ -122,6 +123,29 @@ describe('external credential-shares routes', () => {
     const linkOnly = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
     expect(linkOnly.statusCode).toBe(404)
     expect(linkOnly.json<{ code: string }>().code).toBe('share_not_found')
+  })
+
+  it('Story 73-17: genuine schema_version=1 external share of attributeKeys value reveals the bare secret', async () => {
+    const { sharer, projectId, credentialId } = await createFixture('legacy-v1-ext')
+    const legacyBare = 'legacy-v1-external-bare'
+    await rewriteCurrentVersionAsLegacyBareValue(sharer.orgId, credentialId, legacyBare)
+    const create = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {
+      attributeKeys: ['value'],
+    })
+    expect(create.statusCode).toBe(201)
+    expect(create.json<{ data: { attributeKeys: string[] | null } }>().data.attributeKeys).toEqual([
+      'value',
+    ])
+    const { token } = create.json<{ data: { token: string } }>().data
+    const reveal = await app.inject({
+      method: 'POST',
+      url: accessUrl(token, '/reveal'),
+      payload: await revealPayload(sharer.orgId, token),
+    })
+    expect(reveal.statusCode).toBe(200)
+    const body = reveal.json<{ data: { value: string; valueFormat: string } }>()
+    expect(body.data.value).toBe(legacyBare)
+    expect(body.data.valueFormat).toBe('scalar')
   })
 
   it('AC-1/AC-5/AC-11: creates an external share with recipient_type=external, singleUse hard-coded true, and audits creation', async () => {
