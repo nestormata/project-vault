@@ -1,10 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import {
-  AuditEvent,
-  deriveShareDisplayStatus,
-  normalizeFieldKey,
-  ShareApiErrorSchema,
-} from '@project-vault/shared'
+import { AuditEvent, normalizeFieldKey, ShareApiErrorSchema } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import {
@@ -57,6 +52,7 @@ import {
   findShareInScope,
   listSharesForCredential,
   revokeShare,
+  shareDisplayStatusFields,
   shareRecipientAndTimingFields,
   type CredentialShareRow,
 } from './service.js'
@@ -165,9 +161,7 @@ export function serializeShare(share: CredentialShareRow) {
     firstViewedAt: share.firstViewedAt?.toISOString() ?? null,
     viewCount: share.viewCount,
     status: share.status,
-    displayStatus: deriveShareDisplayStatus(share),
-    lockedAt: share.lockedAt?.toISOString() ?? null,
-    verificationRequired: share.verificationRequired,
+    ...shareDisplayStatusFields(share),
   }
 }
 

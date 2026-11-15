@@ -2,6 +2,36 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.46.0 — 2026-11-15
+
+contract-hash: sha256:c94efba5346086320fc46876c825852ade907eb47ebc50b024d528973034f52e
+
+Story 73.16. Additive. `CredentialSharingShareRecord` carries optional `lockedAt`, `displayStatus`
+and `verificationRequired`, matching HTTP share summaries. Hosts older than 3.46.0 omit the keys.
+This host always serializes them. `displayStatus` uses the same vocabulary as
+`@project-vault/shared` `ShareDisplayStatus`. Do not infer from package version.
+
+### Added
+
+- `CredentialSharingShareRecord.lockedAt?: string | null` (ISO-8601 or null).
+- `CredentialSharingShareRecord.displayStatus?: 'active' | 'opened' | 'locked' | 'revoked' | 'expired' | 'superseded'`.
+- `CredentialSharingShareRecord.verificationRequired?: boolean`.
+
+### Deprecated
+
+3.46.0 does not start a new deprecation. Marker lint still needs the 3.30.0 frozen set named here:
+legacy panel types `UIPanel` `UIPanelContext` `UIPanelResult`; action types `ModuleAction`
+`ModuleActionContext` `ModuleActionRequest` `ActionResult`; data-route types
+`ModuleDataRequestContext` `ModuleDataResult` `ModuleDataRouteHandler` `ModuleDataRouteDeclaration`;
+nav type `ExtensionNavItem`. Frozen manifest keys remain `uiPanelSlots`, `moduleActions`,
+`navItems`, `moduleDataRoutes`. Frozen hooks remain `uiPanel`, `moduleAction`, `moduleData`, plus
+capability `'ui-panel'`. Use `ExtensionRequestContext` / `ExtensionActionResult`, composed UI, or
+M7 `apiRoutes` instead.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.46.0 adds none).
+
 ## 3.45.0 — 2026-11-15
 
 contract-hash: sha256:0939c060fe9393534d946a97b5c26dbad00e78e0bcfd9704ee34e48af96322cc

@@ -678,7 +678,10 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // Story 73.7 — bumped as a minor (3.44.0 -> 3.45.0): optional `serviceEndpointLimits` hook and
 // `'service-endpoint-limits'` capability (policy rows 1, 6, 11). Default-open when omitted.
 // 3.43.0 was reserved while #697 and 65-8 were both open; 65-8 shipped 3.44.0, so 73-7 takes 3.45.0.
-export const EXTENSION_API_VERSION = '3.45.0'
+// Story 73.16 — bumped as a minor (3.45.0 -> 3.46.0): optional `lockedAt`, `displayStatus` and
+// `verificationRequired` on `CredentialSharingShareRecord` (policy row 1). Same JSON as HTTP
+// share summaries. A host older than 3.46.0 omits the keys.
+export const EXTENSION_API_VERSION = '3.46.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

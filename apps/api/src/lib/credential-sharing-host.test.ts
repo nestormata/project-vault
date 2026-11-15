@@ -152,6 +152,8 @@ const SHARE_ROW = {
   viewCount: 0,
   status: 'active' as const,
   revealAttemptCount: 0,
+  lockedAt: null,
+  verificationRequired: false,
 }
 
 /** Builds a fake drizzle-select chain resolving to `rows` at `.where()`, mirroring the
@@ -1383,6 +1385,81 @@ describe('Story 65.6 AC3/AC3b: sharedBy on every extension share record', () => 
     expect(await host.findShareByToken(VALID_TOKEN)).toMatchObject({ share: { sharedBy: USER_U } })
     expect(await host.revealShare(VALID_TOKEN)).toMatchObject({ share: { sharedBy: USER_U } })
     expect(resolveActiveOrgRoleInTx).not.toHaveBeenCalled()
+  })
+})
+
+describe('Story 73.16: displayStatus, lockedAt and verificationRequired on host share records', () => {
+  it('create, find and list pass the HTTP fields through without stripping', async () => {
+    createExternalCredentialShare.mockResolvedValue({
+      status: 'ok',
+      share: hostRow(USER_U),
+      token: RAW_TOKEN,
+    })
+    findExternalShareByTokenHash.mockResolvedValue({
+      status: 'ok',
+      metadata: {
+        share: hostRow(USER_U),
+        credentialName: CREDENTIAL_NAME,
+        credentialProjectId: PROJECT_ID,
+        sharedByDisplayName: DISPLAY_NAME,
+        organizationName: 'Acme',
+      },
+    })
+    listSharesForCredential.mockResolvedValue([hostRow(USER_U)])
+    countSharesForCredential.mockResolvedValue(1)
+    const host = buildCredentialSharingHost(MANIFEST)
+
+    const created = await host.createExternalShare(CREATE_PARAMS)
+    expect(created).toMatchObject({
+      status: 'ok',
+      share: {
+        displayStatus: 'active',
+        lockedAt: null,
+        verificationRequired: false,
+      },
+    })
+    if (created.status === 'ok') {
+      expect(Object.keys(created.share)).toEqual(
+        expect.arrayContaining(['displayStatus', 'lockedAt', 'verificationRequired'])
+      )
+    }
+
+    const found = await host.findShareByToken(VALID_TOKEN)
+    expect(found).toMatchObject({
+      share: { displayStatus: 'active', lockedAt: null, verificationRequired: false },
+    })
+
+    const listed = await host.listSharesForCredential({
+      organizationId: ORG_ID,
+      credentialId: CREDENTIAL_ID,
+    })
+    expect(listed.items[0]).toMatchObject({
+      displayStatus: 'active',
+      lockedAt: null,
+      verificationRequired: false,
+    })
+  })
+
+  it('a locked row serializes displayStatus locked and lockedAt as ISO, matching HTTP', async () => {
+    const lockedAt = new Date('2026-03-04T05:06:07.000Z')
+    listSharesForOrganization.mockResolvedValue([
+      {
+        ...SHARE_ROW,
+        status: 'revoked' as const,
+        lockedAt,
+        verificationRequired: true,
+      },
+    ])
+    countSharesForOrganization.mockResolvedValue(1)
+    const host = buildCredentialSharingHost(MANIFEST)
+    const { items } = await host.listSharesForOrganization({ organizationId: ORG_ID })
+
+    expect(items[0]).toMatchObject({
+      status: 'revoked',
+      displayStatus: 'locked',
+      lockedAt: '2026-03-04T05:06:07.000Z',
+      verificationRequired: true,
+    })
   })
 })
 

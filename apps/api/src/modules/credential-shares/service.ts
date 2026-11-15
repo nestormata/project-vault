@@ -8,7 +8,12 @@ import {
   organizations,
   users,
 } from '@project-vault/db/schema'
-import { AuditEvent, normalizeFieldKey, type ShareDisplayStatus } from '@project-vault/shared'
+import {
+  AuditEvent,
+  deriveShareDisplayStatus,
+  normalizeFieldKey,
+  type ShareDisplayStatus,
+} from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
@@ -37,6 +42,15 @@ export function shareRecipientAndTimingFields(share: CredentialShareRow) {
     singleUse: share.singleUse,
     createdAt: share.createdAt.toISOString(),
     expiresAt: share.expiresAt.toISOString(),
+  }
+}
+
+/** Story 73.16 — HTTP and host `serializeShare` share one JSON shape for display fields. */
+export function shareDisplayStatusFields(share: CredentialShareRow) {
+  return {
+    displayStatus: deriveShareDisplayStatus(share),
+    lockedAt: share.lockedAt?.toISOString() ?? null,
+    verificationRequired: share.verificationRequired,
   }
 }
 

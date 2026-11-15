@@ -21,6 +21,7 @@ import {
   listSharesForCredential as listSharesForCredentialService,
   listSharesForOrganization as listSharesForOrganizationService,
   revokeShare as revokeShareService,
+  shareDisplayStatusFields,
   shareRecipientAndTimingFields,
   supersedeOutstandingSharesForRotation as supersedeOutstandingSharesForRotationService,
 } from '../modules/credential-shares/service.js'
@@ -532,6 +533,7 @@ function serializeShare(share: CredentialShareRow) {
     firstViewedAt: share.firstViewedAt ? share.firstViewedAt.toISOString() : null,
     viewCount: share.viewCount,
     status: share.status as 'active' | 'viewed' | 'revoked' | 'expired' | 'superseded',
+    ...shareDisplayStatusFields(share),
   }
 }
 

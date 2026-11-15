@@ -1202,6 +1202,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `credentialId`
   - since: 3.22.0
   - type: `string`
+- member: `displayStatus?`
+  - since: 3.46.0
+  - type: `"active" | "revoked" | "expired" | "superseded" | "opened" | "locked" | undefined`
+  - union-members: `undefined`, `"active"`, `"revoked"`, `"expired"`, `"superseded"`, `"opened"`, `"locked"`
 - member: `expiresAt`
   - since: 3.22.0
   - type: `string`
@@ -1216,6 +1220,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `id`
   - since: 3.22.0
   - type: `string`
+- member: `lockedAt?`
+  - since: 3.46.0
+  - type: `string | null | undefined`
+  - union-members: `undefined`, `null`, `string`
 - member: `orgId`
   - since: 3.22.0
   - type: `string`
@@ -1251,6 +1259,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.22.0
   - type: `string | null`
   - union-members: `null`, `string`
+- member: `verificationRequired?`
+  - since: 3.46.0
+  - type: `boolean | undefined`
+  - union-members: `undefined`, `false`, `true`
 - member: `viewCount`
   - since: 3.22.0
   - type: `number`
@@ -1495,7 +1507,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.45.0"`
+- type: `"3.46.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

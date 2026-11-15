@@ -9,6 +9,31 @@ import {
   type CredentialSharingShareRecord,
 } from './credential-sharing.js'
 
+function sampleShareRecord(
+  extras: Partial<CredentialSharingShareRecord> = {}
+): CredentialSharingShareRecord {
+  return {
+    id: 'share',
+    orgId: 'org',
+    credentialId: 'credential',
+    fieldKey: null,
+    attributeKeys: null,
+    sharedBy: null,
+    recipientType: 'external',
+    recipientUserId: null,
+    recipientEmail: null,
+    singleUse: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    expiresAt: '2026-01-02T00:00:00.000Z',
+    revokedAt: null,
+    supersededAt: null,
+    firstViewedAt: null,
+    viewCount: 0,
+    status: 'active',
+    ...extras,
+  }
+}
+
 // Story 65.6 and 72.21: the acting-user and step-up error classes (stable `code`s, messages that name only the method) and the
 // `sharedBy` key on every share record.
 describe('credential-sharing acting-user and step-up contract (Stories 65.6, 72.21)', () => {
@@ -43,26 +68,35 @@ describe('credential-sharing acting-user and step-up contract (Stories 65.6, 72.
   })
 
   it('a share record always carries sharedBy, string or null, and it survives JSON', () => {
-    const record: CredentialSharingShareRecord = {
-      id: 'share',
-      orgId: 'org',
-      credentialId: 'credential',
-      fieldKey: null,
-      attributeKeys: null,
-      sharedBy: null,
-      recipientType: 'external',
-      recipientUserId: null,
-      recipientEmail: null,
-      singleUse: true,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      expiresAt: '2026-01-02T00:00:00.000Z',
-      revokedAt: null,
-      supersededAt: null,
-      firstViewedAt: null,
-      viewCount: 0,
-      status: 'active',
-    }
+    const record = sampleShareRecord()
     expect(JSON.parse(JSON.stringify(record))).toHaveProperty('sharedBy', null)
     expect(Object.keys(record)).toContain('sharedBy')
+  })
+
+  it('Story 73.16: optional lockedAt, displayStatus and verificationRequired match HTTP JSON and survive JSON', () => {
+    const record = sampleShareRecord({
+      lockedAt: null,
+      displayStatus: 'active',
+      verificationRequired: false,
+    })
+    const roundTrip = JSON.parse(JSON.stringify(record)) as CredentialSharingShareRecord
+    expect(roundTrip).toMatchObject({
+      lockedAt: null,
+      displayStatus: 'active',
+      verificationRequired: false,
+    })
+    const locked = sampleShareRecord({
+      status: 'revoked',
+      lockedAt: '2026-01-01T01:00:00.000Z',
+      displayStatus: 'locked',
+      verificationRequired: true,
+    })
+    expect(locked.displayStatus).toBe('locked')
+    expect(locked.lockedAt).toBe('2026-01-01T01:00:00.000Z')
+    expect(locked.verificationRequired).toBe(true)
+    const omitted = sampleShareRecord()
+    expect(omitted.lockedAt).toBeUndefined()
+    expect(omitted.displayStatus).toBeUndefined()
+    expect(omitted.verificationRequired).toBeUndefined()
   })
 })

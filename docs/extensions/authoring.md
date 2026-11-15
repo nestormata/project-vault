@@ -882,7 +882,7 @@ session. The declaration is plain data and is validated at registration:
 - A write that carries an `idempotencyKey` is limited to a 1 MiB audit entry (the payload as stored); over it the write
   fails with `payload_too_large`, even though the same payload without a key is accepted. Split or trim large payloads.
 
-##### Host version compatibility of the audit-write contract (3.28.0 to 3.44.0)
+##### Host version compatibility of the audit-write contract (3.28.0 to 3.46.0)
 
 What a consumer gets in each release, and what an older host does with it. "Ignores" means the field is accepted
 and has no effect.
@@ -899,6 +899,7 @@ and has no effect.
 | 3.38.0 | `createExternalShare({ totpCode })`, `CredentialSharingStepUpRequiredError`, `CredentialSharingTotpEnrollmentRequiredError` | An older host ignores `totpCode` and checks no step-up: check the host version.        |
 | 3.39.0 | `provisionMachineUser`, lazy host-managed machine user, `checkCredentialSharingMachineUserMode`                             | No `provisionMachineUser`; writes need an admin key.                                   |
 | 3.44.0 | `CredentialSharingHost.externalShareMissMinResponseMs?`                                                                     | Field absent: not held natively; keep your own floor. Never infer from version.        |
+| 3.46.0 | `CredentialSharingShareRecord.lockedAt?`, `displayStatus?`, `verificationRequired?`                                         | Keys absent: confirm the host version first. Same JSON as HTTP share summaries.        |
 
 ```ts
 import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'
