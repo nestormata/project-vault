@@ -20,6 +20,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- **CI: container-publish images stamp `com.github.actions.run-id`** (Story 75.7). Platform
+  builds keep `org.opencontainers.image.revision` as the commit and add
+  `com.github.actions.run-id=${{ github.run_id }}`. Same-run reuse of an existing `:X.Y.Z` still
+  requires `github.run_attempt > 1`, a matching revision, and an unmoved tag, and now also
+  requires that label to equal `github.run_id`. A missing or mismatching label fails closed.
 - **API/Web: schema_version=1 secrets can be shared by naming the synthesized `value` field**
   (Story 73.17). `GET .../value?field=value`, share create, and bounded share reveal now use the
   same declared-key list as the detail `fields` array (`fieldMetaForResponse`). Checking `value`

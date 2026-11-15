@@ -141,6 +141,7 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
             org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            com.github.actions.run-id=${{ github.run_id }}
 
       # `push-by-digest` publishes the platform image under no tag; `build-publish` reads the digest
       # from the artifact below.
@@ -225,12 +226,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Story 75.2: an existing :X.Y.Z is allowed only on a rerun of THIS run
-      # (github.run_attempt > 1; a new workflow_dispatch/release has a new run_id
-      # and starts at attempt 1) when every platform's
-      # org.opencontainers.image.revision equals the tag commit and the tag has
-      # not moved. The accepted path reuses that digest; it must not push a
-      # different one. Every other existing-tag case still fails with the
+      # Story 75.2 / 75.7: an existing :X.Y.Z is allowed only on a rerun of THIS
+      # run (github.run_attempt > 1) when every platform's
+      # org.opencontainers.image.revision equals the tag commit, every
+      # platform's com.github.actions.run-id equals github.run_id, and the tag
+      # has not moved. A new workflow_dispatch/release has a new run_id and
+      # starts at attempt 1. The accepted path reuses that digest; it must not
+      # push a different one. Every other existing-tag case still fails with the
       # original message. Recovery otherwise stays vX.Y.(Z+1).
       - name: Reject existing immutable release tag
         id: reject
@@ -238,6 +240,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           COMMIT: ${{ needs.prepare.outputs.commit }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_ID: ${{ github.run_id }}
           IMAGE_NAME: ${{ matrix.name }}
         run: |
           set -euo pipefail
@@ -257,6 +260,10 @@ jobs:
             reject_existing
           fi
 
+          if [[ ! "$RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            reject_existing
+          fi
+
           DIGEST=$(jq -r '.manifest.digest // ""' <<<"$INSPECT_JSON")
           if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             reject_existing
@@ -268,7 +275,7 @@ jobs:
              else .image end)
             | to_entries[]
             | select(.key | startswith("unknown/") | not)
-            | [ .key, (.value.config.Labels["org.opencontainers.image.revision"] // "") ]
+            | [ .key, (.value.config.Labels["org.opencontainers.image.revision"] // ""), (.value.config.Labels["com.github.actions.run-id"] // "") ]
             | @tsv
           ' <<<"$INSPECT_JSON")
 
@@ -276,9 +283,12 @@ jobs:
             reject_existing
           fi
 
-          while IFS=$'\t' read -r PLATFORM LABEL_REVISION; do
+          while IFS=$'\t' read -r PLATFORM LABEL_REVISION LABEL_RUN_ID; do
             [[ -n "$PLATFORM" ]] || continue
             if [[ "$LABEL_REVISION" != "$COMMIT" ]]; then
+              reject_existing
+            fi
+            if [[ "$LABEL_RUN_ID" != "$RUN_ID" ]]; then
               reject_existing
             fi
           done <<<"$ROWS"
@@ -292,7 +302,7 @@ jobs:
 
           echo "reuse=true" >> "$GITHUB_OUTPUT"
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "Reusing existing immutable release tag ${SOURCE} digest ${DIGEST} (same-run rerun, matching revision)"
+          echo "Reusing existing immutable release tag ${SOURCE} digest ${DIGEST} (same-run rerun, matching revision and run_id)"
 
       - name: Extract image metadata
         id: meta
@@ -456,8 +466,9 @@ jobs:
       # failed gate leaves a published but un-promoted `X.Y.Z` image behind. Recovery: fix the
       # vulnerability, then cut `vX.Y.(Z+1)`. A new workflow_dispatch of the same tag is refused
       # by the "Reject existing immutable release tag" step above, by design. A rerun of this
-      # same GitHub Actions run may reuse the existing digest (Story 75.2) when the revision
-      # label matches and the tag has not moved; it does not push a different digest. Rejected
+      # same GitHub Actions run may reuse the existing digest (Story 75.2 / 75.7) when the
+      # revision and run_id labels match and the tag has not moved; it does not push a different
+      # digest. Rejected
       # alternative: scanning before the push would need an extra single-arch `load` build per
       # platform, doubling release build time, and would still not scan the exact pushed bytes.
       - name: Scan published image for vulnerabilities (linux/amd64)

@@ -78,8 +78,9 @@ cut the next patch release, `vX.Y.(Z+1)` (see [releasing.md](releasing.md)). Re-
 tag through a **new** `workflow_dispatch` is refused by the workflow's "Reject existing immutable
 release tag" step, by design. A **rerun of the same GitHub Actions run** (`github.run_attempt > 1`)
 may complete attestation, verification and both scans on the existing digest when the image
-revision label equals the tag commit and the tag has not moved; it does not push a different
-digest under `:X.Y.Z`. A suppression is only acceptable through the documented `.trivyignore`
+revision label equals the tag commit, `com.github.actions.run-id` equals `github.run_id`, and the
+tag has not moved; it does not push a different digest under `:X.Y.Z`. A suppression is only
+acceptable through the documented `.trivyignore`
 process (CVE id, `exp:` date, one-line justification).
 
 Scanning before the push was rejected: it would need an extra single-platform `load` build for each
