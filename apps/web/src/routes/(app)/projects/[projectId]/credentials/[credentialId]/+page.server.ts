@@ -113,6 +113,12 @@ function handleCredentialLoadError(
 
 const SHARES_PAGE_SIZE = 25
 
+// Story 73.18 / DW-536: GET /api/v1/org/users is org admin/owner only. The share typeahead
+// is the only consumer of that list on this page, so a member/viewer load must not call it.
+function canListOrgDirectory(orgRole: OrgRole): boolean {
+  return orgRole === 'owner' || orgRole === 'admin'
+}
+
 function parsePositiveIntParam(url: URL, key: string): number {
   const raw = Number(url.searchParams.get(key) ?? '1')
   return Number.isFinite(raw) && raw > 0 ? raw : 1
@@ -161,7 +167,7 @@ const ownLoad = (async ({ params, fetch, locals, url, setHeaders }) => {
         offset: (sharesPage - 1) * SHARES_PAGE_SIZE,
       }),
       listRotationRecommendedNudges(fetch, params.projectId, params.credentialId),
-      listOrgUsers(fetch),
+      canListOrgDirectory(orgRole) ? listOrgUsers(fetch) : Promise.resolve([]),
     ])
     const latest = mostRecentRotation.items[0] ?? null
     const activeRotationId =
