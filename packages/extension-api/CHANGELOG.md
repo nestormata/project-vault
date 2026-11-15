@@ -19,18 +19,17 @@ This host always serializes them. `displayStatus` uses the same vocabulary as
 
 ### Deprecated
 
-3.46.0 does not start a new deprecation. Marker lint still needs the 3.30.0 frozen set named here:
-legacy panel types `UIPanel` `UIPanelContext` `UIPanelResult`; action types `ModuleAction`
-`ModuleActionContext` `ModuleActionRequest` `ActionResult`; data-route types
-`ModuleDataRequestContext` `ModuleDataResult` `ModuleDataRouteHandler` `ModuleDataRouteDeclaration`;
-nav type `ExtensionNavItem`. Frozen manifest keys remain `uiPanelSlots`, `moduleActions`,
-`navItems`, `moduleDataRoutes`. Frozen hooks remain `uiPanel`, `moduleAction`, `moduleData`, plus
-capability `'ui-panel'`. Use `ExtensionRequestContext` / `ExtensionActionResult`, composed UI, or
-M7 `apiRoutes` instead.
+No new freeze in 3.46.0. Newest-entry marker lint still requires the 3.30.0 names on this block:
+`UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionContext`,
+`ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`, `ModuleDataResult`,
+`ModuleDataRouteHandler`, `ModuleDataRouteDeclaration`, `ExtensionNavItem`; manifest keys
+`uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`; hooks `uiPanel`, `moduleAction`,
+`moduleData`; capability `'ui-panel'`. Prefer composed UI, M7 `apiRoutes`,
+`ExtensionRequestContext`, and `ExtensionActionResult`.
 
 - earliest-removal: 4.0.0
 - notice-window-ends: 2027-01-14
-- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.46.0 adds none).
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.46.0 adds no deprecation).
 
 ## 3.45.0 — 2026-11-15
 
