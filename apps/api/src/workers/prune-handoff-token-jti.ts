@@ -1,6 +1,11 @@
 import { lt } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
-import { cliDeviceGrants, handoffNonces, handoffTokenJti } from '@project-vault/db/schema'
+import {
+  cliDeviceGrants,
+  handoffNonces,
+  handoffTokenJti,
+  identityRevocationJti,
+} from '@project-vault/db/schema'
 import { runPruneJob, type WorkerLogger } from './prune-utils.js'
 
 /**
@@ -9,6 +14,15 @@ import { runPruneJob, type WorkerLogger } from './prune-utils.js'
  * is set at insert time to `now() + 120s`, so a freshly-burned row is never a sweep target until
  * its replay window has already closed.
  */
+export async function pruneIdentityRevocationJti(logger?: WorkerLogger): Promise<void> {
+  await runPruneJob(
+    'prune-identity-revocation-jti',
+    () =>
+      getDb().delete(identityRevocationJti).where(lt(identityRevocationJti.expiresAt, new Date())),
+    logger
+  )
+}
+
 export async function pruneHandoffTokenJti(logger?: WorkerLogger): Promise<void> {
   await runPruneJob(
     'prune-handoff-token-jti',

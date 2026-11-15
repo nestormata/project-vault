@@ -110,6 +110,7 @@ type ProductionEnv = {
   MACHINE_JWT_SECRET?: string
   SERVICE_PROVISIONING_TOKEN?: string
   SERVICE_REVOCATION_TOKEN?: string
+  IDENTITY_REVOCATION_JWT_SECRET?: string
   STATUS_PAGE_TOKEN_HMAC_SECRET?: string
   ERASURE_EMAIL_HASH_SECRET?: string
   SSO_STATE_HMAC_SECRET?: string
@@ -407,9 +408,11 @@ function validateServiceProvisioningTokenProductionSecret(
   ctx: z.RefinementCtx
 ): void {
   if (!env.SERVICE_PROVISIONING_TOKEN) return
-  const reused = [...otherAuthSecrets(env), env.SERVICE_REVOCATION_TOKEN].includes(
-    env.SERVICE_PROVISIONING_TOKEN
-  )
+  const reused = [
+    ...otherAuthSecrets(env),
+    env.SERVICE_REVOCATION_TOKEN,
+    env.IDENTITY_REVOCATION_JWT_SECRET,
+  ].includes(env.SERVICE_PROVISIONING_TOKEN)
   if (reused) {
     addEnvIssue(
       ctx,
@@ -434,9 +437,11 @@ function validateServiceRevocationTokenProductionSecret(
   ctx: z.RefinementCtx
 ): void {
   if (!env.SERVICE_REVOCATION_TOKEN) return
-  const reused = [...otherAuthSecrets(env), env.SERVICE_PROVISIONING_TOKEN].includes(
-    env.SERVICE_REVOCATION_TOKEN
-  )
+  const reused = [
+    ...otherAuthSecrets(env),
+    env.SERVICE_PROVISIONING_TOKEN,
+    env.IDENTITY_REVOCATION_JWT_SECRET,
+  ].includes(env.SERVICE_REVOCATION_TOKEN)
   if (reused) {
     addEnvIssue(
       ctx,
@@ -448,6 +453,31 @@ function validateServiceRevocationTokenProductionSecret(
       ctx,
       'SERVICE_REVOCATION_TOKEN',
       'SERVICE_REVOCATION_TOKEN must not be a placeholder secret in production'
+    )
+  }
+}
+
+function validateIdentityRevocationJwtSecretProductionSecret(
+  env: ProductionEnv,
+  ctx: z.RefinementCtx
+): void {
+  if (!env.IDENTITY_REVOCATION_JWT_SECRET) return
+  const reused = [
+    ...otherAuthSecrets(env),
+    env.SERVICE_PROVISIONING_TOKEN,
+    env.SERVICE_REVOCATION_TOKEN,
+  ].includes(env.IDENTITY_REVOCATION_JWT_SECRET)
+  if (reused) {
+    addEnvIssue(
+      ctx,
+      'IDENTITY_REVOCATION_JWT_SECRET',
+      'IDENTITY_REVOCATION_JWT_SECRET must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.IDENTITY_REVOCATION_JWT_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'IDENTITY_REVOCATION_JWT_SECRET',
+      'IDENTITY_REVOCATION_JWT_SECRET must not be a placeholder secret in production'
     )
   }
 }
@@ -761,6 +791,7 @@ function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateMachineJwtProductionSecret(env, ctx)
   validateServiceProvisioningTokenProductionSecret(env, ctx)
   validateServiceRevocationTokenProductionSecret(env, ctx)
+  validateIdentityRevocationJwtSecretProductionSecret(env, ctx)
   validateStatusPageTokenProductionSecret(env, ctx)
   validateErasureEmailHashProductionSecret(env, ctx)
   validateSsoStateProductionSecret(env, ctx)
@@ -1261,6 +1292,14 @@ const envSchema = z
     // on the platform (Decision 5). Unset means the route is unreachable (fail-closed default;
     // AC2.9 — no dev-secret fallback either). Generate: openssl rand -base64 32
     SERVICE_REVOCATION_TOKEN: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().min(32).optional()
+    ),
+
+    // Story 73.4 D1: dedicated HS256 secret for POST /api/v1/service/identities/revoke-sessions.
+    // Optional; unset fails closed. Must not equal SERVICE_REVOCATION_TOKEN, MACHINE_JWT_SECRET,
+    // or any other auth secret in production. Generate: openssl rand -base64 32
+    IDENTITY_REVOCATION_JWT_SECRET: z.preprocess(
       (v) => (v === '' ? undefined : v),
       z.string().min(32).optional()
     ),

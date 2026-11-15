@@ -2051,6 +2051,55 @@ describe('env', () => {
     })
   })
 
+  describe('Story 73.4: IDENTITY_REVOCATION_JWT_SECRET', () => {
+    it('is not required in production — unset is a valid fail-closed default', async () => {
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        IDENTITY_REVOCATION_JWT_SECRET: undefined,
+      })
+      const { env } = await import('./env.js')
+      expect(env.IDENTITY_REVOCATION_JWT_SECRET).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('rejects IDENTITY_REVOCATION_JWT_SECRET reused from other production secrets', async () => {
+      const base = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        SERVICE_REVOCATION_TOKEN: 'r'.repeat(32),
+        SERVICE_PROVISIONING_TOKEN: 'p'.repeat(32),
+      })
+      for (const IDENTITY_REVOCATION_JWT_SECRET of [
+        'r'.repeat(32),
+        'p'.repeat(32),
+        'A'.repeat(64),
+        'H'.repeat(64),
+      ]) {
+        resetEnvImport(exitSpy)
+        process.env = { ...base, IDENTITY_REVOCATION_JWT_SECRET }
+        await expectInvalidEnv(exitSpy)
+      }
+    })
+
+    it('rejects a placeholder IDENTITY_REVOCATION_JWT_SECRET in production', async () => {
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        IDENTITY_REVOCATION_JWT_SECRET: 'change-me'.repeat(4),
+      })
+      await expectInvalidEnv(exitSpy)
+    })
+
+    it('accepts a distinct, non-placeholder IDENTITY_REVOCATION_JWT_SECRET in production', async () => {
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        SERVICE_REVOCATION_TOKEN: 'r'.repeat(32),
+        IDENTITY_REVOCATION_JWT_SECRET: 'i'.repeat(32),
+      })
+      const { env } = await import('./env.js')
+      expect(env.IDENTITY_REVOCATION_JWT_SECRET).toBe('i'.repeat(32))
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
+
   // Story 1.24: env.ts's production placeholder guard only matched
   // /change-me|dev-only|placeholder/i, which does not match the single-repeated-character
   // DEV_* constants this file exports for local-dev convenience (and docker-compose.yml sets as

@@ -1,10 +1,7 @@
 import { createHmac } from 'node:crypto'
-import { getDb, type Tx } from '@project-vault/db'
-import { platformSecurityEvents } from '@project-vault/db/schema'
 import { RoleSecurityEvent } from '@project-vault/shared'
-import { currentAuditKeyVersion } from '../audit/key-version.js'
-import { computeAuditHmac } from '../audit/write-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
+import { writePlatformSecurityEventBestEffort } from './platform-security-event-write.js'
 
 export type UnrecognizedRoleSource = 'requested' | 'stored'
 
@@ -40,30 +37,12 @@ function payloadOf(fields: UnrecognizedRoleSecurityEventFields): Record<string, 
 export async function writeUnrecognizedRoleSecurityEvent(
   fields: UnrecognizedRoleSecurityEventFields
 ): Promise<void> {
-  try {
-    const payload = payloadOf(fields)
-    const hashedSubject = fields.userId ? subjectHash(fields.userId) : null
-    await getDb().transaction(async (tx) => {
-      const keyVersion = await currentAuditKeyVersion(tx as Tx)
-      const eventType = RoleSecurityEvent.UNRECOGNIZED_ROLE
-      const hmac = computeAuditHmac(
-        { eventType, subjectHash: hashedSubject, emailDomain: null, payload, keyVersion },
-        getAuditKey()
-      )
-      await (tx as Tx).insert(platformSecurityEvents).values({
-        eventType,
-        subjectHash: hashedSubject,
-        emailDomain: null,
-        payload,
-        keyVersion,
-        hmac,
-        ipAddress: fields.ipAddress ?? null,
-        userAgent: fields.userAgent ?? null,
-      })
-    })
-  } catch (error) {
-    process.stderr.write(
-      `[role.security_event_write_error] ${error instanceof Error ? error.message : String(error)}\n`
-    )
-  }
+  await writePlatformSecurityEventBestEffort({
+    eventType: RoleSecurityEvent.UNRECOGNIZED_ROLE,
+    subjectHash: fields.userId ? subjectHash(fields.userId) : null,
+    payload: payloadOf(fields),
+    ipAddress: fields.ipAddress,
+    userAgent: fields.userAgent,
+    logLabel: 'role.security_event_write_error',
+  })
 }

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { z, type ZodType } from 'zod/v4'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
-import { OperationalEvent } from '@project-vault/shared'
+import { IdentityRevocationEvent, OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import type { BossService } from '../../lib/boss.js'
 import { AppError } from '../../lib/errors.js'
@@ -11,7 +11,20 @@ import { isRateLimitEnforced, validationError } from '../../lib/route-helpers.js
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { timingSafeHeaderTokenMatches } from '../../lib/timing-safe-header-token.js'
 import { operationalLog, serializeLogError } from '../../lib/logger.js'
-import { revokeAllSessionsForOrg } from '../auth/session-revoke.js'
+import {
+  IdentityRevocationReplayError,
+  IdentityRevocationStoreError,
+  revokeAllSessionsForExternalIdentity,
+  revokeAllSessionsForOrg,
+} from '../auth/session-revoke.js'
+import {
+  bearerTokenFromAuthorization,
+  verifyIdentityRevocationJwt,
+} from '../auth/identity-revocation-jwt.js'
+import {
+  hashIdentityRevocationSubject,
+  writeIdentityRevocationSecurityEvent,
+} from '../auth/identity-revocation-security-events.js'
 import {
   backfillCentralizemeOrgLink,
   provisionServiceOrganization,
@@ -444,6 +457,75 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
           requestId: parsedBody.requestId,
         },
       })
+    },
+  })
+
+  // Story 73.4: trusted-caller per-identity session revocation. Bearer JWT, no PV session.
+  fastify.route({
+    method: 'POST',
+    url: '/api/v1/service/identities/revoke-sessions',
+    config: {
+      rateLimit: serviceMutationRateLimit('service-identity-revoke-sessions'),
+    },
+    schema: {
+      response: {
+        204: z.null(),
+        401: ApiErrorSchema,
+        429: ApiErrorSchema,
+        503: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const userAgent =
+        typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null
+      const rejectAuth = async (reason: string) => {
+        await writeIdentityRevocationSecurityEvent({
+          eventType: IdentityRevocationEvent.IDENTITY_REVOCATION_REJECTED,
+          payload: { reason },
+          ipAddress: req.ip,
+          userAgent,
+        })
+        return reply.status(401).send({
+          code: 'trusted_caller_revocation_rejected',
+          message: 'Trusted caller revocation was rejected',
+        })
+      }
+
+      const token = bearerTokenFromAuthorization(req.headers.authorization)
+      if (!token) return rejectAuth('missing_bearer')
+      const verified = verifyIdentityRevocationJwt(token)
+      if (!verified.ok) return rejectAuth(verified.reason)
+
+      try {
+        const result = await revokeAllSessionsForExternalIdentity({
+          providerName: verified.claims.iss,
+          externalSubject: verified.claims.sub,
+          jti: verified.claims.jti,
+          expiresAt: new Date(verified.claims.exp * 1000),
+          audience: verified.claims.aud,
+        })
+        await writeIdentityRevocationSecurityEvent({
+          eventType: IdentityRevocationEvent.IDENTITY_SESSIONS_REVOKED,
+          subjectHash: hashIdentityRevocationSubject(verified.claims.iss, verified.claims.sub),
+          payload: {
+            iss: verified.claims.iss,
+            aud: verified.claims.aud,
+            sessionsRevokedCount: result.sessionsRevokedCount,
+          },
+          ipAddress: req.ip,
+          userAgent,
+        })
+        return reply.status(204).send()
+      } catch (err) {
+        if (err instanceof IdentityRevocationReplayError) return rejectAuth('replayed')
+        if (err instanceof IdentityRevocationStoreError) {
+          return reply.status(503).send({
+            code: 'trusted_caller_revocation_unavailable',
+            message: 'Trusted caller revocation is temporarily unavailable',
+          })
+        }
+        throw err
+      }
     },
   })
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { AuditEvent, DelegationEvent, HandoffEvent, RoleSecurityEvent } from './audit-events.js'
+import {
+  AuditEvent,
+  DelegationEvent,
+  HandoffEvent,
+  IdentityRevocationEvent,
+  RoleSecurityEvent,
+} from './audit-events.js'
 import type { AuthAuditEventType } from './audit-events.js'
 
 function assertValidAuditEventType(value: AuthAuditEventType): AuthAuditEventType {
@@ -245,5 +251,25 @@ describe('RoleSecurityEvent (Story 73.5 D7)', () => {
       ...Object.values(AuditEvent),
     ])
     for (const value of Object.values(RoleSecurityEvent)) expect(others.has(value)).toBe(false)
+  })
+})
+
+describe('IdentityRevocationEvent (Story 73.4 D8)', () => {
+  it('exposes rejected and success platform security event types', () => {
+    expect(Object.values(IdentityRevocationEvent)).toEqual([
+      'identity_revocation_rejected',
+      'identity_sessions_revoked_by_trusted_caller',
+    ])
+  })
+
+  it('is distinct from handoff, delegation, role, and audit event names', () => {
+    const others = new Set<string>([
+      ...Object.values(HandoffEvent),
+      ...Object.values(DelegationEvent),
+      ...Object.values(RoleSecurityEvent),
+      ...Object.values(AuditEvent),
+    ])
+    for (const value of Object.values(IdentityRevocationEvent))
+      expect(others.has(value)).toBe(false)
   })
 })

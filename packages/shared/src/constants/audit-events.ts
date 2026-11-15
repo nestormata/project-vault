@@ -51,6 +51,9 @@ export const AuditEvent = {
   // 'machine_user': the caller (CentralizeMe) authenticates with a static shared secret, not a
   // resolvable human actor token or PV machine-user key.
   ORG_SESSIONS_REVOKED_BY_SERVICE: 'org.sessions_revoked_by_service',
+  // Story 73.4 D8: one system audit row per resolved org for trusted-caller identity session
+  // revocation. Count lives here, never in the HTTP body.
+  IDENTITY_SESSIONS_REVOKED_BY_TRUSTED_CALLER: 'identity.sessions_revoked_by_trusted_caller',
   PROJECT_MEMBER_ADDED: 'project.member_added',
   PROJECT_MEMBER_ROLE_CHANGED: 'project.member_role_changed',
   PROJECT_MEMBER_REMOVED: 'project.member_removed',
@@ -325,3 +328,16 @@ export const RoleSecurityEvent = {
 } as const
 
 export type RoleSecurityEventType = (typeof RoleSecurityEvent)[keyof typeof RoleSecurityEvent]
+
+/**
+ * Story 73.4 D7/D8: platform_security_events taxonomy for trusted-caller identity session
+ * revocation. Rejections use one event plus a closed `reason`. Success uses a second event
+ * with hashed subject and revoked count.
+ */
+export const IdentityRevocationEvent = {
+  IDENTITY_REVOCATION_REJECTED: 'identity_revocation_rejected',
+  IDENTITY_SESSIONS_REVOKED: 'identity_sessions_revoked_by_trusted_caller',
+} as const
+
+export type IdentityRevocationEventType =
+  (typeof IdentityRevocationEvent)[keyof typeof IdentityRevocationEvent]

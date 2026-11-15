@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { inArray, sql } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 import { getDb } from '@project-vault/db'
-import { handoffNonces, handoffTokenJti } from '@project-vault/db/schema'
+import { handoffNonces, handoffTokenJti, identityRevocationJti } from '@project-vault/db/schema'
 import {
   pruneHandoffNonces,
   pruneHandoffTokenJti,
+  pruneIdentityRevocationJti,
   RETIRED_HANDOFF_PRUNE_SCHEDULES,
 } from './prune-handoff-token-jti.js'
 
@@ -35,6 +36,27 @@ describe('pruneHandoffTokenJti (Story 30.2 AC5.18/AC5.19)', () => {
     const remainingJtis = remaining.map((r) => r.jti)
     expect(remainingJtis).not.toContain(expiredJti)
     expect(remainingJtis).toContain(freshJti)
+  })
+})
+
+describe('pruneIdentityRevocationJti (Story 73.4)', () => {
+  it('deletes rows past expires_at and leaves not-yet-expired rows alone', async () => {
+    const expiredJti = `id-rev-${randomUUID()}`
+    const freshJti = `id-rev-${randomUUID()}`
+    await getDb()
+      .insert(identityRevocationJti)
+      .values([
+        { jti: expiredJti, expiresAt: new Date(Date.now() - 1000) },
+        { jti: freshJti, expiresAt: new Date(Date.now() + 120_000) },
+      ])
+
+    await pruneIdentityRevocationJti()
+
+    const remaining = await getDb()
+      .select({ jti: identityRevocationJti.jti })
+      .from(identityRevocationJti)
+      .where(inArray(identityRevocationJti.jti, [expiredJti, freshJti]))
+    expect(remaining.map((row) => row.jti)).toEqual([freshJti])
   })
 })
 

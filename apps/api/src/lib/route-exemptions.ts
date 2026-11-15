@@ -269,6 +269,19 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'POST /api/v1/service/identities/revoke-sessions',
+    reason:
+      'Story 73.4 -- trusted-caller per-identity session revocation for sign-out fan-out. The caller has no PV session. Authentication is a dedicated HS256 JWT (IDENTITY_REVOCATION_JWT_SECRET) bound to aud=node:<VAULT_HANDOFF_INSTANCE_ID>, insert-first jti burn, and issuer-stable external_identities lookup. SecureRoute cannot apply.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      'dedicated-identity-revocation-jwt-hs256',
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      'insert-first-jti-replay-burn',
+      'audience-bound-to-instance-id',
+    ],
+    expiresAfterStory: null,
+  },
+  {
     route: 'POST /api/v1/service/organizations/:organizationId/members',
     reason:
       "Story 32.1 -- machine-authenticated per-member provisioning endpoint for a trusted platform partner (CentralizeMe), attaching a new PV user+membership+external-identity to an ALREADY-EXISTING organization for a non-owner CM member. The caller has no PV session and cannot have one -- SecureRoute's org-authenticated path structurally cannot apply here, exactly like POST /api/v1/service/organizations above (Decision 3: reuses SERVICE_PROVISIONING_TOKEN, same action class as that route's own identity-record creation, not a divergent blast radius -- see the story's accepted-risk note on role:'admin' grants).",
@@ -513,6 +526,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditEvent: 'org.sessions_revoked_by_service',
     sameTransactionAuditService: 'revokeAllSessionsForOrg',
+  },
+  'POST /api/v1/service/identities/revoke-sessions': {
+    action: SECURITY_ACTION,
+    auditEvent: 'identity.sessions_revoked_by_trusted_caller',
+    sameTransactionAuditService: 'revokeAllSessionsForExternalIdentity',
   },
   'POST /api/v1/service/organizations/:organizationId/members': {
     action: SECURITY_ACTION,
@@ -1735,7 +1753,7 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     path: 'workers/prune-handoff-token-jti.ts',
     classification: PLATFORM_JOB,
     reason:
-      'Story 30.2 AC5 / Story 73.1 — prunes the instance-level handoff_token_jti replay-burn ledger and handoff_nonces by expires_at; both tables are deliberately no-FK/no-RLS (no tenant known at ingestion time), so no org-scoped data is touched.',
+      'Story 30.2 AC5 / Story 73.1 / Story 73.4 — prunes the instance-level handoff_token_jti and identity_revocation_jti replay-burn ledgers and handoff_nonces by expires_at; those tables are deliberately no-FK/no-RLS (no tenant known at ingestion time), so no org-scoped data is touched.',
     reviewer: SECURITY_OWNER,
   },
   {
