@@ -6,11 +6,12 @@
 //   - `.svelte`  -> `svelte/compiler`'s modern AST: markup text, attribute values and every string or
 //     template literal of the script. Comments are not nodes, so a comment may name the product.
 //   - `.ts`      -> TypeScript's compiler API: string, no-substitution-template and template parts.
-//   - `.html`    -> HTML comments removed, entities decoded, the rest read as text (`src/app.html`).
+//   - `.html`    -> HTML comments removed, entities decoded (HTML optional-semicolon named refs
+//     included), the rest read as text (`src/app.html`).
 //   - `messages/<locale>.json` -> every value except the one for `brand_name` (a message that names
 //     the product takes it as the `{brand}` parameter instead).
 //   - `static/*.svg` and web manifests (`*.webmanifest`, `manifest.json`) -> SVG uses the HTML
-//     comment strip then the same entity decode as `.html`; a manifest is parsed as JSON then
+//     comment strip then XML entity decode (semicolon required); a manifest is parsed as JSON then
 //     scanned as text (JSON is not HTML-decoded). A host overlays the file. PNG and other
 //     binaries are not scanned.
 // Test files (`*.test.ts`, `*.spec.ts`) are not product copy and are not scanned; they read the
@@ -20,7 +21,7 @@
 import { join, posix } from 'node:path'
 import ts from 'typescript'
 import { readText, listNames, statPath } from './fs-access.js'
-import { decodeHtmlEntities } from './html-entities.js'
+import { decodeHtmlEntities, type NamedReferenceMode } from './html-entities.js'
 import { svelteCompiler } from './route-files.js'
 import { toRepoPath, walkFiles } from './scan-utils.js'
 
@@ -128,8 +129,8 @@ function rawBrandOffsets(source: string): number[] {
   return offsets
 }
 
-function htmlHitLines(source: string): number[] {
-  const decoded = decodeHtmlEntities(stripHtmlComments(source))
+function htmlHitLines(source: string, mode: NamedReferenceMode = 'xml'): number[] {
+  const decoded = decodeHtmlEntities(stripHtmlComments(source), mode)
   const lines: number[] = []
   for (const match of decoded.matchAll(new RegExp(BRAND_PATTERN, 'gi'))) {
     lines.push(lineOf(decoded, match.index))
@@ -140,7 +141,8 @@ function htmlHitLines(source: string): number[] {
 function hitLines(extension: string, source: string): number[] {
   if (extension === '.ts') return tsHits(source)
   if (extension === '.svelte') return svelteHits(source).map((offset) => lineOf(source, offset))
-  return htmlHitLines(source)
+  if (extension === '.html') return htmlHitLines(source, 'html')
+  return htmlHitLines(source, 'xml')
 }
 
 function messageProblems(rel: string, source: string): string[] {

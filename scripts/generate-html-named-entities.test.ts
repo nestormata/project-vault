@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { namedEntitiesFromWhatwg, run } from './generate-html-named-entities.js'
+import { namedCharacterTablesFromWhatwg, run } from './generate-html-named-entities.js'
 
 const temps: string[] = []
 
@@ -11,20 +11,24 @@ afterEach(() => {
   temps.length = 0
 })
 
-describe('namedEntitiesFromWhatwg', () => {
-  it('keeps only semicolon-terminated names and sorts them', () => {
+describe('namedCharacterTablesFromWhatwg', () => {
+  it('splits semicolon-terminated and optional-semicolon names and sorts each', () => {
     expect(
-      namedEntitiesFromWhatwg({
+      namedCharacterTablesFromWhatwg({
         '&nbsp': { characters: '\u00a0' },
         '&ohm;': { characters: '\u03A9' },
         '&ThinSpace;': { characters: '\u2009' },
         '&nbsp;': { characters: '\u00a0' },
+        '&not': { characters: '\u00AC' },
       })
-    ).toEqual({ ThinSpace: '\u2009', nbsp: '\u00a0', ohm: '\u03A9' })
+    ).toEqual({
+      semicolonTerminated: { ThinSpace: '\u2009', nbsp: '\u00a0', ohm: '\u03A9' },
+      optionalSemicolon: { nbsp: '\u00a0', not: '\u00AC' },
+    })
   })
 
   it('rejects a non-object table', () => {
-    expect(() => namedEntitiesFromWhatwg([])).toThrow(/must be an object/)
+    expect(() => namedCharacterTablesFromWhatwg([])).toThrow(/must be an object/)
   })
 })
 
@@ -40,6 +44,9 @@ describe('generate-html-named-entities CLI', () => {
     )
     expect(run(['--from', from, '--out', out])).toBe(0)
     expect(JSON.parse(readFileSync(out, 'utf8'))).toEqual({ ohm: '\u03A9' })
+    expect(JSON.parse(readFileSync(join(dir, 'out-optional.json'), 'utf8'))).toEqual({
+      ohm: '\u03A9',
+    })
   })
 
   it('fails without --from', () => {

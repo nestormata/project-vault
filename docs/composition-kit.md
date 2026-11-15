@@ -1149,9 +1149,10 @@ overlaying that single key in its pack's `messages/<locale>.json`, with no copy 
 `apps/web/src` (markup text, attribute values, script and `.ts` string literals; comments and test files are
 not product copy), any catalogue message other than `brand_name` that hard-codes `Project Vault`, and any
 web manifest or SVG text under `apps/web/static`. HTML and SVG readers decode HTML entities (the
-WHATWG HTML5 named character references table with a required `;`, plus numeric character
-references, so `Project&nbsp;Vault` and `Project&ThinSpace;Vault` still fail) before matching; JSON
-manifests are parsed, not HTML-decoded. It has no exemption list: a new occurrence in source or
+WHATWG HTML5 named character references table, plus numeric character
+references, so `Project&nbsp;Vault` and `Project&ThinSpace;Vault` still fail) before matching.
+HTML also decodes the optional-semicolon named references (`Project&nbspVault` without `;`);
+SVG/XML still require `;`. JSON manifests are parsed, not HTML-decoded. It has no exemption list: a new occurrence in source or
 a catalogue is fixed by reading the key; a new occurrence in `static/` is fixed by dropping the literal or
 overlaying that file. Tests that assert copy read `m.brand_name()`. PNG files under `static/` are not scanned.
 The mechanism spec `e2e/mechanism/m6-brand-name.spec.ts` overlays the key in the mock pack and checks the
