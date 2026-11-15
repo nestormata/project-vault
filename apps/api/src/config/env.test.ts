@@ -2073,6 +2073,7 @@ describe('env', () => {
         'p'.repeat(32),
         'A'.repeat(64),
         'H'.repeat(64),
+        'Q'.repeat(64),
       ]) {
         resetEnvImport(exitSpy)
         process.env = { ...base, IDENTITY_REVOCATION_JWT_SECRET }
@@ -2097,6 +2098,15 @@ describe('env', () => {
       const { env } = await import('./env.js')
       expect(env.IDENTITY_REVOCATION_JWT_SECRET).toBe('i'.repeat(32))
       expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('rejects CLI_DEVICE_CODE_HMAC_SECRET reused as IDENTITY_REVOCATION_JWT_SECRET', async () => {
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        IDENTITY_REVOCATION_JWT_SECRET: 'i'.repeat(32),
+        CLI_DEVICE_CODE_HMAC_SECRET: 'i'.repeat(32),
+      })
+      await expectInvalidEnv(exitSpy)
     })
   })
 

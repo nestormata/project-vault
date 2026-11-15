@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSigner } from 'fast-jwt'
 import { and, eq, isNull } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
@@ -147,6 +147,25 @@ describe('POST /api/v1/service/identities/revoke-sessions', () => {
     expect(orgAudit.length).toBeGreaterThanOrEqual(1)
     expect(JSON.stringify(orgAudit[0]?.payload)).not.toContain(subject)
     await app.close()
+  })
+
+  it('looks up matching identities through the admin pool without a SQL function', async () => {
+    const dbModule = await import('../../lib/db.js')
+    const spy = vi.spyOn(dbModule, 'getAdminDb')
+    const app = await freshApp()
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: URL,
+        headers: { authorization: `Bearer ${signToken({ sub: `missing_${randomUUID()}` })}` },
+      })
+      expect(res.statusCode).toBe(204)
+      expect(res.body).toBe('')
+      expect(spy).toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+      await app.close()
+    }
   })
 
   it('returns the same 204 for an unknown identity and for zero remaining sessions', async () => {

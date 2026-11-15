@@ -466,6 +466,7 @@ function validateIdentityRevocationJwtSecretProductionSecret(
     ...otherAuthSecrets(env),
     env.SERVICE_PROVISIONING_TOKEN,
     env.SERVICE_REVOCATION_TOKEN,
+    env.CLI_DEVICE_CODE_HMAC_SECRET,
   ].includes(env.IDENTITY_REVOCATION_JWT_SECRET)
   if (reused) {
     addEnvIssue(
@@ -749,6 +750,7 @@ function cliDeviceCodeSharesAnotherAuthSecret(env: ProductionEnv): boolean {
     ...priorAuthSecrets(env),
     env.SSO_STATE_HMAC_SECRET,
     env.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
+    env.IDENTITY_REVOCATION_JWT_SECRET,
   ]
   return otherSecrets.includes(env.CLI_DEVICE_CODE_HMAC_SECRET)
 }

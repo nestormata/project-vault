@@ -3,6 +3,7 @@ import { getDb, type Tx } from '@project-vault/db'
 import {
   apiKeys,
   auditLogEntries,
+  externalIdentities,
   identityRevocationJti,
   refreshTokens,
   revokedTokens,
@@ -10,6 +11,7 @@ import {
 } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
+import { getAdminDb } from '../../lib/db.js'
 import { AppError } from '../../lib/errors.js'
 import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
@@ -539,6 +541,21 @@ export type RevokeAllSessionsForExternalIdentityResult = {
 
 type ExternalIdentityPair = { userId: string; orgId: string }
 
+async function lookupExternalIdentityPairs(
+  providerName: string,
+  externalSubject: string
+): Promise<ExternalIdentityPair[]> {
+  return getAdminDb()
+    .select({ userId: externalIdentities.userId, orgId: externalIdentities.orgId })
+    .from(externalIdentities)
+    .where(
+      and(
+        eq(externalIdentities.providerName, providerName),
+        eq(externalIdentities.externalSubject, externalSubject)
+      )
+    )
+}
+
 async function revokeIdentitySessionsInOrg(
   tx: Tx,
   {
@@ -587,8 +604,8 @@ async function revokeIdentitySessionsInOrg(
 }
 
 /**
- * Story 73.4 D3/D5/D6: burn the trusted-caller jti first, then bulk-revoke every session of
- * matching (provider_name, external_subject) rows on this node, in one transaction.
+ * Story 73.4 D3/D5/D6: resolve matching identities via the admin BYPASSRLS pool, then burn the
+ * trusted-caller jti first and bulk-revoke those sessions in one vault_app transaction.
  */
 export async function revokeAllSessionsForExternalIdentity({
   providerName,
@@ -607,19 +624,12 @@ export async function revokeAllSessionsForExternalIdentity({
 
   try {
     const subjectHash = hashIdentityRevocationSubject(providerName, externalSubject)
+    const pairs = await lookupExternalIdentityPairs(providerName, externalSubject)
     return await getDb().transaction(async (innerTx) => {
       const tx = innerTx as Tx
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${identityLockKey}))`)
       await tx.insert(identityRevocationJti).values({ jti, expiresAt })
 
-      const identityRows = await tx.execute<{ user_id: string; org_id: string }>(sql`
-        SELECT user_id, org_id
-        FROM lookup_external_identities_by_subject(${providerName}, ${externalSubject})
-      `)
-      const pairs: ExternalIdentityPair[] = [...identityRows].map((row) => ({
-        userId: row.user_id,
-        orgId: row.org_id,
-      }))
       const orgIds = [...new Set(pairs.map((pair) => pair.orgId))].sort()
       await forEachSequential(orgIds, (orgId) =>
         tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`)

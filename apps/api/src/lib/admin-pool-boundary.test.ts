@@ -18,6 +18,7 @@ function sourceFiles(directory: string): string[] {
 const importerAllowlist = new Set([
   'modules/auth/domain-lookup-routes.ts',
   'modules/auth/recovery-lookup.ts',
+  'modules/auth/session-revoke.ts',
   'modules/auth/sso-routes.ts',
   'modules/backup/alerts.ts',
   'modules/compliance/erasure-lookup.ts',

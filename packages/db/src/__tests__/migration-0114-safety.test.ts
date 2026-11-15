@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS } from '../lib/migration-safety.js'
+import {
+  findDestructiveStatements,
+  KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS,
+} from '../lib/migration-safety.js'
 
 const MIGRATION_PATH = resolve(
   import.meta.dirname,
@@ -12,15 +15,15 @@ describe('migration 0114 safety', () => {
   const sql = readFileSync(MIGRATION_PATH, 'utf-8')
   const statements = sql.replaceAll(/^\s*--(?! statement-breakpoint).*$/gm, '')
 
-  it('creates identity_revocation_jti and the cross-org lookup function only', () => {
+  it('creates identity_revocation_jti only and nothing destructive', () => {
     expect(statements.match(/CREATE TABLE "([a-z_]+)"/g)).toEqual([
       'CREATE TABLE "identity_revocation_jti"',
     ])
-    expect(statements).toMatch(/CREATE FUNCTION lookup_external_identities_by_subject/)
+    expect(findDestructiveStatements(sql)).toEqual([])
+    expect(KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS).not.toHaveProperty('0114_identity_revocation_jti')
     expect(statements).not.toMatch(
-      /DROP TABLE|RENAME|TRUNCATE|DELETE FROM|CREATE TRIGGER|ALTER TABLE/i
+      /DROP TABLE|RENAME|TRUNCATE|DELETE FROM|CREATE TRIGGER|ALTER TABLE|CREATE FUNCTION|SECURITY DEFINER/i
     )
-    expect(KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS).toHaveProperty('0114_identity_revocation_jti')
   })
 
   it('has exactly the designed columns and jti length check', () => {
@@ -41,15 +44,8 @@ describe('migration 0114 safety', () => {
     )
   })
 
-  it('has no table RLS and grants execute only on the new lookup function', () => {
-    expect(statements).not.toMatch(/ROW LEVEL SECURITY|CREATE POLICY/)
-    expect(statements).toMatch(
-      /REVOKE ALL ON FUNCTION lookup_external_identities_by_subject\(text, text\) FROM PUBLIC/
-    )
-    expect(statements).toMatch(
-      /GRANT EXECUTE ON FUNCTION lookup_external_identities_by_subject\(text, text\) TO vault_app/
-    )
-    expect(statements).not.toMatch(/GRANT[^;]*ON TABLE/)
+  it('has no table RLS and no ACL statements (no tenant is known yet, default privileges apply)', () => {
+    expect(statements).not.toMatch(/ROW LEVEL SECURITY|CREATE POLICY|GRANT|REVOKE|OWNER TO/)
     expect(statements).not.toMatch(/vault_extension/)
   })
 })

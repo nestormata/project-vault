@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto'
 import { createSigner } from 'fast-jwt'
 import { describe, expect, it } from 'vitest'
 import {
@@ -84,6 +85,47 @@ describe('verifyIdentityRevocationJwt', () => {
     expect(verifyIdentityRevocationJwt(longLived, deps)).toEqual({
       ok: false,
       reason: 'ttl_exceeded',
+    })
+  })
+
+  it('rejects alg other than HS256 with the same class as a bad signature', () => {
+    const now = Math.floor(Date.now() / 1000)
+    const payload = {
+      iss: 'workos',
+      sub: 'user_abc',
+      aud: AUD,
+      jti: 'jti-alg',
+      iat: now,
+      exp: now + 60,
+    }
+    const unsigned = [
+      Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url'),
+      Buffer.from(JSON.stringify(payload)).toString('base64url'),
+      '',
+    ].join('.')
+    expect(verifyIdentityRevocationJwt(unsigned, deps)).toEqual({
+      ok: false,
+      reason: 'signature_invalid',
+    })
+
+    const { privateKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    })
+    const rs256 = createSigner({
+      key: privateKey,
+      algorithm: 'RS256',
+      expiresIn: 60_000,
+    })({
+      iss: 'workos',
+      sub: 'user_abc',
+      aud: AUD,
+      jti: 'jti-rs',
+    }) as string
+    expect(verifyIdentityRevocationJwt(rs256, deps)).toEqual({
+      ok: false,
+      reason: 'signature_invalid',
     })
   })
 
