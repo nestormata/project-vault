@@ -338,6 +338,22 @@ async function sendMfaAction<T>(
   }
 }
 
+const WEBAUTHN_MUTATION_SECURITY = {
+  rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
+  writeAuditEvent: false,
+} as const
+
+function webauthnCredentialId(
+  req: FastifyRequest,
+  reply: FastifyReply
+): { ok: true; id: string } | { ok: false; reply: unknown } {
+  const params = webauthnCredentialParamsSchema.safeParse(req.params)
+  if (!params.success) {
+    return { ok: false, reply: reply.status(422).send(validationError(params.error, 'params')) }
+  }
+  return { ok: true, id: params.data.id }
+}
+
 function accessTokenExpFromRequest(fastify: FastifyApp, req: FastifyRequest): Date | undefined {
   const accessToken = (req as unknown as { cookies?: Record<string, string | undefined> })
     .cookies?.['access-token']
@@ -625,15 +641,10 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         429: ApiErrorSchema,
       },
     },
-    security: {
-      rateLimit: { max: 10, timeWindowMs: 60 * 60 * 1000 },
-      writeAuditEvent: false,
-    },
+    security: { rateLimit: { max: 10, timeWindowMs: 60 * 60 * 1000 }, writeAuditEvent: false },
     handler: async (ctx, req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
-      return sendMfaAction(reply, () =>
-        startWebauthnRegistration(secureCtx.auth, metaFromRequest(req), secureCtx.tx)
-      )
+      const { auth, tx } = ctx as SecureRouteContext
+      return sendMfaAction(reply, () => startWebauthnRegistration(auth, metaFromRequest(req), tx))
     },
   })
 
@@ -651,21 +662,13 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         429: ApiErrorSchema,
       },
     },
-    security: {
-      rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
-      writeAuditEvent: false,
-    },
+    security: WEBAUTHN_MUTATION_SECURITY,
     handler: async (ctx, req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
       const parsed = parseBody(webauthnRegisterBodySchema, req, reply)
       if (!parsed.success) return parsed.reply
+      const { auth, tx } = ctx as SecureRouteContext
       return sendMfaAction(reply, () =>
-        completeWebauthnRegistration(
-          secureCtx.auth,
-          parsed.data,
-          metaFromRequest(req),
-          secureCtx.tx
-        )
+        completeWebauthnRegistration(auth, parsed.data, metaFromRequest(req), tx)
       )
     },
   })
@@ -682,8 +685,8 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
     security: { rateLimit: { max: 30 }, writeAuditEvent: false },
     handler: async (ctx, _req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
-      return sendMfaAction(reply, () => listWebauthnCredentials(secureCtx.auth, secureCtx.tx))
+      const { auth, tx } = ctx as SecureRouteContext
+      return sendMfaAction(reply, () => listWebauthnCredentials(auth, tx))
     },
   })
 
@@ -700,24 +703,15 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         429: ApiErrorSchema,
       },
     },
-    security: {
-      rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
-      writeAuditEvent: false,
-    },
+    security: WEBAUTHN_MUTATION_SECURITY,
     handler: async (ctx, req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const params = webauthnCredentialParamsSchema.safeParse(req.params)
-      if (!params.success) return reply.status(422).send(validationError(params.error, 'params'))
+      const credential = webauthnCredentialId(req, reply)
+      if (!credential.ok) return credential.reply
       const parsed = parseBody(webauthnRenameBodySchema, req, reply)
       if (!parsed.success) return parsed.reply
+      const { auth, tx } = ctx as SecureRouteContext
       return sendMfaAction(reply, () =>
-        renameWebauthnCredential(
-          secureCtx.auth,
-          params.data.id,
-          parsed.data.name,
-          metaFromRequest(req),
-          secureCtx.tx
-        )
+        renameWebauthnCredential(auth, credential.id, parsed.data.name, metaFromRequest(req), tx)
       )
     },
   })
@@ -734,16 +728,13 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         429: ApiErrorSchema,
       },
     },
-    security: {
-      rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
-      writeAuditEvent: false,
-    },
+    security: WEBAUTHN_MUTATION_SECURITY,
     handler: async (ctx, req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const params = webauthnCredentialParamsSchema.safeParse(req.params)
-      if (!params.success) return reply.status(422).send(validationError(params.error, 'params'))
+      const credential = webauthnCredentialId(req, reply)
+      if (!credential.ok) return credential.reply
+      const { auth, tx } = ctx as SecureRouteContext
       return sendMfaAction(reply, () =>
-        deleteWebauthnCredential(secureCtx.auth, params.data.id, metaFromRequest(req), secureCtx.tx)
+        deleteWebauthnCredential(auth, credential.id, metaFromRequest(req), tx)
       )
     },
   })
