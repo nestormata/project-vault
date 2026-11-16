@@ -117,6 +117,20 @@ const CASES: Case[] = [
     original: 'button',
   },
   {
+    point: 'settings.security.hardware-keys',
+    load: () => import('$lib/components/settings/SecurityHardwareKeysRegion.svelte'),
+    props: {
+      initialUser: {
+        id: 'u1',
+        email: 'owner-user',
+        orgId: 'o1',
+        orgRole: 'owner',
+        mfaEnrolled: false,
+      },
+    },
+    original: 'h2',
+  },
+  {
     point: 'project.certificates.list-header',
     load: () => import('$lib/components/monitoring/AssetListHeaderRegion.svelte'),
     props: {

@@ -494,6 +494,31 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'MFA_RECOVERY_CODES_REGENERATED',
     sameTransactionAuditService: 'regenerateRecoveryCodes',
   },
+  'POST /api/v1/auth/mfa/webauthn/register/options': {
+    action: SECURITY_ACTION,
+    auditEvent: 'WEBAUTHN_REGISTRATION_STARTED',
+    sameTransactionAuditService: 'startWebauthnRegistration',
+  },
+  'POST /api/v1/auth/mfa/webauthn/register': {
+    action: SECURITY_ACTION,
+    auditEvent: 'WEBAUTHN_CREDENTIAL_REGISTERED',
+    sameTransactionAuditService: 'completeWebauthnRegistration',
+  },
+  'GET /api/v1/auth/mfa/webauthn/credentials': {
+    action: 'read',
+    auditOmissionReason: 'Hardware key list omits public keys and does not change state.',
+    reviewer: SECURITY_OWNER,
+  },
+  'PATCH /api/v1/auth/mfa/webauthn/credentials/:id': {
+    action: SECURITY_ACTION,
+    auditEvent: 'WEBAUTHN_CREDENTIAL_RENAMED',
+    sameTransactionAuditService: 'renameWebauthnCredential',
+  },
+  'DELETE /api/v1/auth/mfa/webauthn/credentials/:id': {
+    action: SECURITY_ACTION,
+    auditEvent: 'WEBAUTHN_CREDENTIAL_REMOVED',
+    sameTransactionAuditService: 'deleteWebauthnCredential',
+  },
   'POST /api/v1/auth/cli/device/decision': {
     action: SECURITY_ACTION,
     auditEvent: 'CLI_DEVICE_LOGIN_APPROVED',

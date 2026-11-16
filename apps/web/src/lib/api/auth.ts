@@ -6,6 +6,10 @@ import type {
   DomainLookupResponse,
   AuthSessionResponse,
 } from '@project-vault/shared'
+import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/browser'
 import { apiFetch } from './client.js'
 
 export type {
@@ -92,8 +96,12 @@ export type MfaRegenerateRecoveryCodesResponse = {
 }
 
 function jsonPost(body?: unknown): RequestInit {
+  return jsonBody('POST', body)
+}
+
+function jsonBody(method: string, body?: unknown): RequestInit {
   return {
-    method: 'POST',
+    method,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }
 }
@@ -171,6 +179,64 @@ export function regenerateMfaRecoveryCodes(fetchFn: typeof fetch, request: MfaTo
     '/api/v1/auth/mfa/regenerate-recovery-codes',
     jsonPost(request)
   )
+}
+
+export type WebauthnCredentialSummary = {
+  id: string
+  name: string
+  createdAt: string
+  lastUsedAt: string | null
+  signCount: number
+}
+
+export type WebauthnRegisterOptionsResponse = {
+  challengeId: string
+  options: PublicKeyCredentialCreationOptionsJSON
+}
+
+export type WebauthnRegisteredCredential = {
+  id: string
+  name: string
+  createdAt: string
+}
+
+const WEBAUTHN_CREDENTIALS_URL = '/api/v1/auth/mfa/webauthn/credentials'
+
+export function startWebauthnRegistration(fetchFn: typeof fetch) {
+  return apiFetch<WebauthnRegisterOptionsResponse>(
+    fetchFn,
+    '/api/v1/auth/mfa/webauthn/register/options',
+    jsonPost()
+  )
+}
+
+export function completeWebauthnRegistration(
+  fetchFn: typeof fetch,
+  request: { challengeId: string; name: string; attestation: RegistrationResponseJSON }
+) {
+  return apiFetch<WebauthnRegisteredCredential>(
+    fetchFn,
+    '/api/v1/auth/mfa/webauthn/register',
+    jsonPost(request)
+  )
+}
+
+export function listWebauthnCredentials(fetchFn: typeof fetch) {
+  return apiFetch<{ credentials: WebauthnCredentialSummary[] }>(fetchFn, WEBAUTHN_CREDENTIALS_URL)
+}
+
+export function renameWebauthnCredential(fetchFn: typeof fetch, id: string, name: string) {
+  return apiFetch<{ id: string; name: string }>(
+    fetchFn,
+    `${WEBAUTHN_CREDENTIALS_URL}/${id}`,
+    jsonBody('PATCH', { name })
+  )
+}
+
+export function deleteWebauthnCredential(fetchFn: typeof fetch, id: string) {
+  return apiFetch<{ id: string }>(fetchFn, `${WEBAUTHN_CREDENTIALS_URL}/${id}`, {
+    method: 'DELETE',
+  })
 }
 
 export function getCurrentUser(fetchFn: typeof fetch) {

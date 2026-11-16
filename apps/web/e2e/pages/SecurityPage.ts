@@ -35,6 +35,18 @@ export class SecurityPage {
     return this.page.getByRole('heading', { name: 'MFA is enabled' })
   }
 
+  hardwareKeysHeading() {
+    return this.page.getByRole('heading', { name: 'Hardware security keys' })
+  }
+
+  registerHardwareKeyButton() {
+    return this.page.getByRole('button', { name: 'Register hardware key' })
+  }
+
+  hardwareKeyNameInput() {
+    return this.page.getByLabel('Key name')
+  }
+
   async enroll(secretExtractor: (secret: string) => string): Promise<void> {
     await this.startEnrollmentButton().click()
     const secret = (await this.secretText().textContent())?.trim() ?? ''

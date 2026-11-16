@@ -46,6 +46,10 @@
  * hop, and apps/api uses it for SSRF-guarded outbound fetches. Both declare it exactly; the former
  * workspace-wide `undici` override was removed because this gate forbids overriding a listed
  * package (transitive users such as `@actions/http-client` now resolve their own patched ranges).
+ *
+ * Added 2026-11-15 (Story 46.1): `@simplewebauthn/server`. Registration attestation
+ * verification is crypto-adjacent (NFR-SEC16). `@simplewebauthn/browser` is a web helper
+ * around `navigator.credentials` and is not on this list.
  */
 export const CRYPTO_ADJACENT_PACKAGES: readonly string[] = [
   'argon2',
@@ -54,4 +58,5 @@ export const CRYPTO_ADJACENT_PACKAGES: readonly string[] = [
   'fast-jwt',
   'otpauth',
   'undici',
+  '@simplewebauthn/server',
 ]

@@ -41,6 +41,10 @@ export const PAGINATION_EXEMPT_OPERATIONS = new Set<string>([
   'GET /api/v1/projects/{projectId}/certificates',
   'GET /api/v1/projects/{projectId}/domains',
   'GET /api/v1/projects/{projectId}/service-endpoints',
+  // Story 46-1: the caller's own hardware-key list is a small identity-scoped collection
+  // (`{ data: { credentials: [...] } }`) with no page/limit query params. Paginate when a later
+  // story adds a bound that needs FR97, not as a schema-only wrapper here.
+  'GET /api/v1/auth/mfa/webauthn/credentials',
 ])
 
 function isArray(value: unknown): value is unknown[] {

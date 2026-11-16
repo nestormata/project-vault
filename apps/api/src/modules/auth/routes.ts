@@ -38,6 +38,14 @@ import {
   sessionsListResponseSchema,
   revokeOtherSessionsResponseSchema,
   methodNotAllowedResponseSchema,
+  webauthnRegisterOptionsResponseSchema,
+  webauthnRegisterBodySchema,
+  webauthnRegisterResponseSchema,
+  webauthnCredentialListResponseSchema,
+  webauthnRenameBodySchema,
+  webauthnRenameResponseSchema,
+  webauthnDeleteResponseSchema,
+  webauthnCredentialParamsSchema,
 } from './schema.js'
 import { normalizeEmail } from './normalize.js'
 import {
@@ -63,6 +71,13 @@ import {
   type TokenMaterial,
 } from './service.js'
 import { loadMfaEnforcementStatus } from './mfa-enforcement.js'
+import {
+  completeWebauthnRegistration,
+  deleteWebauthnCredential,
+  listWebauthnCredentials,
+  renameWebauthnCredential,
+  startWebauthnRegistration,
+} from './webauthn.js'
 import { revokeAllOtherSessions, revokeSessionById, sessionNotFound } from './session-revoke.js'
 import {
   RateLimitExceededResponseSchema,
@@ -323,6 +338,22 @@ async function sendMfaAction<T>(
   }
 }
 
+const WEBAUTHN_MUTATION_SECURITY = {
+  rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
+  writeAuditEvent: false,
+} as const
+
+function webauthnCredentialId(
+  req: FastifyRequest,
+  reply: FastifyReply
+): { ok: true; id: string } | { ok: false; reply: unknown } {
+  const params = webauthnCredentialParamsSchema.safeParse(req.params)
+  if (!params.success) {
+    return { ok: false, reply: reply.status(422).send(validationError(params.error, 'params')) }
+  }
+  return { ok: true, id: params.data.id }
+}
+
 function accessTokenExpFromRequest(fastify: FastifyApp, req: FastifyRequest): Date | undefined {
   const accessToken = (req as unknown as { cookies?: Record<string, string | undefined> })
     .cookies?.['access-token']
@@ -479,6 +510,8 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   registerMethodNotAllowed(fastify, '/mfa/regenerate-recovery-codes')
   registerMethodNotAllowed(fastify, '/mfa/recover')
   registerMethodNotAllowed(fastify, '/mfa/verify-login')
+  registerMethodNotAllowed(fastify, '/mfa/webauthn/register/options')
+  registerMethodNotAllowed(fastify, '/mfa/webauthn/register')
 
   secureRoute(fastify, {
     method: 'GET',
@@ -594,6 +627,115 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         await sendPendingMfaNotifications(fastify, result.data.notificationJobs)
       }
       return result
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/mfa/webauthn/register/options',
+    schema: {
+      response: {
+        200: webauthnRegisterOptionsResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: { rateLimit: { max: 10, timeWindowMs: 60 * 60 * 1000 }, writeAuditEvent: false },
+    handler: async (ctx, req, reply) => {
+      const { auth, tx } = ctx as SecureRouteContext
+      return sendMfaAction(reply, () => startWebauthnRegistration(auth, metaFromRequest(req), tx))
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/mfa/webauthn/register',
+    schema: {
+      body: webauthnRegisterBodySchema,
+      response: {
+        200: webauthnRegisterResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: WEBAUTHN_MUTATION_SECURITY,
+    handler: async (ctx, req, reply) => {
+      const parsed = parseBody(webauthnRegisterBodySchema, req, reply)
+      if (!parsed.success) return parsed.reply
+      const { auth, tx } = ctx as SecureRouteContext
+      return sendMfaAction(reply, () =>
+        completeWebauthnRegistration(auth, parsed.data, metaFromRequest(req), tx)
+      )
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/mfa/webauthn/credentials',
+    schema: {
+      response: {
+        200: webauthnCredentialListResponseSchema,
+        401: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: { rateLimit: { max: 30 }, writeAuditEvent: false },
+    handler: async (ctx, _req, reply) => {
+      const { auth, tx } = ctx as SecureRouteContext
+      return sendMfaAction(reply, () => listWebauthnCredentials(auth, tx))
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'PATCH',
+    url: '/mfa/webauthn/credentials/:id',
+    schema: {
+      body: webauthnRenameBodySchema,
+      response: {
+        200: webauthnRenameResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: WEBAUTHN_MUTATION_SECURITY,
+    handler: async (ctx, req, reply) => {
+      const credential = webauthnCredentialId(req, reply)
+      if (!credential.ok) return credential.reply
+      const parsed = parseBody(webauthnRenameBodySchema, req, reply)
+      if (!parsed.success) return parsed.reply
+      const { auth, tx } = ctx as SecureRouteContext
+      return sendMfaAction(reply, () =>
+        renameWebauthnCredential(auth, credential.id, parsed.data.name, metaFromRequest(req), tx)
+      )
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'DELETE',
+    url: '/mfa/webauthn/credentials/:id',
+    schema: {
+      response: {
+        200: webauthnDeleteResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: WEBAUTHN_MUTATION_SECURITY,
+    handler: async (ctx, req, reply) => {
+      const credential = webauthnCredentialId(req, reply)
+      if (!credential.ok) return credential.reply
+      const { auth, tx } = ctx as SecureRouteContext
+      return sendMfaAction(reply, () =>
+        deleteWebauthnCredential(auth, credential.id, metaFromRequest(req), tx)
+      )
     },
   })
 

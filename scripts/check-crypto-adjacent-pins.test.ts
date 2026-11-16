@@ -43,11 +43,11 @@ const FIXED_CODEOWNERS_LINES =
 
 /** A clean, fully-compliant `.github/CODEOWNERS` fixture — covers the fixed infra paths this
  * script always requires plus the one dynamic package.json path (`apps/svc/package.json`) that
- * `writeCleanBaseFixture` declares all six canonical packages in. */
+ * `writeCleanBaseFixture` declares the packages that fixture's app uses. */
 const CLEAN_CODEOWNERS = `${FIXED_CODEOWNERS_LINES}${SVC_CODEOWNERS_LINE}`
 
 /** A clean, fully-compliant `.github/dependabot.yml` fixture — the two group lists both match the
- * real canonical list exactly (argon2, bcrypt, @fastify/jwt, fast-jwt, otpauth, undici). */
+ * real canonical list exactly. */
 const CLEAN_DEPENDABOT_YML = `version: 2
 updates:
   - package-ecosystem: "npm"
@@ -63,6 +63,7 @@ updates:
           - "fast-jwt"
           - "otpauth"
           - "undici"
+          - "@simplewebauthn/server"
         labels:
           - "crypto-adjacent"
       pnpm-workspace:
@@ -75,6 +76,7 @@ updates:
           - "fast-jwt"
           - "otpauth"
           - "undici"
+          - "@simplewebauthn/server"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -540,7 +542,10 @@ updates:
     writeFixture(
       root,
       DEPENDABOT_YML_REL,
-      CLEAN_DEPENDABOT_YML.replace('          - "undici"\n        labels:', '        labels:')
+      CLEAN_DEPENDABOT_YML.replace(
+        '          - "undici"\n          - "@simplewebauthn/server"\n        labels:',
+        '          - "@simplewebauthn/server"\n        labels:'
+      )
     )
 
     const { violations } = scanCryptoAdjacentPins(root)

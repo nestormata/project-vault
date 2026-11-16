@@ -19,6 +19,7 @@ updates:
           - "fast-jwt"
           - "otpauth"
           - "undici"
+          - "@simplewebauthn/server"
         labels:
           - "crypto-adjacent"
       pnpm-workspace:
@@ -37,6 +38,7 @@ updates:
           - "fast-jwt"
           - "otpauth"
           - "undici"
+          - "@simplewebauthn/server"
 
   # Story 64.2 — every third-party action is pinned `owner/repo@<40-hex sha> # vX.Y.Z`; Dependabot
   # bumps the SHA and rewrites the trailing version comment in the same edit.

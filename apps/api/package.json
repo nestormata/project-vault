@@ -48,6 +48,7 @@
     "@project-vault/db": "workspace:*",
     "@project-vault/extension-api": "workspace:*",
     "@project-vault/shared": "workspace:*",
+    "@simplewebauthn/server": "14.1.0",
     "bcrypt": "6.0.0",
     "drizzle-orm": "^0.45.4",
     "fast-jwt": "6.3.6",

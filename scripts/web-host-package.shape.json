@@ -61,6 +61,7 @@
   "dependencies": {
     "@inlang/paraglide-js": "<exact>",
     "@project-vault/extension-api": "<exact>",
+    "@simplewebauthn/browser": "<exact>",
     "@zxcvbn-ts/core": "<exact>",
     "@zxcvbn-ts/language-common": "<exact>",
     "@zxcvbn-ts/language-en": "<exact>",

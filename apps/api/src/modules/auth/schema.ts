@@ -139,6 +139,74 @@ export const methodNotAllowedResponseSchema = z.object({
   message: z.string(),
 })
 
+export const webauthnRegisterOptionsResponseSchema = z.object({
+  data: z.object({
+    challengeId: z.uuid(),
+    options: z.record(z.string(), z.unknown()),
+  }),
+})
+
+export const webauthnRegisterBodySchema = z.object({
+  challengeId: z.uuid(),
+  name: z.string().min(1).max(64),
+  attestation: z
+    .object({
+      id: z.string().min(1),
+      rawId: z.string().min(1),
+      type: z.literal('public-key'),
+      response: z
+        .object({
+          clientDataJSON: z.string().min(1),
+          attestationObject: z.string().min(1),
+        })
+        .passthrough(),
+    })
+    .passthrough(),
+})
+
+export const webauthnRegisterResponseSchema = z.object({
+  data: z.object({
+    id: z.uuid(),
+    name: z.string(),
+    createdAt: z.iso.datetime(),
+  }),
+})
+
+export const webauthnCredentialListResponseSchema = z.object({
+  data: z.object({
+    credentials: z.array(
+      z.object({
+        id: z.uuid(),
+        name: z.string(),
+        createdAt: z.iso.datetime(),
+        lastUsedAt: z.iso.datetime().nullable(),
+        signCount: z.number().int().min(0),
+      })
+    ),
+  }),
+})
+
+export const webauthnRenameBodySchema = z.object({
+  name: z.string().min(1).max(64),
+})
+
+export const webauthnRenameResponseSchema = z.object({
+  data: z.object({
+    id: z.uuid(),
+    name: z.string(),
+  }),
+})
+
+export const webauthnDeleteResponseSchema = z.object({
+  data: z.object({
+    id: z.uuid(),
+  }),
+})
+
+export const webauthnCredentialParamsSchema = z.object({
+  id: z.uuid(),
+})
+
 export type MfaVerifyEnrollmentBody = z.infer<typeof mfaVerifyEnrollmentBodySchema>
 export type MfaRegenerateBody = z.infer<typeof mfaRegenerateBodySchema>
 export type MfaRecoverBody = z.infer<typeof mfaRecoverBodySchema>

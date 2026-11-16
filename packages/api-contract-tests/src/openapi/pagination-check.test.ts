@@ -52,14 +52,14 @@ describe('checkPaginationFields (D7)', () => {
 })
 
 // Story 9.3 code-review follow-up (edge-case review): D8 scoped its fix to 4 concrete gaps, but
-// these six pre-existing, still-unpaginated operations are reachable by the same D7 blanket check
+// these still-unpaginated operations are reachable by the same D7 blanket check
 // contract.test.ts runs against every enumerated route — confirmed via direct schema inspection
 // (machine-users/schema.ts's ListApiKeysResponseSchema/ActiveMachineUserKeysResponseSchema and
 // monitoring/schema.ts's four list response schemas all declare only `{ items }`/`{ items, total
 // }`, no page/limit/hasNext, and accept no page/limit query params server-side). Exempted rather
 // than fixed here — see pagination-check.ts's doc comment for the full rationale.
 describe('PAGINATION_EXEMPT_OPERATIONS (D7 follow-up)', () => {
-  it('lists exactly the six confirmed pre-existing, still-unpaginated operations', () => {
+  it('lists exactly the confirmed still-unpaginated operations', () => {
     expect(PAGINATION_EXEMPT_OPERATIONS).toEqual(
       new Set([
         'GET /api/v1/machine-users/{machineUserId}/api-keys',
@@ -68,6 +68,7 @@ describe('PAGINATION_EXEMPT_OPERATIONS (D7 follow-up)', () => {
         'GET /api/v1/projects/{projectId}/certificates',
         'GET /api/v1/projects/{projectId}/domains',
         'GET /api/v1/projects/{projectId}/service-endpoints',
+        'GET /api/v1/auth/mfa/webauthn/credentials',
       ])
     )
   })

@@ -15,6 +15,10 @@ export const EXCLUDED_TABLES = new Set([
   'totp_used_codes',
   'failed_auth_attempts',
   'pending_mfa_sessions',
+  // Story 46.1: identity-scoped WebAuthn credential and registration-challenge tables. Same
+  // class as mfa_enrollments: user_id only, no org_id, access gated in the auth service.
+  'webauthn_credentials',
+  'webauthn_registration_challenges',
   'platform_security_events',
   // Story 30.2: instance-level replay-burn ledger — no tenant is known/trusted at ingestion time.
   // Story 73.1: the browser-bound handoff nonce, written by /auth/start before any user or org is

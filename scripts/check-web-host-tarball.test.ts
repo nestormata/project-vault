@@ -314,6 +314,7 @@ describe('web-host package.json (Story 68.2 AC-2/AC-6)', () => {
       expect.arrayContaining([
         '@inlang/paraglide-js',
         '@project-vault/extension-api',
+        '@simplewebauthn/browser',
         'dompurify',
         'undici',
         'zod',

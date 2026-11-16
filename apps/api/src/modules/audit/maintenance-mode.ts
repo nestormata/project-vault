@@ -13,6 +13,11 @@ export const SECURITY_CRITICAL_AUDIT_EVENT_TYPES: ReadonlySet<string> = new Set(
   AuditEvent.MFA_LOGIN_VERIFIED,
   AuditEvent.MFA_RECOVERY_USED,
   AuditEvent.MFA_RECOVERY_CODES_REGENERATED,
+  AuditEvent.WEBAUTHN_REGISTRATION_STARTED,
+  AuditEvent.WEBAUTHN_CREDENTIAL_REGISTERED,
+  AuditEvent.WEBAUTHN_CREDENTIAL_RENAMED,
+  AuditEvent.WEBAUTHN_CREDENTIAL_REMOVED,
+  AuditEvent.WEBAUTHN_CLONED_AUTHENTICATOR,
   AuditEvent.SESSION_REVOKED,
   // Story 22.1 fix: SESSION_CREATED must never be blocked by the per-org quota gate (this set
   // now doubles as `classifyAuditWriteExemption`'s security_critical exemption class — see

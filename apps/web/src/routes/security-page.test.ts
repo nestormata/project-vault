@@ -7,6 +7,11 @@ vi.mock('$lib/api/auth.js', () => ({
   enrollMfa: vi.fn(),
   verifyMfaEnrollment: vi.fn(),
   regenerateMfaRecoveryCodes: vi.fn(),
+  listWebauthnCredentials: vi.fn().mockResolvedValue({ credentials: [] }),
+  startWebauthnRegistration: vi.fn(),
+  completeWebauthnRegistration: vi.fn(),
+  renameWebauthnCredential: vi.fn(),
+  deleteWebauthnCredential: vi.fn(),
 }))
 
 import { appLayoutData, testAuthUser } from '$lib/test/page-data.js'
@@ -37,6 +42,7 @@ describe('/settings/security +page.svelte', () => {
 
     expect(screen.getByRole('heading', { name: 'Security' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /set up authenticator app/i })).toBeTruthy()
+    expect(screen.getByText(/become available once TOTP is enrolled/i)).toBeTruthy()
   })
 
   it('renders the enabled status for an already-enrolled user', () => {
