@@ -90,6 +90,10 @@ export type {
   OrgMembershipResult,
 } from './hooks/org-membership.js'
 export type {
+  EffectiveProjectAccessContext,
+  EffectiveProjectAccessGrantSource,
+  EffectiveProjectAccessItem,
+  EffectiveProjectAccessOutcome,
   ProjectAuthorizationCheckContext,
   ProjectAuthorizationHost,
   ProjectAuthorizationOutcome,

@@ -45,7 +45,9 @@ export type HostServices = {
    * this role or above" — a project-scoped sibling of `orgAuthorization`, not an extension of it
    * (see `hooks/project-authorization.ts`'s doc comment for why a dedicated field). Reuses PV's
    * own `project_memberships`-backed `effectiveProjectRole()` semantics (org-owner/admin bypass,
-   * explicit-row fallback) so its answer matches what PV's own project routes already enforce. */
+   * explicit-row fallback) so its answer matches what PV's own project routes already enforce.
+   * Story 73.6 adds `readEffectiveProjectAccess()`: the same semantics as a list plus grant
+   * source (`role` | `direct`), with classification groups reported `not_evaluated`. */
   projectAuthorization: ProjectAuthorizationHost
   /** Story 40.1 — bound once at extension-load time, same as every field above. Its one method,
    * `consume()`, internally resolves the current request's `extension-request-state` cookie and

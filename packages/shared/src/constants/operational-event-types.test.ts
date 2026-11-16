@@ -223,6 +223,12 @@ describe('OperationalEvent', () => {
     expect(OperationalEvent.PROJECT_AUTHORIZATION_RATE_LIMITED).toBe(
       'project_authorization.rate_limited'
     )
+    expect(OperationalEvent.PROJECT_ACCESS_READ_RECORDED).toBe(
+      'project_authorization.effective_access_read_recorded'
+    )
+    expect(OperationalEvent.PROJECT_ACCESS_READ_RATE_LIMITED).toBe(
+      'project_authorization.effective_access_read_rate_limited'
+    )
   })
 
   it('exposes the Story 56.1 scheduled-task job-runner event types (AC4)', () => {

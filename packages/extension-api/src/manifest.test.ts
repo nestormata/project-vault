@@ -79,8 +79,8 @@ describe('EXTENSION_API_VERSION', () => {
     // Story 73.3 — handoffDisplay claims (additive-minor): 3.41.0 -> 3.42.0.
     // Story 65.8 — miss-timing hold (additive-minor): 3.42.0 -> 3.44.0.
     // Story 73.7 — serviceEndpointLimits optional hook (additive-minor): 3.44.0 -> 3.45.0.
-    // Story 73.16 — share display fields (additive-minor): 3.45.0 -> 3.46.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.46.0')
+    // Story 73.6 — effective project access read (additive-minor): 3.46.0 -> 3.47.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.47.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

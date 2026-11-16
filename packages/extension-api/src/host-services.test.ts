@@ -86,7 +86,14 @@ describe('HostServices — Story 20.12 AC widening to include credentialSharing'
     const fixture: HostServices = {
       auditEventSource: { writeAuditEvent: async () => ({ id: '1', createdAt: TEST_DATE }) },
       orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
-      projectAuthorization: { checkProjectMembership: async () => ({ outcome: 'authorized' }) },
+      projectAuthorization: {
+        checkProjectMembership: async () => ({ outcome: 'authorized' }),
+        readEffectiveProjectAccess: async () => ({
+          outcome: 'ok',
+          items: [],
+          groupGrantEvaluation: 'not_evaluated',
+        }),
+      },
       ephemeralState: {
         set: async () => undefined,
         get: async () => undefined,
@@ -124,7 +131,14 @@ describe('HostServices — Story 20.12 AC widening to include credentialSharing'
     const host: HostServices = {
       auditEventSource: { writeAuditEvent: async () => ({ id: '1', createdAt: TEST_DATE }) },
       orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
-      projectAuthorization: { checkProjectMembership: async () => ({ outcome: 'authorized' }) },
+      projectAuthorization: {
+        checkProjectMembership: async () => ({ outcome: 'authorized' }),
+        readEffectiveProjectAccess: async () => ({
+          outcome: 'ok',
+          items: [],
+          groupGrantEvaluation: 'not_evaluated',
+        }),
+      },
       ephemeralState: {
         set: async () => undefined,
         get: async () => undefined,

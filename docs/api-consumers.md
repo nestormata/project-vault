@@ -126,6 +126,21 @@ story. HostServices has no membership write. The WorkOS `viewer` slug stays cosm
 `viewer` is the smallest PV-enforced CM viewer: it does not auto-grant a project `viewer` row on
 every project.
 
+Story 73.6 adds a read-only sibling:
+`GET /api/v1/service/organizations/{organizationId}/users/{userId}/project-access`. The same
+`x-service-provisioning-token` authenticates it. The response is
+`{ data: { userId, items, groupGrantEvaluation } }` where each item is
+`{ projectId, effectiveRole, grantSource }` and `grantSource` is `role` (org owner/admin bypass)
+or `direct` (an explicit `project_memberships` row). `groupGrantEvaluation` is always
+`not_evaluated` until PV honours CentralizeMe DW-459; this route never emits `grantSource: group`.
+A user who is missing, inactive, or outside the organization, and a member with no visible
+projects, all receive HTTP 200 with `items: []`. A missing organization is `404
+organization_not_found`; an org that is not CentralizeMe-managed is `403
+organization_not_centralizeme_managed`. Archived and soft-deleted projects are omitted. The route
+is rate-limited (`429` `rate_limit_exceeded`, key `service-project-access-read`, 60/minute).
+Composed and extension callers use `HostServices.projectAuthorization.readEffectiveProjectAccess`
+instead, which uses ambient request org and lists only projects the ambient caller can see.
+
 ## Response envelopes
 
 A successful response wraps its payload in `data`:

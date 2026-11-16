@@ -31,6 +31,7 @@ import { checkOrgAuthorization } from '../lib/org-authorization.js'
 import { isOrgMemberForScheduledTask } from '../lib/org-membership.js'
 import { forEachSequential } from '../lib/for-each-sequential.js'
 import { checkProjectAuthorization } from '../lib/project-authorization.js'
+import { readEffectiveProjectAccess } from '../lib/project-authorization-effective-access.js'
 import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
 import { createExtensionRequestStateHost } from '../lib/extension-request-state-host.js'
 import { buildMonitoringHost } from '../lib/monitoring-host.js'
@@ -287,6 +288,8 @@ async function buildHostServices(
     projectAuthorization: {
       checkProjectMembership: (context) =>
         checkProjectAuthorization(context, { extensionName: manifest.name, logger }),
+      readEffectiveProjectAccess: (context) =>
+        readEffectiveProjectAccess(context, { extensionName: manifest.name, logger }),
     },
     // Story 20.8 — bound once at extension-load time, same as auditEventSource/orgAuthorization
     // above (construction lifecycle: Story 23.11 shipped an

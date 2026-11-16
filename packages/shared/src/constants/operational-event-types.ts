@@ -560,6 +560,11 @@ export const OperationalEvent = {
   // dedicated rate-limit budget from both capability-gate.ts's and org-authorization.ts's own
   // (never shared).
   PROJECT_AUTHORIZATION_RATE_LIMITED: 'project_authorization.rate_limited',
+  // Story 73.6: every `readEffectiveProjectAccess()` / service GET project-access call.
+  // Fields: extensionName or routeKey, organizationId, viewerIdentityId/userId, itemCount,
+  // outcome. Never reasonCode (empty-list vs missing-user oracle), never tokens.
+  PROJECT_ACCESS_READ_RECORDED: 'project_authorization.effective_access_read_recorded',
+  PROJECT_ACCESS_READ_RATE_LIMITED: 'project_authorization.effective_access_read_rate_limited',
 
   // Story 56.1 AC4: scheduled-task extension hook job runner (extension-scheduled-tasks.ts).
   // Mirrors monitoring-health-check.ts's own tick-skipped-overlap/row-failed event pair.

@@ -18,6 +18,7 @@ export function fakeHostServices(overrides: Partial<HostServices> = {}): HostSer
     orgAuthorization: { checkMembership: unavailable('orgAuthorization.checkMembership') },
     projectAuthorization: {
       checkProjectMembership: unavailable('projectAuthorization.checkProjectMembership'),
+      readEffectiveProjectAccess: unavailable('projectAuthorization.readEffectiveProjectAccess'),
     },
     ephemeralState: {
       set: unavailable('ephemeralState.set'),

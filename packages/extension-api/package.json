@@ -1,6 +1,6 @@
 {
   "name": "@project-vault/extension-api",
-  "version": "3.46.0",
+  "version": "3.47.0",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

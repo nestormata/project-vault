@@ -39,6 +39,7 @@ import {
   ServiceProjectMemberAddBodySchema,
   ServiceProjectMemberParamsSchema,
   ServiceProjectMemberResponseSchema,
+  ServiceProjectAccessResponseSchema,
   ServiceProjectMemberRoleResponseSchema,
   ServiceProjectMemberUserParamsSchema,
   ServiceRequestIdBodySchema,
@@ -51,6 +52,7 @@ import {
   removeServiceProjectMember,
   SoleOwnerOfProjectsError,
 } from './role-provisioning.js'
+import { readServiceEffectiveProjectAccess } from './project-access-read.js'
 import { createAdminAlert, deliverAdminAlertToPlatformOperator } from '../backup/alerts.js'
 
 type BossFastify = FastifyApp & { boss?: BossService }
@@ -114,6 +116,14 @@ function serviceMutationRateLimit(key: string) {
   }
 }
 
+function serviceProjectAccessReadRateLimit() {
+  return {
+    max: 60,
+    timeWindow: '1 minute' as const,
+    keyGenerator: () => 'service-project-access-read',
+  }
+}
+
 /**
  * Shared "check the static service token, 403 via sendAppError otherwise" guard used by every
  * route handler in this module — factored out after a jscpd duplication finding on this exact
@@ -163,13 +173,11 @@ const SERVICE_CLIENT_ERRORS = {
   429: ApiErrorSchema,
 }
 
-async function runAuthorizedServiceCall<P, B>(
+function parseAuthorizedServiceParams<P>(
   req: FastifyRequest,
   reply: FastifyReply,
-  paramsSchema: ZodType<P>,
-  bodySchema: ZodType<B>,
-  run: (params: P, body: B) => Promise<void>
-): Promise<void> {
+  paramsSchema: ZodType<P>
+): P | undefined {
   if (
     !authorizeOrReply(
       reply,
@@ -177,16 +185,41 @@ async function runAuthorizedServiceCall<P, B>(
       assertServiceProvisioningAuthorized
     )
   )
-    return
-  const parsedParams = parseOrReply(reply, paramsSchema, req.params, 'params')
-  if (!parsedParams) return
-  const parsedBody = parseOrReply(reply, bodySchema, req.body, 'body')
-  if (!parsedBody) return
+    return undefined
+  return parseOrReply(reply, paramsSchema, req.params, 'params')
+}
+
+async function settleServiceHandler(reply: FastifyReply, run: () => Promise<void>): Promise<void> {
   try {
-    await run(parsedParams, parsedBody)
+    await run()
   } catch (err) {
     sendAppError(reply, err)
   }
+}
+
+async function runAuthorizedServiceCall<P, B>(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  paramsSchema: ZodType<P>,
+  bodySchema: ZodType<B>,
+  run: (params: P, body: B) => Promise<void>
+): Promise<void> {
+  const parsedParams = parseAuthorizedServiceParams(req, reply, paramsSchema)
+  if (!parsedParams) return
+  const parsedBody = parseOrReply(reply, bodySchema, req.body, 'body')
+  if (!parsedBody) return
+  await settleServiceHandler(reply, () => run(parsedParams, parsedBody))
+}
+
+async function runAuthorizedServiceGet<P>(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  paramsSchema: ZodType<P>,
+  run: (params: P) => Promise<void>
+): Promise<void> {
+  const parsedParams = parseAuthorizedServiceParams(req, reply, paramsSchema)
+  if (!parsedParams) return
+  await settleServiceHandler(reply, () => run(parsedParams))
 }
 
 /**
@@ -663,5 +696,37 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
           await reply.status(204).send()
         }
       ),
+  })
+
+  fastify.route({
+    method: 'GET',
+    url: '/api/v1/service/organizations/:organizationId/users/:userId/project-access',
+    config: { rateLimit: serviceProjectAccessReadRateLimit() },
+    attachValidation: true,
+    schema: {
+      params: ServiceOrgMemberUserParamsSchema,
+      response: {
+        200: ServiceProjectAccessResponseSchema,
+        ...SERVICE_CLIENT_ERRORS,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) =>
+      runAuthorizedServiceGet(req, reply, ServiceOrgMemberUserParamsSchema, async (params) => {
+        const result = await readServiceEffectiveProjectAccess(params.organizationId, params.userId)
+        operationalLog(
+          req.log,
+          'info',
+          OperationalEvent.PROJECT_ACCESS_READ_RECORDED,
+          'service effective project access read',
+          {
+            routeKey: 'service-project-access-read',
+            organizationId: params.organizationId,
+            userId: params.userId,
+            itemCount: result.items.length,
+            outcome: 'ok',
+          }
+        )
+        await reply.status(200).send({ data: result })
+      }),
   })
 }
