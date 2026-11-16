@@ -402,5 +402,22 @@
   "cli_device_invalid_code": "Ese código no está esperando aprobación. Revise el programa e inténtelo de nuevo.",
   "cli_device_step_up_required": "Escriba el código actual del autenticador para aprobar.",
   "cli_device_enrollment_required": "Inscriba un autenticador en Seguridad antes de aprobar.",
-  "cli_device_error": "No se pudo actualizar el inicio de sesión. Inténtelo de nuevo."
+  "cli_device_error": "No se pudo actualizar el inicio de sesión. Inténtelo de nuevo.",
+  "security_hardware_keys_heading": "Llaves de seguridad de hardware",
+  "security_hardware_keys_requires_totp": "Las llaves de seguridad de hardware estarán disponibles cuando TOTP esté inscrito.",
+  "security_hardware_keys_secret_guidance": "El material privado de una llave de seguridad de hardware no se puede copiar, exportar ni respaldar.",
+  "security_hardware_keys_lost_guidance": "Si pierde esta llave, use un código de recuperación de esta página y luego registre una llave de reemplazo.",
+  "security_hardware_keys_empty": "Aún no hay llaves de hardware registradas. Puede agregar más de una, cada una con su propio nombre.",
+  "security_hardware_keys_name_label": "Nombre de la llave",
+  "security_hardware_keys_register": "Registrar llave de hardware",
+  "security_hardware_keys_registering": "Esperando la llave…",
+  "security_hardware_keys_rename": "Renombrar",
+  "security_hardware_keys_save_name": "Guardar nombre",
+  "security_hardware_keys_remove": "Quitar",
+  "security_hardware_keys_confirm_remove": "Confirmar que se quite",
+  "security_hardware_keys_cancel": "Cancelar",
+  "security_hardware_keys_list_failed": "No se pudieron cargar las llaves de hardware.",
+  "security_hardware_keys_register_failed": "No se pudo registrar la llave de hardware.",
+  "security_hardware_keys_rename_failed": "No se pudo renombrar la llave de hardware.",
+  "security_hardware_keys_remove_failed": "No se pudo quitar la llave de hardware."
 }

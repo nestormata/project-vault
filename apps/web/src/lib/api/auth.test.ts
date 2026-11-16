@@ -1,16 +1,30 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { RegistrationResponseJSON } from '@simplewebauthn/browser'
 import { ApiClientError } from './client.js'
 import {
+  completeWebauthnRegistration,
+  deleteWebauthnCredential,
   enrollMfa,
   getCurrentUser,
+  listWebauthnCredentials,
   login,
   logout,
   regenerateMfaRecoveryCodes,
   register,
+  renameWebauthnCredential,
+  startWebauthnRegistration,
   verifyMfaEnrollment,
   verifyMfaLogin,
 } from './auth.js'
 import { jsonResponse } from '$lib/test/json-response.js'
+
+const TEST_ATTESTATION: RegistrationResponseJSON = {
+  id: 'att',
+  rawId: 'att',
+  type: 'public-key',
+  response: { clientDataJSON: 'e30', attestationObject: 'e30' },
+  clientExtensionResults: {},
+}
 
 describe('auth API helpers', () => {
   it('register sends the expected body and returns the backend data envelope', async () => {
@@ -269,5 +283,90 @@ describe('auth API helpers', () => {
       recoveryCodes: ['1111-2222-3333'],
       generatedAt: '2026-07-07T12:05:00.000Z',
     })
+  })
+
+  it('lists hardware keys without a publicKey field in the client type usage', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          credentials: [
+            {
+              id: '00000000-0000-4000-8000-000000000010',
+              name: 'Desk',
+              createdAt: '2026-11-15T00:00:00.000Z',
+              lastUsedAt: null,
+              signCount: 0,
+            },
+          ],
+        },
+      })
+    )
+    const result = await listWebauthnCredentials(fetchFn)
+    expect(fetchFn).toHaveBeenCalledWith('/api/v1/auth/mfa/webauthn/credentials', {
+      credentials: 'include',
+      headers: {},
+    })
+    expect(result.credentials[0]).toEqual({
+      id: '00000000-0000-4000-8000-000000000010',
+      name: 'Desk',
+      createdAt: '2026-11-15T00:00:00.000Z',
+      lastUsedAt: null,
+      signCount: 0,
+    })
+    expect(result.credentials[0]).not.toHaveProperty('publicKey')
+  })
+
+  it('posts WebAuthn options and register, then patch/delete a credential', async () => {
+    const optionsFetch = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { challengeId: '00000000-0000-4000-8000-000000000011', options: { challenge: 'x' } },
+      })
+    )
+    await expect(startWebauthnRegistration(optionsFetch)).resolves.toMatchObject({
+      challengeId: '00000000-0000-4000-8000-000000000011',
+    })
+    expect(optionsFetch).toHaveBeenCalledWith(
+      '/api/v1/auth/mfa/webauthn/register/options',
+      expect.objectContaining({ method: 'POST' })
+    )
+
+    const registerFetch = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          id: '00000000-0000-4000-8000-000000000012',
+          name: 'Desk',
+          createdAt: '2026-11-15T00:00:00.000Z',
+        },
+      })
+    )
+    await completeWebauthnRegistration(registerFetch, {
+      challengeId: '00000000-0000-4000-8000-000000000011',
+      name: 'Desk',
+      attestation: TEST_ATTESTATION,
+    })
+    expect(registerFetch).toHaveBeenCalledWith(
+      '/api/v1/auth/mfa/webauthn/register',
+      expect.objectContaining({ method: 'POST' })
+    )
+
+    const renameFetch = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ data: { id: '00000000-0000-4000-8000-000000000012', name: 'Office' } })
+      )
+    await renameWebauthnCredential(renameFetch, '00000000-0000-4000-8000-000000000012', 'Office')
+    expect(renameFetch).toHaveBeenCalledWith(
+      '/api/v1/auth/mfa/webauthn/credentials/00000000-0000-4000-8000-000000000012',
+      expect.objectContaining({ method: 'PATCH' })
+    )
+
+    const deleteFetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { id: '00000000-0000-4000-8000-000000000012' } }))
+    await deleteWebauthnCredential(deleteFetch, '00000000-0000-4000-8000-000000000012')
+    expect(deleteFetch).toHaveBeenCalledWith(
+      '/api/v1/auth/mfa/webauthn/credentials/00000000-0000-4000-8000-000000000012',
+      expect.objectContaining({ method: 'DELETE' })
+    )
   })
 })

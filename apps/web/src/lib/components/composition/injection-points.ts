@@ -757,6 +757,7 @@ export interface InjectionPointProps {
   'settings.themes.back': StandardPointProps
   'settings.users-erasure-detail.back': StandardPointProps
   'settings.security.enrollment': StandardPointProps
+  'settings.security.hardware-keys': StandardPointProps
   'project.certificates.list-header': StandardPointProps
   'project.domains.list-header': StandardPointProps
   'project.services.list-header': StandardPointProps
@@ -1655,7 +1656,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/security#page'],
-    ['settings.security.enrollment']
+    ['settings.security.enrollment', 'settings.security.hardware-keys']
   ),
   ...regionPoints(
     'StandardPointProps',

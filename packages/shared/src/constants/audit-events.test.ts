@@ -21,6 +21,14 @@ describe('AuditEvent', () => {
     expect(AuditEvent.MFA_RECOVERY_CODES_REGENERATED).toBe('MFA_RECOVERY_CODES_REGENERATED')
   })
 
+  it('exposes Story 46.1 WebAuthn audit event constants', () => {
+    expect(AuditEvent.WEBAUTHN_REGISTRATION_STARTED).toBe('WEBAUTHN_REGISTRATION_STARTED')
+    expect(AuditEvent.WEBAUTHN_CREDENTIAL_REGISTERED).toBe('WEBAUTHN_CREDENTIAL_REGISTERED')
+    expect(AuditEvent.WEBAUTHN_CREDENTIAL_RENAMED).toBe('WEBAUTHN_CREDENTIAL_RENAMED')
+    expect(AuditEvent.WEBAUTHN_CREDENTIAL_REMOVED).toBe('WEBAUTHN_CREDENTIAL_REMOVED')
+    expect(AuditEvent.WEBAUTHN_CLONED_AUTHENTICATOR).toBe('WEBAUTHN_CLONED_AUTHENTICATOR')
+  })
+
   it('exposes Story 1.9 failed auth threshold audit event constant', () => {
     expect(AuditEvent.SECURITY_FAILED_AUTH_THRESHOLD).toBe('security.failed_auth_threshold')
   })

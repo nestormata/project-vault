@@ -6,7 +6,7 @@
 // "SESSION_CREATED" / "Backup Failure" / "audit_storage.critical" inconsistency happened).
 import { AuditEvent } from '@project-vault/shared'
 
-const ACRONYM_WORDS = new Set(['mfa', 'api', 'ip', 'kms', 'sso', 'dlq'])
+const ACRONYM_WORDS = new Set(['mfa', 'api', 'ip', 'kms', 'sso', 'dlq', 'webauthn'])
 
 /**
  * AC-23: fallback for any event-type code with no explicit entry below — title-cases each

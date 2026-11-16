@@ -498,7 +498,7 @@ under `$lib/components` (the `shell`, `auth`, `vault`, `platform`, `settings`, `
 render the original UNCHANGED and host the page's point as their `children` snippet (no DOM node, so PV's output is
 byte-identical, pinned by the render oracles): `app.layout.search`, `project.layout.content`, `root.layout.progress`,
 `auth.layout.brand`, `auth.register.form`, `vault.home.gate`,
-`platform.home.{operator-notice,warnings,nav-cards}`, `settings.home.nav-cards`, `settings.security.enrollment`, the
+`platform.home.{operator-notice,warnings,nav-cards}`, `settings.home.nav-cards`, `settings.security.{enrollment,hardware-keys}`, the
 five back links `settings.{audit-access-report,audit-forwarding,language,themes,users-erasure-detail}.back`,
 `project.{certificates,domains,services}.list-header`, `project.status-page.error` and
 `project.service-endpoints-detail.back`. Their props are the original component's props passed through (an M4

@@ -331,6 +331,7 @@ describe('the real registry: every point is listed with its props type (Story 69
     'platform.home.nav-cards': PLATFORM_HOME,
     'settings.home.nav-cards': '/(app)/settings#page',
     'settings.security.enrollment': '/(app)/settings/security#page',
+    'settings.security.hardware-keys': '/(app)/settings/security#page',
     'project.certificates.list-header': '/(app)/projects/[projectId]/certificates#page',
     'project.domains.list-header': '/(app)/projects/[projectId]/domains#page',
     'project.services.list-header': '/(app)/projects/[projectId]/services#page',

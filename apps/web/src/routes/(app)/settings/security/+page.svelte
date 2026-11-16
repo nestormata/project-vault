@@ -5,6 +5,7 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
   import SecurityEnrollmentRegion from '$lib/components/settings/SecurityEnrollmentRegion.svelte'
+  import SecurityHardwareKeysRegion from '$lib/components/settings/SecurityHardwareKeysRegion.svelte'
   import type { PageData } from './$types.js'
 
   const { data }: { data: PageData } = $props()
@@ -26,5 +27,10 @@
   <SecurityEnrollmentRegion initialUser={data.user}>
     <InjectionPoint name="settings.security.enrollment" data={data?.__inject} />
   </SecurityEnrollmentRegion>
+
+  <!-- @region settings.security.hardware-keys -->
+  <SecurityHardwareKeysRegion initialUser={data.user}>
+    <InjectionPoint name="settings.security.hardware-keys" data={data?.__inject} />
+  </SecurityHardwareKeysRegion>
 </div>
 <InjectionPoint name="settings.security.after" data={data?.__inject} />

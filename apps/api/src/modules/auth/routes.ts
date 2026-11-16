@@ -38,6 +38,14 @@ import {
   sessionsListResponseSchema,
   revokeOtherSessionsResponseSchema,
   methodNotAllowedResponseSchema,
+  webauthnRegisterOptionsResponseSchema,
+  webauthnRegisterBodySchema,
+  webauthnRegisterResponseSchema,
+  webauthnCredentialListResponseSchema,
+  webauthnRenameBodySchema,
+  webauthnRenameResponseSchema,
+  webauthnDeleteResponseSchema,
+  webauthnCredentialParamsSchema,
 } from './schema.js'
 import { normalizeEmail } from './normalize.js'
 import {
@@ -63,6 +71,13 @@ import {
   type TokenMaterial,
 } from './service.js'
 import { loadMfaEnforcementStatus } from './mfa-enforcement.js'
+import {
+  completeWebauthnRegistration,
+  deleteWebauthnCredential,
+  listWebauthnCredentials,
+  renameWebauthnCredential,
+  startWebauthnRegistration,
+} from './webauthn.js'
 import { revokeAllOtherSessions, revokeSessionById, sessionNotFound } from './session-revoke.js'
 import {
   RateLimitExceededResponseSchema,
@@ -479,6 +494,8 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   registerMethodNotAllowed(fastify, '/mfa/regenerate-recovery-codes')
   registerMethodNotAllowed(fastify, '/mfa/recover')
   registerMethodNotAllowed(fastify, '/mfa/verify-login')
+  registerMethodNotAllowed(fastify, '/mfa/webauthn/register/options')
+  registerMethodNotAllowed(fastify, '/mfa/webauthn/register')
 
   secureRoute(fastify, {
     method: 'GET',
@@ -594,6 +611,140 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         await sendPendingMfaNotifications(fastify, result.data.notificationJobs)
       }
       return result
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/mfa/webauthn/register/options',
+    schema: {
+      response: {
+        200: webauthnRegisterOptionsResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: {
+      rateLimit: { max: 10, timeWindowMs: 60 * 60 * 1000 },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
+      return sendMfaAction(reply, () =>
+        startWebauthnRegistration(secureCtx.auth, metaFromRequest(req), secureCtx.tx)
+      )
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/mfa/webauthn/register',
+    schema: {
+      body: webauthnRegisterBodySchema,
+      response: {
+        200: webauthnRegisterResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: {
+      rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
+      const parsed = parseBody(webauthnRegisterBodySchema, req, reply)
+      if (!parsed.success) return parsed.reply
+      return sendMfaAction(reply, () =>
+        completeWebauthnRegistration(
+          secureCtx.auth,
+          parsed.data,
+          metaFromRequest(req),
+          secureCtx.tx
+        )
+      )
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/mfa/webauthn/credentials',
+    schema: {
+      response: {
+        200: webauthnCredentialListResponseSchema,
+        401: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: { rateLimit: { max: 30 }, writeAuditEvent: false },
+    handler: async (ctx, _req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
+      return sendMfaAction(reply, () => listWebauthnCredentials(secureCtx.auth, secureCtx.tx))
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'PATCH',
+    url: '/mfa/webauthn/credentials/:id',
+    schema: {
+      body: webauthnRenameBodySchema,
+      response: {
+        200: webauthnRenameResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: {
+      rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
+      const params = webauthnCredentialParamsSchema.safeParse(req.params)
+      if (!params.success) return reply.status(422).send(validationError(params.error, 'params'))
+      const parsed = parseBody(webauthnRenameBodySchema, req, reply)
+      if (!parsed.success) return parsed.reply
+      return sendMfaAction(reply, () =>
+        renameWebauthnCredential(
+          secureCtx.auth,
+          params.data.id,
+          parsed.data.name,
+          metaFromRequest(req),
+          secureCtx.tx
+        )
+      )
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'DELETE',
+    url: '/mfa/webauthn/credentials/:id',
+    schema: {
+      response: {
+        200: webauthnDeleteResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: {
+      rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
+      const params = webauthnCredentialParamsSchema.safeParse(req.params)
+      if (!params.success) return reply.status(422).send(validationError(params.error, 'params'))
+      return sendMfaAction(reply, () =>
+        deleteWebauthnCredential(secureCtx.auth, params.data.id, metaFromRequest(req), secureCtx.tx)
+      )
     },
   })
 

@@ -403,5 +403,22 @@
   "cli_device_invalid_code": "That code is not waiting for approval. Check the program and try again.",
   "cli_device_step_up_required": "Enter the current authenticator code to approve.",
   "cli_device_enrollment_required": "Enroll an authenticator under Security settings before approving.",
-  "cli_device_error": "The sign-in could not be updated. Try again."
+  "cli_device_error": "The sign-in could not be updated. Try again.",
+  "security_hardware_keys_heading": "Hardware security keys",
+  "security_hardware_keys_requires_totp": "Hardware security keys become available once TOTP is enrolled.",
+  "security_hardware_keys_secret_guidance": "The private material on a hardware security key cannot be copied, exported, or backed up.",
+  "security_hardware_keys_lost_guidance": "If you lose this key, use a recovery code from this page, then register a replacement key.",
+  "security_hardware_keys_empty": "No hardware keys are registered yet. You can add more than one, each with its own name.",
+  "security_hardware_keys_name_label": "Key name",
+  "security_hardware_keys_register": "Register hardware key",
+  "security_hardware_keys_registering": "Waiting for the key…",
+  "security_hardware_keys_rename": "Rename",
+  "security_hardware_keys_save_name": "Save name",
+  "security_hardware_keys_remove": "Remove",
+  "security_hardware_keys_confirm_remove": "Confirm remove",
+  "security_hardware_keys_cancel": "Cancel",
+  "security_hardware_keys_list_failed": "Could not load hardware keys.",
+  "security_hardware_keys_register_failed": "Could not register the hardware key.",
+  "security_hardware_keys_rename_failed": "Could not rename the hardware key.",
+  "security_hardware_keys_remove_failed": "Could not remove the hardware key."
 }

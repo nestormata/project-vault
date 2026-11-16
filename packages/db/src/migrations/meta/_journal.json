@@ -799,6 +799,13 @@
       "when": 1794331200000,
       "tag": "0113_handoff_display_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1794760000000,
+      "tag": "0114_webauthn_credentials",
+      "breakpoints": true
     }
   ]
 }

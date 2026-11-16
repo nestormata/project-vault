@@ -11,6 +11,13 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Auth: TOTP-enrolled users can register named hardware security keys** (Story 46.1). Public
+  key and signature counter are stored; private key material is never stored, requested, or
+  shown. Registration is refused until TOTP is enrolled and `mfa_enrolled_at` is never written.
+  Removing the last remaining second factor is refused for Owner and Admin with a message that
+  names that role requirement. A cloned-authenticator counter regression raises
+  `webauthn.cloned_authenticator`. `@simplewebauthn/server` 14.1.0 is exact-pinned on the
+  NFR-SEC16 crypto-adjacent list.
 - **API: CentralizeMe role provisioning (add, change-role, remove)** (Story 73.5). Trusted
   `x-service-provisioning-token` callers can change and remove organization members and add,
   change, and remove project members on CentralizeMe-managed orgs. PV owns the role. The grant
