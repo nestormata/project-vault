@@ -2,6 +2,37 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.47.0 — 2026-11-15
+
+contract-hash: sha256:438c6b82cde9e23a01715b4833f74b4af2f56d7183a778892f4962f770093a17
+
+Story 73.6. Additive. `ProjectAuthorizationHost.readEffectiveProjectAccess` lists a subject's
+effective project role plus grant source for the ambient organization. `grantSource` is `role` or
+`direct`. Hosts older than 3.47.0 omit the method. Classification-based group grants report
+`groupGrantEvaluation: 'not_evaluated'` until PV honours CentralizeMe DW-459.
+
+### Added
+
+- `ProjectAuthorizationHost.readEffectiveProjectAccess(context): Promise<EffectiveProjectAccessOutcome>`.
+- Types `EffectiveProjectAccessContext`, `EffectiveProjectAccessGrantSource`,
+  `EffectiveProjectAccessItem`, `EffectiveProjectAccessOutcome`.
+
+### Deprecated
+
+3.47.0 does not freeze anything new. Marker lint still requires the 3.30.0 set to be named on
+this newest entry, so this paragraph lists those identifiers without repeating the 3.46.0 wording:
+the panel trio UIPanel / UIPanelContext / UIPanelResult; the action quartet ModuleAction,
+ModuleActionContext, ModuleActionRequest, ActionResult; the data-route quartet
+ModuleDataRequestContext, ModuleDataResult, ModuleDataRouteHandler,
+ModuleDataRouteDeclaration; nav type ExtensionNavItem. Manifest leftovers that stay frozen:
+uiPanelSlots, moduleActions, navItems, moduleDataRoutes. Hook leftovers: uiPanel, moduleAction,
+moduleData. Capability leftover: `'ui-panel'`. Prefer composed UI, M7 `apiRoutes`,
+`ExtensionRequestContext`, and `ExtensionActionResult` until 4.0.0 removes the frozen names.
+
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+- Notified: 2026-10-14, extension maintainers (3.30.0 notice; 3.47.0 adds no deprecation).
+
 ## 3.46.0 — 2026-11-15
 
 contract-hash: sha256:c94efba5346086320fc46876c825852ade907eb47ebc50b024d528973034f52e

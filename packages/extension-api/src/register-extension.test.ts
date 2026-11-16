@@ -448,7 +448,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.47.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.48.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -486,15 +486,15 @@ describe('registerExtension — concrete canonical version gate', () => {
     // Story 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, Story 37.1 AC1.3,
     // Story 39.1 AC8, Story 41.1, Story 56.1 AC1/AC4, Story 40.1 AC1/AC2/AC3/AC10, Story 57.1,
     // Story 58.1, Story 20.12, Story 20.13, Story 59.1, Story 70.1, Story 68.8, Story 68.14, Story 68.11 Story 70.3, Story 71.4, Story 69.18 and Story 73.9 — host
-    // EXTENSION_API_VERSION is now 3.46.0 (see manifest.ts's EXTENSION_API_VERSION doc comment);
-    // '3.47.0' is the above-host, same-major escape-eligible version, and '4.0.0' is a different major (never
+    // EXTENSION_API_VERSION is now 3.47.0 (see manifest.ts's EXTENSION_API_VERSION doc comment);
+    // '3.48.0' is the above-host, same-major escape-eligible version, and '4.0.0' is a different major (never
     // escape-eligible). Kept one minor version above whatever EXTENSION_API_VERSION currently is
-    // — see loader.test.ts's identical comment. 73-7 shipped 3.45.0; 73-16 takes 3.46.0.
+    // — see loader.test.ts's identical comment. 73-16 shipped 3.46.0; 73-6 takes 3.47.0.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.47.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.48.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.47.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.48.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()

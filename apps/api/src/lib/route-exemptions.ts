@@ -356,6 +356,18 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'GET /api/v1/service/organizations/:organizationId/users/:userId/project-access',
+    reason:
+      'Story 73.6 -- machine-authenticated effective project-access read for a trusted platform partner (CentralizeMe). Returns role plus grant source (role|direct) for projects the subject can see. Classification groups stay not_evaluated. Missing user and no-access share HTTP 200 empty items. No SecureRoute session exists for this caller.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      'service-route-static-key-rate-limit',
+    ],
+    expiresAfterStory: null,
+  },
+  {
     // Story 43.6 (D3) — the CLI's startup version check. Not vault-guard-allowlisted (a sealed
     // server returns 503, which the CLI treats as unreachable).
     route: 'GET /api/v1/client-version-policy',
@@ -548,6 +560,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditEvent: 'project.member_removed',
     sameTransactionAuditService: 'removeServiceProjectMember',
+  },
+  'GET /api/v1/service/organizations/:organizationId/users/:userId/project-access': {
+    action: 'read',
+    auditOmissionReason:
+      'Story 73.6 effective project-access list is a non-mutating trusted-server read. Operational events record organizationId, userId, itemCount, and outcome only — no audit_log_entries row, and no distinction between a missing user and a member with no projects.',
+    reviewer: SECURITY_OWNER,
   },
   'DELETE /api/v1/auth/sessions/:sessionId': {
     action: SECURITY_ACTION,

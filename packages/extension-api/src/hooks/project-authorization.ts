@@ -69,4 +69,33 @@ export type ProjectAuthorizationHost = {
   checkProjectMembership(
     context: ProjectAuthorizationCheckContext
   ): Promise<ProjectAuthorizationOutcome>
+  /**
+   * Story 73.6 — list the subject's effective access on projects the ambient caller may see.
+   * Organization comes from request context, never from this argument. `grantSource` is `role`
+   * (org owner/admin bypass) or `direct` (project membership). Classification groups are
+   * `groupGrantEvaluation: 'not_evaluated'` until PV honours CM DW-459.
+   */
+  readEffectiveProjectAccess(
+    context: EffectiveProjectAccessContext
+  ): Promise<EffectiveProjectAccessOutcome>
 }
+
+export type EffectiveProjectAccessContext = {
+  viewerIdentityId: string
+}
+
+export type EffectiveProjectAccessGrantSource = 'role' | 'direct'
+
+export type EffectiveProjectAccessItem = {
+  projectId: string
+  effectiveRole: 'owner' | 'admin' | 'member' | 'viewer'
+  grantSource: EffectiveProjectAccessGrantSource
+}
+
+export type EffectiveProjectAccessOutcome =
+  | {
+      outcome: 'ok'
+      items: EffectiveProjectAccessItem[]
+      groupGrantEvaluation: 'not_evaluated'
+    }
+  | { outcome: 'error'; reasonCode: string }

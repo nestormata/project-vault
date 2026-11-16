@@ -193,6 +193,20 @@ export const ServiceProjectMemberRoleResponseSchema = z.object({
   }),
 })
 
+export const ServiceProjectAccessResponseSchema = z.object({
+  data: z.object({
+    userId: z.uuid(),
+    items: z.array(
+      z.object({
+        projectId: z.uuid(),
+        effectiveRole: z.enum(['owner', 'admin', 'member', 'viewer']),
+        grantSource: z.enum(['role', 'direct']),
+      })
+    ),
+    groupGrantEvaluation: z.literal('not_evaluated'),
+  }),
+})
+
 /**
  * Story 33.1 AC1/AC11: `:organizationId` is PV's own organization UUID (Decision 2 — same
  * direction as ProvisionServiceOrgMemberParamsSchema above, never CM's own id in the URL).

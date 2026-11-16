@@ -1464,6 +1464,46 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `DeliveryStatusValue`
 - union-members: `"sent"`, `"delivered"`, `"bounced"`, `"suppressed"`, `"failed"`
 
+## export `EffectiveProjectAccessContext`
+
+- since: 3.47.0
+- kind: type
+- type: `EffectiveProjectAccessContext`
+- member: `viewerIdentityId`
+  - since: 3.47.0
+  - type: `string`
+
+## export `EffectiveProjectAccessGrantSource`
+
+- since: 3.47.0
+- kind: type
+- type: `EffectiveProjectAccessGrantSource`
+- union-members: `"role"`, `"direct"`
+
+## export `EffectiveProjectAccessItem`
+
+- since: 3.47.0
+- kind: type
+- type: `EffectiveProjectAccessItem`
+- member: `effectiveRole`
+  - since: 3.47.0
+  - type: `"owner" | "admin" | "member" | "viewer"`
+  - union-members: `"owner"`, `"admin"`, `"member"`, `"viewer"`
+- member: `grantSource`
+  - since: 3.47.0
+  - type: `EffectiveProjectAccessGrantSource`
+  - union-members: `"role"`, `"direct"`
+- member: `projectId`
+  - since: 3.47.0
+  - type: `string`
+
+## export `EffectiveProjectAccessOutcome`
+
+- since: 3.47.0
+- kind: type
+- type: `EffectiveProjectAccessOutcome`
+- union-members: `{ outcome: "ok"; items: EffectiveProjectAccessItem[]; groupGrantEvaluation: "not_evaluated"; }`, `{ outcome: "error"; reasonCode: string; }`
+
 ## export `EmitterConformanceResult`
 
 - since: 3.34.0
@@ -1507,7 +1547,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.46.0"`
+- type: `"3.47.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -2000,6 +2040,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
     - since: 3.15.0
     - type: `(context: ProjectAuthorizationCheckContext) => Promise<ProjectAuthorizationOutcome>`
     - call-signature: `(context: ProjectAuthorizationCheckContext): Promise<ProjectAuthorizationOutcome>`
+  - member: `readEffectiveProjectAccess`
+    - since: 3.47.0
+    - type: `(context: EffectiveProjectAccessContext) => Promise<EffectiveProjectAccessOutcome>`
+    - call-signature: `(context: EffectiveProjectAccessContext): Promise<EffectiveProjectAccessOutcome>`
 
 ## export `HostTransaction`
 
@@ -3522,6 +3566,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.15.0
   - type: `(context: ProjectAuthorizationCheckContext) => Promise<ProjectAuthorizationOutcome>`
   - call-signature: `(context: ProjectAuthorizationCheckContext): Promise<ProjectAuthorizationOutcome>`
+- member: `readEffectiveProjectAccess`
+  - since: 3.47.0
+  - type: `(context: EffectiveProjectAccessContext) => Promise<EffectiveProjectAccessOutcome>`
+  - call-signature: `(context: EffectiveProjectAccessContext): Promise<EffectiveProjectAccessOutcome>`
 
 ## export `ProjectAuthorizationOutcome`
 
@@ -4038,6 +4086,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
       - since: 3.18.0
       - type: `(context: ProjectAuthorizationCheckContext) => Promise<ProjectAuthorizationOutcome>`
       - call-signature: `(context: ProjectAuthorizationCheckContext): Promise<ProjectAuthorizationOutcome>`
+    - member: `readEffectiveProjectAccess`
+      - since: 3.47.0
+      - type: `(context: EffectiveProjectAccessContext) => Promise<EffectiveProjectAccessOutcome>`
+      - call-signature: `(context: EffectiveProjectAccessContext): Promise<EffectiveProjectAccessOutcome>`
 - member: `organizationId`
   - since: 3.18.0
   - type: `string`

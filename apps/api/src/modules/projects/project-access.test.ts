@@ -12,6 +12,7 @@ import {
   callerCanSeeProject,
   effectiveProjectRole,
   effectiveProjectRoleForCaller,
+  grantSourceForProjectAccess,
 } from './project-access.js'
 
 const getProjectMembershipRoleMock = vi.mocked(getProjectMembershipRole)
@@ -135,5 +136,28 @@ describe('effectiveProjectRoleForCaller (Story 69.17)', () => {
     await expect(
       effectiveProjectRoleForCaller(secureCtx.tx, secureCtx.auth, PROJECT_UUID)
     ).rejects.toMatchObject({ code: 'insufficient_role' })
+  })
+})
+
+describe('grantSourceForProjectAccess (Story 73.6)', () => {
+  it('labels org owner and admin as role even when a project row exists', () => {
+    expect(grantSourceForProjectAccess({ orgRole: 'owner', membershipRole: 'viewer' })).toBe('role')
+    expect(grantSourceForProjectAccess({ orgRole: 'admin', membershipRole: undefined })).toBe(
+      'role'
+    )
+  })
+
+  it('labels an explicit project row for member or viewer as direct', () => {
+    expect(grantSourceForProjectAccess({ orgRole: 'member', membershipRole: 'viewer' })).toBe(
+      'direct'
+    )
+    expect(grantSourceForProjectAccess({ orgRole: 'viewer', membershipRole: 'member' })).toBe(
+      'direct'
+    )
+  })
+
+  it('returns null for member or viewer without a project row (group grants stay unevaluated)', () => {
+    expect(grantSourceForProjectAccess({ orgRole: 'member', membershipRole: undefined })).toBeNull()
+    expect(grantSourceForProjectAccess({ orgRole: 'viewer', membershipRole: undefined })).toBeNull()
   })
 })

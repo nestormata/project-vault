@@ -50,6 +50,20 @@ export function resolveEffectiveProjectRoleForOrgRole(input: {
 }
 
 /**
+ * Story 73.6: which PV table produced the effective role. `role` is the org-owner/admin bypass.
+ * `direct` is an explicit project membership row. `null` means this subject has no PV access on
+ * the project (member/viewer without a row). Classification groups are not a source until DW-459.
+ */
+export function grantSourceForProjectAccess(input: {
+  orgRole: OrgRole
+  membershipRole: OrgRole | undefined
+}): 'role' | 'direct' | null {
+  if (isOrgAdminOrOwner(input.orgRole)) return 'role'
+  if (input.membershipRole !== undefined) return 'direct'
+  return null
+}
+
+/**
  * Story 4.5 D4/AC-P1: effective role for value-reveal / version-create gates.
  * Org owner/admin always use their org role; otherwise project role if present, else org role.
  */

@@ -11,6 +11,13 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **API: CentralizeMe effective project-access read** (Story 73.6). Trusted
+  `x-service-provisioning-token` callers can `GET
+  /api/v1/service/organizations/{organizationId}/users/{userId}/project-access` for the subject's
+  effective role and grant source (`role` or `direct`) on active projects. Classification groups
+  stay `not_evaluated`. Missing users and members with no access share HTTP 200 empty `items`.
+  HostServices `projectAuthorization.readEffectiveProjectAccess` is the composed/extension twin
+  (extension-api 3.47.0). See [docs/api-consumers.md](docs/api-consumers.md).
 - **API: CentralizeMe role provisioning (add, change-role, remove)** (Story 73.5). Trusted
   `x-service-provisioning-token` callers can change and remove organization members and add,
   change, and remove project members on CentralizeMe-managed orgs. PV owns the role. The grant

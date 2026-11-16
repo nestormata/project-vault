@@ -88,7 +88,10 @@ async function withOrgContext(tx: Tx, organizationId: string): Promise<void> {
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${organizationId}, true)`)
 }
 
-async function inManagedOrg<T>(organizationId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+export async function inManagedOrg<T>(
+  organizationId: string,
+  fn: (tx: Tx) => Promise<T>
+): Promise<T> {
   return await getDb().transaction(async (tx) => {
     const typedTx = tx as Tx
     await withOrgContext(typedTx, organizationId)

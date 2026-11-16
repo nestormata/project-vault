@@ -681,7 +681,9 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // Story 73.16 — bumped as a minor (3.45.0 -> 3.46.0): optional `lockedAt`, `displayStatus` and
 // `verificationRequired` on `CredentialSharingShareRecord` (policy row 1). Same JSON as HTTP
 // share summaries. A host older than 3.46.0 omits the keys.
-export const EXTENSION_API_VERSION = '3.46.0'
+// Story 73.6 — bumped as a minor (3.46.0 -> 3.47.0): `readEffectiveProjectAccess` on
+// `ProjectAuthorizationHost` (policy row 1). Additive list of effective role plus grant source.
+export const EXTENSION_API_VERSION = '3.47.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
