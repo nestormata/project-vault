@@ -122,8 +122,12 @@
                   id={`rename-${key.id}`}
                   class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
                   maxlength="64"
+                  aria-describedby={`rename-${key.id}-help`}
                   bind:value={renameValue}
                 />
+                <p id={`rename-${key.id}-help`} class="text-sm text-slate-600">
+                  {m.security_hardware_keys_name_help()}
+                </p>
                 <div class="flex flex-wrap gap-3">
                   <button
                     type="submit"
@@ -207,8 +211,12 @@
         id="hardware-key-name"
         class="w-full rounded-xl border border-[color:var(--color-border-strong,#64748b)] px-3 py-2"
         maxlength="64"
+        aria-describedby="hardware-key-name-help"
         bind:value={name}
       />
+      <p id="hardware-key-name-help" class="text-sm text-slate-600">
+        {m.security_hardware_keys_name_help()}
+      </p>
       {#if errorMessage}
         <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
           {errorMessage}

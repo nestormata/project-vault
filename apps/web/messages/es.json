@@ -409,6 +409,7 @@
   "security_hardware_keys_lost_guidance": "Si pierde esta llave, use un código de recuperación de esta página y luego registre una llave de reemplazo.",
   "security_hardware_keys_empty": "Aún no hay llaves de hardware registradas. Puede agregar más de una, cada una con su propio nombre.",
   "security_hardware_keys_name_label": "Nombre de la llave",
+  "security_hardware_keys_name_help": "De 1 a 64 caracteres. Este nombre es solo una etiqueta para usted; no es el secreto de la llave.",
   "security_hardware_keys_register": "Registrar llave de hardware",
   "security_hardware_keys_registering": "Esperando la llave…",
   "security_hardware_keys_rename": "Renombrar",

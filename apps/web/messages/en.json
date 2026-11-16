@@ -410,6 +410,7 @@
   "security_hardware_keys_lost_guidance": "If you lose this key, use a recovery code from this page, then register a replacement key.",
   "security_hardware_keys_empty": "No hardware keys are registered yet. You can add more than one, each with its own name.",
   "security_hardware_keys_name_label": "Key name",
+  "security_hardware_keys_name_help": "1–64 characters. This name is only a label for you; it is not the key's secret.",
   "security_hardware_keys_register": "Register hardware key",
   "security_hardware_keys_registering": "Waiting for the key…",
   "security_hardware_keys_rename": "Rename",

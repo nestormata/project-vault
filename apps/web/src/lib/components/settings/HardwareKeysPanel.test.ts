@@ -79,6 +79,14 @@ describe('HardwareKeysPanel', () => {
     expect(listMock).not.toHaveBeenCalled()
   })
 
+  it('wires visible name help through aria-describedby on the register field', async () => {
+    render(HardwareKeysPanel, { props: { initialUser: user() } })
+    const nameInput = await screen.findByLabelText(/key name/i)
+    expect(nameInput.getAttribute('aria-describedby')).toBe('hardware-key-name-help')
+    const help = document.getElementById('hardware-key-name-help')
+    expect(help?.textContent).toMatch(/1–64 characters/i)
+  })
+
   it('states that the key secret cannot be copied, exported, or backed up', async () => {
     render(HardwareKeysPanel, { props: { initialUser: user() } })
     expect(await screen.findByText(/cannot be copied, exported, or backed up/i)).toBeTruthy()
@@ -139,6 +147,9 @@ describe('HardwareKeysPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: /rename/i }))
     const renameInput = screen.getAllByLabelText(/key name/i)[0]
     if (!renameInput) throw new Error('rename input missing')
+    const renameHelpId = renameInput.getAttribute('aria-describedby')
+    expect(renameHelpId).toBe(`rename-${desk.id}-help`)
+    expect(document.getElementById(renameHelpId ?? '')?.textContent).toMatch(/1–64 characters/i)
     await fireEvent.input(renameInput, {
       target: { value: 'Office' },
     })
