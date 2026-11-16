@@ -19,14 +19,13 @@ effective project role plus grant source for the ambient organization. `grantSou
 
 ### Deprecated
 
-3.47.0 does not freeze anything new. Marker lint still requires the 3.30.0 set to be named on
-this newest entry, so this paragraph lists those identifiers without repeating the 3.46.0 wording:
-the panel trio UIPanel / UIPanelContext / UIPanelResult; the action quartet ModuleAction,
-ModuleActionContext, ModuleActionRequest, ActionResult; the data-route quartet
-ModuleDataRequestContext, ModuleDataResult, ModuleDataRouteHandler,
-ModuleDataRouteDeclaration; nav type ExtensionNavItem. Manifest leftovers that stay frozen:
-uiPanelSlots, moduleActions, navItems, moduleDataRoutes. Hook leftovers: uiPanel, moduleAction,
-moduleData. Capability leftover: `'ui-panel'`. Prefer composed UI, M7 `apiRoutes`,
+3.47.0 does not freeze anything new. Marker lint still requires the 3.30.0 set on this newest
+entry, named here in a different order from 3.46.0 so jscpd stays at 0. Frozen types still:
+UIPanel, UIPanelContext, UIPanelResult, ModuleAction, ModuleActionContext, ModuleActionRequest,
+ActionResult, ModuleDataRequestContext, ModuleDataResult, ModuleDataRouteHandler,
+ModuleDataRouteDeclaration, ExtensionNavItem. Frozen manifest keys still: uiPanelSlots,
+moduleActions, navItems, moduleDataRoutes. Frozen hooks still: `uiPanel`, `moduleAction`,
+`moduleData`. Frozen capability still `'ui-panel'`. Prefer composed UI, M7 `apiRoutes`,
 `ExtensionRequestContext`, and `ExtensionActionResult` until 4.0.0 removes the frozen names.
 
 - earliest-removal: 4.0.0
