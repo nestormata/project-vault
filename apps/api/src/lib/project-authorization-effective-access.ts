@@ -67,6 +67,10 @@ function viewerIdentityForLog(context: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+function defaultEffectiveProjectAccessHostContext(): EffectiveProjectAccessHostContext {
+  return { extensionName: 'unknown-extension' }
+}
+
 function recordRead(
   logger: AuditLogger,
   fields: {
@@ -141,11 +145,12 @@ async function resolveEffectiveAccess(
  */
 export async function readEffectiveProjectAccess(
   context: EffectiveProjectAccessContext,
-  hostContext: EffectiveProjectAccessHostContext = { extensionName: 'unknown-extension' }
+  hostContext?: EffectiveProjectAccessHostContext
 ): Promise<EffectiveProjectAccessOutcome> {
-  const logger = hostContext.logger ?? {}
-  const key = accountingKeyFor(hostContext.extensionName)
-  const maxInFlight = hostContext.maxInFlight ?? EFFECTIVE_ACCESS_MAX_IN_FLIGHT_PER_EXTENSION
+  const resolvedHost = hostContext ?? defaultEffectiveProjectAccessHostContext()
+  const logger = resolvedHost.logger ?? {}
+  const key = accountingKeyFor(resolvedHost.extensionName)
+  const maxInFlight = resolvedHost.maxInFlight ?? EFFECTIVE_ACCESS_MAX_IN_FLIGHT_PER_EXTENSION
   const organizationId = getRequestContext()?.orgId ?? UNBOUND_CONTEXT_AUDIT_ORG_ID
 
   if (!tryAcquireSlot(key, maxInFlight)) {
@@ -154,14 +159,14 @@ export async function readEffectiveProjectAccess(
       'warn',
       OperationalEvent.PROJECT_ACCESS_READ_RATE_LIMITED,
       'readEffectiveProjectAccess() refused — extension at its independent in-flight cap',
-      { extensionName: hostContext.extensionName }
+      { extensionName: resolvedHost.extensionName }
     )
     const outcome: EffectiveProjectAccessOutcome = {
       outcome: 'error',
       reasonCode: RATE_LIMITED_REASON_CODE,
     }
     recordRead(logger, {
-      extensionName: hostContext.extensionName,
+      extensionName: resolvedHost.extensionName,
       organizationId,
       viewerIdentityId: viewerIdentityForLog(context),
       itemCount: 0,
@@ -178,7 +183,7 @@ export async function readEffectiveProjectAccess(
       outcome = { outcome: 'error', reasonCode: INVALID_CONTEXT_REASON_CODE }
     }
     recordRead(logger, {
-      extensionName: hostContext.extensionName,
+      extensionName: resolvedHost.extensionName,
       organizationId,
       viewerIdentityId: viewerIdentityForLog(context),
       itemCount: outcome.outcome === 'ok' ? outcome.items.length : 0,
