@@ -34,7 +34,7 @@ jobs:
           github.event_name == 'pull_request_target'
         # rdkcentral/contributor-assistant_github-action, tag v2.7.0 (pinned to commit SHA,
         # not the floating tag — see provenance note above).
-        uses: rdkcentral/contributor-assistant_github-action@2c505e3cbfadaa766a7dd6e00e9b22c26509c13c # v2.7.0
+        uses: rdkcentral/contributor-assistant_github-action@98363c7833519f13819b3b721fa1434430ccea9f # v2.7.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # v2.7.0 (the latest tag as of the provenance date above) bundles dependencies that
