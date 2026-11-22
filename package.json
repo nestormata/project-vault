@@ -82,17 +82,17 @@
     "@stryker-mutator/vitest-runner": "^10.1.1",
     "audit-ci": "^7.1.0",
     "drizzle-orm": "^0.45.4",
-    "eslint": "^10.14.0",
+    "eslint": "^10.15.0",
     "husky": "^9.1.7",
-    "jscpd": "^5.4.0",
-    "lint-staged": "^17.6.0",
-    "postgres": "^3.4.5",
-    "prettier": "3.9.10",
-    "prettier-plugin-svelte": "^4.1.1",
-    "semver": "^7.8.5",
+    "jscpd": "^5.4.3",
+    "lint-staged": "^17.6.1",
+    "postgres": "^4.1.1",
+    "prettier": "3.10.1",
+    "prettier-plugin-svelte": "^4.2.0",
+    "semver": "^7.8.6",
     "tsx": "4.23.15",
     "turbo": "latest",
-    "typescript": "^6.0.3",
-    "vitest": "^5.1.0"
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
   }
 }
